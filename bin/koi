@@ -7,6 +7,6 @@
  * TUI + Bun runtime.
  */
 
-import { main } from "../src/main.ts";
+import { main } from "../src/main.tsx";
 
 await main();
