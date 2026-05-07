@@ -98,7 +98,7 @@ export function ExitModal({ isActive, onConfirm, onCancel }: ExitModalProps) {
         flexDirection="column"
         alignItems="center"
       >
-        <text attributes={createTextAttributes({ bold: true })} fg="red">
+        <text attributes={createTextAttributes({ bold: true })} fg="#fb7185">
           Exit Koi?
         </text>
         <text>Are you sure you want to exit?</text>
@@ -106,16 +106,16 @@ export function ExitModal({ isActive, onConfirm, onCancel }: ExitModalProps) {
           <Button
             label=" Yes "
             fgColor="white"
-            bgColor="#22c55e"
-            hoverBgColor="#4ade80"
+            bgColor="#2dd4bf"
+            hoverBgColor="#5eead4"
             isActive={isActive}
             onClick={onConfirm}
           />
           <Button
-            label="  No "
+            label=" No! "
             fgColor="white"
-            bgColor="#ef4444"
-            hoverBgColor="#f87171"
+            bgColor="#f43f5e"
+            hoverBgColor="#fb7185"
             isActive={isActive}
             onClick={onCancel}
           />
