@@ -1,0 +1,25 @@
+{
+  "name": "koi",
+  "module": "src/main.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run src/main.ts",
+    "build": "bun build src/main.ts --outfile dist/koi --target bun",
+    "check": "bun check"
+  },
+  "bin": {
+    "koi": "./bin/koi"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@mariozechner/pi-agent-core": "0.73.0",
+    "@mariozechner/pi-ai": "0.73.0",
+    "@mariozechner/pi-coding-agent": "0.73.0",
+    "@mariozechner/pi-tui": "0.73.0",
+    "commander": "^14.0.3"
+  }
+}
