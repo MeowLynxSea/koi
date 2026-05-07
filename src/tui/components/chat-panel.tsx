@@ -5,11 +5,10 @@
  * and markdown content.
  */
 
-import React, { useState, useEffect, useRef } from "react";
-import { Box, Text } from "ink";
+import React, { useState, useEffect, useMemo } from "react";
 import { Markdown, visibleWidth } from "@mariozechner/pi-tui";
 import { markdownTheme } from "../theme.js";
-import chalk from "chalk";
+import { SyntaxStyle } from "@opentui/core";
 
 export interface Message {
   role: "user" | "agent" | "system";
@@ -20,15 +19,6 @@ interface ChatPanelProps {
   messages: Message[];
   width?: number;
 }
-
-export function ChatPanel({ messages, width = 80 }: ChatPanelProps) {
-  const [scrollOffset, setScrollOffset] = useState(0);
-  const containerRef = useRef<{ height: number } | null>(null);
-
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    setScrollOffset(0);
-  }, [messages.length]);
 
 function wrapText(text: string, width: number, indent: number): string[] {
   const available = Math.max(1, width - indent);
@@ -60,18 +50,13 @@ function wrapText(text: string, width: number, indent: number): string[] {
   return lines;
 }
 
-  const prefixColorFn = (role: string) => {
-    switch (role) {
-      case "user":
-        return chalk.hex("#ff79c6");
-      case "agent":
-        return chalk.hex("#8b5cf6");
-      case "system":
-        return chalk.hex("#6c6c7c");
-      default:
-        return chalk.white;
-    }
-  };
+export function ChatPanel({ messages, width = 80 }: ChatPanelProps) {
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    setScrollOffset(0);
+  }, [messages.length]);
 
   const prefixLabel = (role: string) => {
     switch (role) {
@@ -86,48 +71,60 @@ function wrapText(text: string, width: number, indent: number): string[] {
     }
   };
 
+  const prefixFg = (role: string) => {
+    switch (role) {
+      case "user":
+        return "#ff79c6";
+      case "agent":
+        return "#8b5cf6";
+      case "system":
+        return "#6c6c7c";
+      default:
+        return "white";
+    }
+  };
+
   const contentWidth = Math.max(1, (width ?? 80) - 2);
+  const syntaxStyle = useMemo(() => SyntaxStyle.create(), []);
 
   // Render all messages into a flat list of lines for scrolling
-  const allLines: string[] = [];
+  const allLines: { text: string; fg?: string }[] = [];
   for (const msg of messages) {
     if (allLines.length > 0) {
-      allLines.push("");
+      allLines.push({ text: "" });
     }
     const prefix = prefixLabel(msg.role);
-    const prefixColor = prefixColorFn(msg.role);
-    const reset = "\x1b[0m";
+    const fg = prefixFg(msg.role);
     const prefixWidth = visibleWidth(prefix);
 
     if (msg.role === "agent" && msg.content.length > 0) {
       const md = new Markdown(msg.content, 0, 0, markdownTheme);
       const mdLines = md.render(Math.max(1, contentWidth - prefixWidth));
       if (mdLines.length > 0) {
-        const first = prefixColor(prefix) + reset + mdLines[0];
-        allLines.push(first);
+        allLines.push({ text: prefix + mdLines[0]!, fg });
         for (let j = 1; j < mdLines.length; j++) {
-          allLines.push(mdLines[j]!);
+          allLines.push({ text: mdLines[j]! });
         }
       }
     } else {
       const wrapped = wrapText(msg.content, contentWidth, prefixWidth);
       for (let j = 0; j < wrapped.length; j++) {
         if (j === 0) {
-          allLines.push(prefixColor(prefix) + reset + wrapped[j]!);
+          allLines.push({ text: prefix + wrapped[j]!, fg });
         } else {
-          allLines.push(" ".repeat(prefixWidth) + wrapped[j]!);
+          allLines.push({ text: " ".repeat(prefixWidth) + wrapped[j]! });
         }
       }
     }
   }
 
   return (
-    <Box flexGrow={1} flexDirection="column" overflow="hidden" width={width}>
+    <box flexGrow={1} flexDirection="column" overflow="hidden" width={width}>
       {allLines.map((line, i) => (
-        <Text key={i} wrap="truncate">
-          {line}
-        </Text>
+        <text key={i} fg={line.fg}>
+          {line.text}
+        </text>
       ))}
-    </Box>
+    </box>
   );
 }

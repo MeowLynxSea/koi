@@ -1,15 +1,51 @@
 /**
  * Koi - Main Entry Point
  *
- * Bootstraps the Ink-based TUI application.
+ * Bootstraps the OpenTUI React application.
  */
 
-import React from "react";
-import { render } from "ink";
+import { createCliRenderer } from "@opentui/core";
+import { createRoot } from "@opentui/react";
 import { App } from "./tui/app.js";
 
 export async function main(): Promise<void> {
-  render(<App />, { exitOnCtrlC: false });
+  const renderer = await createCliRenderer({ exitOnCtrlC: false });
+  createRoot(renderer).render(
+    <App
+      onExit={() => {
+        renderer.destroy();
+        process.exit(0);
+      }}
+    />
+  );
+
+  // Ensure terminal state is restored on unexpected exits
+  const cleanup = () => {
+    try {
+      renderer.destroy();
+    } catch {
+      // ignore cleanup errors during shutdown
+    }
+  };
+  process.on("exit", cleanup);
+  process.on("SIGINT", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.on("uncaughtException", (err) => {
+    cleanup();
+    console.error(err);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    cleanup();
+    console.error("Unhandled rejection:", reason);
+    process.exit(1);
+  });
 
   // Keep process alive until exit
   await new Promise(() => {});

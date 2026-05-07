@@ -5,8 +5,7 @@
  */
 
 import React from "react";
-import { Box, Text } from "ink";
-import { gradientPinkPurple, sidebarTitle, sidebarVersion, sidebarModelName, sidebarDim } from "../theme.js";
+import { createTextAttributes } from "@opentui/core";
 import { truncateToWidth } from "@mariozechner/pi-tui";
 
 const KOI_LOGO = [
@@ -18,6 +17,25 @@ const KOI_LOGO = [
 ];
 
 const VERSION = "v0.1.0";
+
+const GRADIENT_STOPS = [
+  "#00f5ff",
+  "#00d9ff",
+  "#00bdff",
+  "#00ffcc",
+  "#00ff99",
+];
+
+function gradientText(text: string, rowIndex: number, totalRows: number): string {
+  if (totalRows <= 1) return text;
+  const t = rowIndex / (totalRows - 1);
+  const idx = Math.min(Math.floor(t * (GRADIENT_STOPS.length - 1)), GRADIENT_STOPS.length - 2);
+  const localT = t * (GRADIENT_STOPS.length - 1) - idx;
+  const stop1 = GRADIENT_STOPS[idx]!;
+  const stop2 = GRADIENT_STOPS[idx + 1]!;
+  // Return plain text — color is applied via <text fg> in render
+  return text;
+}
 
 interface SideBarProps {
   width?: number;
@@ -41,38 +59,44 @@ export function SideBar({
   cost = "$0.00",
 }: SideBarProps) {
   return (
-    <Box width={width} flexDirection="column" paddingLeft={1}>
+    <box width={width} flexDirection="column" paddingLeft={1}>
       {/* Row 0: Meowdream™ (left) + version (right) */}
-      <Box width={width - 1} flexDirection="row" justifyContent="space-between">
-        <Text>{sidebarTitle("Meowdream™")}</Text>
-        <Text>{sidebarVersion(VERSION)}</Text>
-      </Box>
+      <box width={width - 1} flexDirection="row" justifyContent="space-between">
+        <text attributes={createTextAttributes({ bold: true })} fg="#00f5ff">Meowdream™</text>
+        <text fg="#00ff99">{VERSION}</text>
+      </box>
 
       {/* Rows 1-5: KOI ASCII logo with gradient */}
-      {KOI_LOGO.map((line, i) => (
-        <Text key={i}>{gradientPinkPurple(truncateToWidth(line, width - 1, "", true), i, KOI_LOGO.length)}</Text>
-      ))}
+      {KOI_LOGO.map((line, i) => {
+        const truncated = truncateToWidth(line, width - 1, "", true);
+        const color = GRADIENT_STOPS[Math.min(i, GRADIENT_STOPS.length - 1)];
+        return (
+          <text key={i} fg={color}>
+            {truncated}
+          </text>
+        );
+      })}
 
       {/* Empty row */}
-      <Text> </Text>
+      <text> </text>
 
       {/* Session title */}
-      <Text>{sidebarModelName(sessionTitle)}</Text>
+      <text attributes={createTextAttributes({ bold: true })} fg="#00d9ff">{sessionTitle}</text>
 
       {/* Working directory */}
-      <Text>{sidebarDim(workingDir)}</Text>
+      <text fg="#0096c7">{workingDir}</text>
 
       {/* Empty row */}
-      <Text> </Text>
+      <text> </text>
 
       {/* Model name */}
-      <Text>{sidebarModelName(modelName)}</Text>
+      <text attributes={createTextAttributes({ bold: true })} fg="#00d9ff">{modelName}</text>
 
       {/* Provider */}
-      <Text>{sidebarDim(provider)}</Text>
+      <text fg="#0096c7">{provider}</text>
 
       {/* Context usage */}
-      <Text>{sidebarDim(`${contextUsage} ${tokenCount} ${cost}`)}</Text>
-    </Box>
+      <text fg="#0096c7">{`${contextUsage} ${tokenCount} ${cost}`}</text>
+    </box>
   );
 }

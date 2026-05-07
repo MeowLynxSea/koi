@@ -2,16 +2,13 @@
  * Exit Confirmation Modal
  *
  * Displays a centered dialog asking the user to confirm exit.
- * Supports keyboard (Y/N/Esc) and mouse click.
+ * Supports keyboard (Y/N/Esc) and native mouse click.
  */
 
-import React, { useRef, useState } from "react";
-import { Box, Text, useInput, type DOMElement } from "ink";
-import {
-  useOnClick,
-  useOnMouseEnter,
-  useOnMouseLeave,
-} from "@ink-tools/ink-mouse";
+import React, { useState } from "react";
+import { useKeyboard } from "@opentui/react";
+import { createTextAttributes } from "@opentui/core";
+import type { MouseEvent } from "@opentui/core";
 
 interface ExitModalProps {
   isActive: boolean;
@@ -21,82 +18,109 @@ interface ExitModalProps {
 
 function Button({
   label,
-  color,
+  fgColor,
   bgColor,
   hoverBgColor,
   isActive,
   onClick,
 }: {
   label: string;
-  color: string;
+  fgColor: string;
   bgColor: string;
   hoverBgColor: string;
   isActive: boolean;
   onClick: () => void;
 }) {
-  const ref = useRef<DOMElement>(null);
   const [hover, setHover] = useState(false);
-
-  useOnClick(ref, isActive ? onClick : undefined);
-  useOnMouseEnter(ref, isActive ? () => setHover(true) : undefined);
-  useOnMouseLeave(ref, isActive ? () => setHover(false) : undefined);
-
   const currentBg = hover ? hoverBgColor : bgColor;
 
+  const handleMouseUp = (e: MouseEvent) => {
+    if (isActive) {
+      e.stopPropagation();
+      onClick();
+    }
+  };
+
+  const handleMouseOver = () => {
+    if (isActive) setHover(true);
+  };
+
+  const handleMouseOut = () => {
+    if (isActive) setHover(false);
+  };
+
   return (
-    <Box ref={ref} paddingX={1} backgroundColor={currentBg}>
-      <Text color={color} bold>
+    <box
+      paddingX={1}
+      backgroundColor={currentBg}
+      onMouseUp={handleMouseUp}
+      onMouseOver={handleMouseOver}
+      onMouseOut={handleMouseOut}
+    >
+      <text fg={fgColor} attributes={createTextAttributes({ bold: true })}>
         {label}
-      </Text>
-    </Box>
+      </text>
+    </box>
   );
 }
 
 export function ExitModal({ isActive, onConfirm, onCancel }: ExitModalProps) {
-  useInput(
-    (input, key) => {
-      if (input === "y" || input === "Y") {
+  useKeyboard(
+    (key) => {
+      if (!isActive) return;
+      if (key.name === "y" || key.name === "y") {
         onConfirm();
-      } else if (input === "n" || input === "N" || key.escape) {
+      } else if (key.name === "n" || key.name === "escape") {
         onCancel();
       }
-    },
-    { isActive }
+    }
   );
 
   if (!isActive) return null;
 
   return (
-    <Box
-      borderStyle="single"
-      borderColor="gray"
-      paddingX={2}
-      paddingY={1}
-      flexDirection="column"
+    <box
+      position="absolute"
+      top={0}
+      left={0}
+      width="100%"
+      height="100%"
+      backgroundColor="#00000080"
       alignItems="center"
+      justifyContent="center"
     >
-      <Text bold color="red">
-        Exit Koi?
-      </Text>
-      <Text>Are you sure you want to exit?</Text>
-      <Box marginTop={1} flexDirection="row" gap={2}>
-        <Button
-          label=" Yes "
-          color="black"
-          bgColor="#22c55e"
-          hoverBgColor="#4ade80"
-          isActive={isActive}
-          onClick={onConfirm}
-        />
-        <Button
-          label=" No  "
-          color="black"
-          bgColor="#ef4444"
-          hoverBgColor="#f87171"
-          isActive={isActive}
-          onClick={onCancel}
-        />
-      </Box>
-    </Box>
+      <box
+        borderStyle="rounded"
+        borderColor="gray"
+        backgroundColor="black"
+        paddingX={2}
+        paddingY={1}
+        flexDirection="column"
+        alignItems="center"
+      >
+        <text attributes={createTextAttributes({ bold: true })} fg="red">
+          Exit Koi?
+        </text>
+        <text>Are you sure you want to exit?</text>
+        <box marginTop={1} flexDirection="row" gap={2}>
+          <Button
+            label=" Yes "
+            fgColor="white"
+            bgColor="#22c55e"
+            hoverBgColor="#4ade80"
+            isActive={isActive}
+            onClick={onConfirm}
+          />
+          <Button
+            label="  No "
+            fgColor="white"
+            bgColor="#ef4444"
+            hoverBgColor="#f87171"
+            isActive={isActive}
+            onClick={onCancel}
+          />
+        </box>
+      </box>
+    </box>
   );
 }

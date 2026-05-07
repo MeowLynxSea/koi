@@ -4,8 +4,8 @@
  * Color tokens, border styles, and semantic mappings.
  */
 
-import chalk from "chalk";
 import type { MarkdownTheme } from "@mariozechner/pi-tui";
+import chalk from "chalk";
 
 // ─── Base Colors ───
 

@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { Box, Text } from "ink";
+import { createTextAttributes } from "@opentui/core";
 
 const HINT_TEXT = "Ctrl+S Send  Ctrl+N New Session  Ctrl+Y Yank  Ctrl+P Paste  ↑↓ History  Esc Cancel";
 const EXIT_TEXT = "Confirm exit in dialog";
@@ -66,8 +66,8 @@ export function InfoBar({ width = 80, exitMode = false }: InfoBarProps) {
   }
 
   return (
-    <Box width={width} height={1}>
-      <Text dimColor>{displayText}</Text>
-    </Box>
+    <box width={width} height={1}>
+      <text attributes={createTextAttributes({ dim: true })}>{displayText}</text>
+    </box>
   );
 }
