@@ -25,6 +25,51 @@ const GRADIENT_STOPS = [
   "#00ff99",
 ];
 
+function abbreviatePath(path: string, maxLen: number = 24): string {
+  if (path.length <= maxLen) return path;
+  if (path === "/" || path === "~") return path;
+
+  const prefix = path.startsWith("~") ? "~" : "";
+  const cleanPath = path.startsWith("~") ? path.slice(1) : path;
+  const parts = cleanPath.split("/").filter(Boolean);
+
+  if (parts.length <= 1) {
+    return path.length > maxLen ? path.slice(0, maxLen - 1) + "…" : path;
+  }
+
+  // Try keeping tail segments intact, drop leading ones
+  for (let i = 0; i < parts.length; i++) {
+    const tail = parts.slice(i).join("/");
+    const candidate = prefix ? `${prefix}/${tail}` : `/${tail}`;
+    if (candidate.length <= maxLen) {
+      return candidate;
+    }
+  }
+
+  // Even the last segment is too long — truncate it
+  const last = parts[parts.length - 1];
+  const abbreviatedLast =
+    last.length > maxLen - 4 ? last.slice(0, maxLen - 4) + "…" : last;
+  return prefix ? `${prefix}/…/${abbreviatedLast}` : `/…/${abbreviatedLast}`;
+}
+
+function Divider({
+  width,
+  char = "▒",
+  fg: color = "#445566",
+}: {
+  width: number;
+  char?: string;
+  fg?: string;
+}) {
+  const pattern = char.repeat(width + 1);
+  return (
+    <text fg={color} wrapMode="none" truncate={true}>
+      {pattern.slice(0, width)}
+    </text>
+  );
+}
+
 interface SideBarProps {
   width?: number;
   workingDir?: string;
@@ -57,6 +102,10 @@ export function SideBar({
       {/* Spacer between header and logo */}
       <text> </text>
 
+      {/* Divider above logo */}
+      <Divider width={width - 1} />
+      <Divider width={width - 1} char="░" fg="#334455" />
+
       {/* Rows 1-5: KOI ASCII logo with gradient */}
       {KOI_LOGO.map((line, i) => {
         const color = GRADIENT_STOPS[Math.min(i, GRADIENT_STOPS.length - 1)];
@@ -67,14 +116,21 @@ export function SideBar({
         );
       })}
 
-      {/* Empty row */}
+      {/* Divider below logo */}
+      <Divider width={width - 1} char="░" fg="#334455" />
+      <Divider width={width - 1} />
+
+      {/* Spacer */}
       <text> </text>
 
       {/* Session title */}
       <text attributes={createTextAttributes({ bold: true })} fg="#00d9ff">{sessionTitle}</text>
 
+      {/* Spacer between session title and directory */}
+      <text> </text>
+
       {/* Working directory */}
-      <text fg="#0096c7">{workingDir}</text>
+      <text fg="#0096c7">{abbreviatePath(workingDir, width - 1)}</text>
 
       {/* Empty row */}
       <text> </text>
