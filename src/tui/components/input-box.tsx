@@ -7,6 +7,7 @@
 
 import React, { useRef, useMemo } from "react";
 import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
+import type { KeyEvent } from "@opentui/core";
 
 const MODE_PREFIX = "Agent > ";
 
@@ -14,11 +15,12 @@ interface InputBoxProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
+  onSlashEmpty?: () => void;
   focused?: boolean;
   width?: number;
 }
 
-export function InputBox({ value, onChange, onSubmit, focused = true, width }: InputBoxProps) {
+export function InputBox({ value, onChange, onSubmit, onSlashEmpty, focused = true, width }: InputBoxProps) {
   const textareaRef = useRef<TextareaRenderable>(null);
 
   const handleContentChange = () => {
@@ -33,6 +35,14 @@ export function InputBox({ value, onChange, onSubmit, focused = true, width }: I
     if (text.trim()) {
       onSubmit(text);
       textareaRef.current?.editBuffer.replaceText("");
+    }
+  };
+
+  const handleKeyDown = (event: KeyEvent) => {
+    if (event.name === "/" && value === "" && onSlashEmpty) {
+      event.preventDefault();
+      event.stopPropagation();
+      onSlashEmpty();
     }
   };
 
@@ -70,6 +80,7 @@ export function InputBox({ value, onChange, onSubmit, focused = true, width }: I
             height={3}
             onContentChange={handleContentChange}
             onSubmit={handleSubmit}
+            onKeyDown={handleKeyDown}
             keyBindings={keyBindings}
           />
         </box>

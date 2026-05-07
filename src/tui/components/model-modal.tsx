@@ -1,0 +1,209 @@
+/**
+ * Model Selection Modal
+ *
+ * Shows configured providers as section headers with their models as
+ * selectable items. Uses Pi SDK model registry.
+ */
+
+import React, { useEffect, useMemo, useState } from "react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { createTextAttributes } from "@opentui/core";
+import type { MouseEvent } from "@opentui/core";
+import {
+  getConfiguredProviders,
+  getCurrentModel,
+  setCurrentModel,
+  getProviderModels,
+  type ModelRef,
+} from "../../config/settings.js";
+
+interface ModelModalProps {
+  isActive: boolean;
+  onClose: () => void;
+  onSelect?: (model: ModelRef) => void;
+}
+
+interface FlatItem {
+  type: "header" | "model";
+  provider?: string;
+  modelId?: string;
+  modelName?: string;
+  modelIndex?: number;
+}
+
+export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
+  const { height } = useTerminalDimensions();
+  const configuredProviders = getConfiguredProviders();
+  const [selectedModelIndex, setSelectedModelIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  const listHeight = Math.min(12, Math.floor(height * 0.4));
+  const currentModel = getCurrentModel();
+
+  // Reset when opened
+  useEffect(() => {
+    if (isActive) {
+      setSelectedModelIndex(0);
+      setScrollOffset(0);
+    }
+  }, [isActive]);
+
+  // Build flat list of providers + models
+  const { flatItems, modelCount } = useMemo(() => {
+    const items: FlatItem[] = [];
+    let mIdx = 0;
+    for (const provider of configuredProviders) {
+      items.push({ type: "header", provider });
+      const models = getProviderModels(provider);
+      for (const model of models) {
+        items.push({
+          type: "model",
+          provider,
+          modelId: model.id,
+          modelName: model.name || model.id,
+          modelIndex: mIdx,
+        });
+        mIdx++;
+      }
+    }
+    return { flatItems: items, modelCount: mIdx };
+  }, [configuredProviders]);
+
+  // Clamp selected index
+  useEffect(() => {
+    if (selectedModelIndex >= modelCount && modelCount > 0) {
+      setSelectedModelIndex(modelCount - 1);
+    }
+  }, [modelCount, selectedModelIndex]);
+
+  // Auto-scroll selected into view
+  useEffect(() => {
+    const selectedFlatIndex = flatItems.findIndex(
+      (i) => i.type === "model" && i.modelIndex === selectedModelIndex
+    );
+    if (selectedFlatIndex === -1) return;
+    if (selectedFlatIndex < scrollOffset) {
+      setScrollOffset(selectedFlatIndex);
+    } else if (selectedFlatIndex >= scrollOffset + listHeight) {
+      setScrollOffset(selectedFlatIndex - listHeight + 1);
+    }
+  }, [selectedModelIndex, flatItems, listHeight, scrollOffset]);
+
+  useKeyboard((key) => {
+    if (!isActive) return;
+    if (key.name === "escape") {
+      onClose();
+      return;
+    }
+    if (key.name === "up") {
+      setSelectedModelIndex((prev) => Math.max(0, prev - 1));
+      return;
+    }
+    if (key.name === "down") {
+      setSelectedModelIndex((prev) => Math.max(0, Math.min(modelCount - 1, prev + 1)));
+      return;
+    }
+    if (key.name === "return") {
+      const selectedItem = flatItems.find(
+        (i) => i.type === "model" && i.modelIndex === selectedModelIndex
+      );
+      if (selectedItem?.provider && selectedItem.modelId) {
+        const ref = { provider: selectedItem.provider, modelId: selectedItem.modelId };
+        setCurrentModel(ref);
+        onSelect?.(ref);
+        onClose();
+      }
+      return;
+    }
+  });
+
+  if (!isActive) return null;
+
+  const visibleItems = flatItems.slice(scrollOffset, scrollOffset + listHeight);
+
+  const isCurrent = (provider?: string, modelId?: string) =>
+    currentModel?.provider === provider && currentModel?.modelId === modelId;
+
+  return (
+    <box
+      position="absolute"
+      top={0}
+      left={0}
+      width="100%"
+      height="100%"
+      backgroundColor="#00000080"
+      alignItems="center"
+      justifyContent="center"
+    >
+      <box
+        width={60}
+        flexDirection="column"
+        borderStyle="rounded"
+        borderColor="#4a4a5a"
+        backgroundColor="#1a1a2e"
+        paddingX={2}
+        paddingY={1}
+      >
+        <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">
+          Select Model
+        </text>
+
+        <box height={listHeight} flexDirection="column" overflow="hidden" marginTop={1}>
+          {configuredProviders.length === 0 && (
+            <box height={1}>
+              <text fg="#6c6c7c">
+                No providers configured. Use /connect to add one.
+              </text>
+            </box>
+          )}
+          {visibleItems.map((item, idx) => {
+            const flatIndex = scrollOffset + idx;
+            if (item.type === "header") {
+              return (
+                <box key={`h-${item.provider}-${flatIndex}`} height={1} marginTop={1}>
+                  <text
+                    fg="#ff79c6"
+                    attributes={createTextAttributes({ bold: true })}
+                  >
+                    {item.provider}
+                  </text>
+                </box>
+              );
+            }
+            const isSelected = item.modelIndex === selectedModelIndex;
+            const current = isCurrent(item.provider, item.modelId);
+            return (
+              <box
+                key={`m-${item.modelId}-${flatIndex}`}
+                height={1}
+                backgroundColor={isSelected ? "#44475a" : undefined}
+                paddingLeft={2}
+                flexDirection="row"
+                onMouseUp={(e: MouseEvent) => {
+                  e.stopPropagation();
+                  if (item.provider && item.modelId) {
+                    const ref = { provider: item.provider, modelId: item.modelId };
+                    setCurrentModel(ref);
+                    onSelect?.(ref);
+                    onClose();
+                  }
+                }}
+              >
+                <text fg={isSelected ? "#ff79c6" : "#f8f8f2"}>
+                  {current ? "● " : "  "}
+                  {item.modelName}
+                </text>
+              </box>
+            );
+          })}
+        </box>
+
+        <box marginTop={1}>
+          <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+            ↑↓ Navigate  Enter Select  Esc Cancel
+          </text>
+        </box>
+      </box>
+    </box>
+  );
+}

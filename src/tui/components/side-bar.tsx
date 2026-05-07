@@ -8,11 +8,11 @@ import React from "react";
 import { createTextAttributes } from "@opentui/core";
 
 const KOI_LOGO = [
-  "██   ██   ███████    ███████",
-  "██  ██   ██     ██     ███  ",
-  "████     ██     ██     ███  ",
-  "██  ██   ██     ██     ███  ",
-  "██   ██   ███████    ███████",
+  "██   ██   ███████   ████████",
+  "██  ██   ██     ██    ███   ",
+  "████     ██     ██    ███   ",
+  "██  ██   ██     ██    ███   ",
+  "██   ██   ███████   ████████",
 ];
 
 const VERSION = "v0.1.0";
@@ -47,7 +47,7 @@ function abbreviatePath(path: string, maxLen: number = 24): string {
   }
 
   // Even the last segment is too long — truncate it
-  const last = parts[parts.length - 1];
+  const last = parts[parts.length - 1]!;
   const abbreviatedLast =
     last.length > maxLen - 4 ? last.slice(0, maxLen - 4) + "…" : last;
   return prefix ? `${prefix}/…/${abbreviatedLast}` : `/…/${abbreviatedLast}`;
@@ -85,10 +85,10 @@ export function SideBar({
   width = 28,
   workingDir = "/",
   sessionTitle = "New Session",
-  modelName = "MiniMax-M2.7-highspeed",
-  provider = "via MiniMax China",
+  modelName = "Not configured",
+  provider = "Use /model to select",
   contextUsage = "0%",
-  tokenCount = "(61)",
+  tokenCount = "(0)",
   cost = "$0.00",
 }: SideBarProps) {
   return (
