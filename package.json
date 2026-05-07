@@ -21,5 +21,8 @@
     "@mariozechner/pi-coding-agent": "0.73.0",
     "@mariozechner/pi-tui": "0.73.0",
     "commander": "^14.0.3"
+  },
+  "patchedDependencies": {
+    "@mariozechner/pi-tui@0.73.0": "patches/@mariozechner%2Fpi-tui@0.73.0.patch"
   }
 }
