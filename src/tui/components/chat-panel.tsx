@@ -232,11 +232,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                       <>
                         {msg.thinkingCollapsed ? (
                           <text fg="#6c6c7c">
-                            {margin}▼ Thinking... (ctrl+o to expand)
+                            {margin}▶ Thinking... (ctrl+o to expand)
                           </text>
                         ) : (
                           <>
-                            <text fg="#6c6c7c">{margin}▶ Thinking:</text>
+                            <text fg="#6c6c7c">{margin}▼ Thinking:</text>
                             {wrapText(
                               msg.thinking,
                               contentWidth - 2,
@@ -248,7 +248,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                             ))}
                           </>
                         )}
-                        <text />
+                        {msg.content.length > 0 && <text />}
                       </>
                     )}
                     {msg.content.length > 0 && (
@@ -279,6 +279,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               case "tool_call": {
                 const margin = "  ";
                 const summary = summarizeToolCall(msg.toolName, msg.args);
+                const statusColor = msg.isError
+                  ? "#ff5555"
+                  : msg.result === undefined
+                    ? "#f1fa8c"
+                    : "#50fa7b";
                 return (
                   <box
                     key={msg.id}
@@ -287,15 +292,21 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                     marginTop={marginTop}
                   >
                     {msg.collapsed ? (
-                      <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
-                        {margin}▼ {summary}
-                        {msg.isError ? " [error]" : ""} (ctrl+o to expand)
-                      </text>
+                      <box flexDirection="row">
+                        <text fg={statusColor}>{margin}• </text>
+                        <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
+                          {summary}
+                          {msg.isError ? " [error]" : ""} (ctrl+o to expand)
+                        </text>
+                      </box>
                     ) : (
                       <>
-                        <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
-                          {margin}▶ {msg.toolName}
-                        </text>
+                        <box flexDirection="row">
+                          <text fg={statusColor}>{margin}• </text>
+                          <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
+                            {msg.toolName}
+                          </text>
+                        </box>
                         {wrapText(
                           JSON.stringify(msg.args, null, 2),
                           contentWidth,
@@ -305,7 +316,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                             {margin}  {line}
                           </text>
                         ))}
-                        {msg.result !== undefined && (
+                        {msg.result !== undefined ? (
                           <>
                             <text fg="#6c6c7c">{margin}  ──</text>
                             {wrapText(
@@ -321,6 +332,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                               </text>
                             ))}
                           </>
+                        ) : (
+                          <text fg="#f1fa8c">{margin}  Executing...</text>
                         )}
                       </>
                     )}

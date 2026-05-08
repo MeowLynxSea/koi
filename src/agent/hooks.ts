@@ -115,7 +115,7 @@ function handleEvent(
       streamingMsgIdRef.current = msgId;
       setMessages((prev) => [
         ...prev.filter((m) => m.type !== "status"),
-        { id: msgId, type: "agent", content: "" },
+        { id: msgId, type: "agent", content: "", thinkingCollapsed: true },
       ]);
       break;
     }
