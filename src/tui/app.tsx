@@ -108,9 +108,11 @@ export function App({ onExit }: AppProps) {
         content: ({ resolve }) => {
           permissionResolveRef.current = resolve;
           const contentWidth = Math.min(70, Math.max(20, width - 8));
-          const toolLines = wrapText(`Tool: ${request.toolName}`, contentWidth, 0);
-          const argsLines = wrapText(formatPermissionArgs(request.toolName, request.args), contentWidth, 0);
-          const reasonLines = wrapText(`Reason: ${request.reason}`, contentWidth, 0);
+          // Account for paddingX={2} and border (1 each side) = 6 total
+          const textWidth = Math.max(1, contentWidth - 6);
+          const toolLines = wrapText(`Tool: ${request.toolName}`, textWidth, 0);
+          const argsLines = wrapText(formatPermissionArgs(request.toolName, request.args), textWidth, 0);
+          const reasonLines = wrapText(`Reason: ${request.reason}`, textWidth, 0);
           return (
             <box
               flexDirection="column"
@@ -120,26 +122,32 @@ export function App({ onExit }: AppProps) {
               backgroundColor="#1a1a2e"
               paddingX={2}
               paddingY={1}
+              width={contentWidth}
               maxHeight={Math.max(10, height - 6)}
             >
-              <text alignSelf="center" attributes={createTextAttributes({ bold: true })} fg="#fbbf24">
+              <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#fbbf24">
                 Permission Request
               </text>
               <box flexDirection="column" gap={1}>
-                {toolLines.map((line, i) => (
-                  <text key={`t-${i}`} fg="#00f5ff">{line}</text>
-                ))}
-                {argsLines.map((line, i) => (
-                  <text key={`a-${i}`} fg="#a5b4fc">{line}</text>
-                ))}
-                {reasonLines.map((line, i) => (
-                  <text key={`r-${i}`} fg="#ff79c6">{line}</text>
-                ))}
+                <box flexDirection="column">
+                  {toolLines.map((line, i) => (
+                    <text key={`t-${i}`} wrapMode="none" fg="#00f5ff">{line}</text>
+                  ))}
+                </box>
+                <box flexDirection="column">
+                  {argsLines.map((line, i) => (
+                    <text key={`a-${i}`} wrapMode="none" fg="#a5b4fc">{line}</text>
+                  ))}
+                </box>
+                <box flexDirection="column">
+                  {reasonLines.map((line, i) => (
+                    <text key={`r-${i}`} wrapMode="none" fg="#ff79c6">{line}</text>
+                  ))}
+                </box>
               </box>
               <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
                 <box
                   paddingX={2}
-                  paddingY={1}
                   backgroundColor="#2dd4bf"
                   onMouseUp={() => resolve(true)}
                 >
@@ -147,7 +155,6 @@ export function App({ onExit }: AppProps) {
                 </box>
                 <box
                   paddingX={2}
-                  paddingY={1}
                   backgroundColor="#f43f5e"
                   onMouseUp={() => resolve(false)}
                 >
