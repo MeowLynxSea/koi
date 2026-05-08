@@ -19,6 +19,7 @@ interface SessionModalProps {
   onSelect: (sessionFile: string) => void;
   onNewSession: () => void;
   onDelete?: (sessionId: string) => void;
+  keyboardDisabled?: boolean;
 }
 
 function formatRelativeTime(date: Date): string {
@@ -43,6 +44,7 @@ export function SessionModal({
   onSelect,
   onNewSession,
   onDelete,
+  keyboardDisabled,
 }: SessionModalProps) {
   const { width, height } = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -65,6 +67,15 @@ export function SessionModal({
     return Math.max(0, Math.min(selectedIndex, sessions.length - 1));
   }, [selectedIndex, sessions.length]);
 
+  // Keep selected index valid when sessions change
+  useEffect(() => {
+    if (sessions.length === 0) {
+      setSelectedIndex(0);
+    } else {
+      setSelectedIndex((prev) => Math.min(prev, sessions.length - 1));
+    }
+  }, [sessions.length]);
+
   // Auto-scroll selected into view
   useEffect(() => {
     if (safeIndex === -1) return;
@@ -76,7 +87,7 @@ export function SessionModal({
   }, [safeIndex, listHeight, scrollOffset]);
 
   useKeyboard((key) => {
-    if (!isActive) return;
+    if (!isActive || keyboardDisabled) return;
 
     if (key.name === "escape") {
       onClose();
@@ -101,7 +112,7 @@ export function SessionModal({
       }
       return;
     }
-    if (key.name === "delete" || key.name === "backspace") {
+    if (key.name === "d") {
       const s = sessions[safeIndex];
       if (s && onDelete) {
         onDelete(s.id);
@@ -197,7 +208,7 @@ export function SessionModal({
         {/* Footer hints */}
         <box marginTop={1} flexDirection="row" justifyContent="space-between">
           <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-            ↑↓ Navigate  Enter Switch  n New
+            ↑↓ Navigate  Enter Switch  n New  d Delete
           </text>
           <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
             Esc Close

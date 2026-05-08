@@ -214,6 +214,17 @@ export function deleteKoiSessionData(sessionId: string): void {
   }
 }
 
+export async function deleteSession(meta: SessionMeta): Promise<void> {
+  try {
+    if (fs.existsSync(meta.filePath)) {
+      fs.unlinkSync(meta.filePath);
+    }
+  } catch {
+    // ignore
+  }
+  deleteKoiSessionData(meta.id);
+}
+
 /**
  * Build UIMessage array from AgentSession.messages as a fallback when
  * koi-state.json is missing. This is a best-effort reconstruction.

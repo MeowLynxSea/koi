@@ -20,9 +20,11 @@ import { RenameModal } from "./components/rename-modal.js";
 import { ConnectModal } from "./components/connect-modal.js";
 import { ModelModal } from "./components/model-modal.js";
 import { SessionModal } from "./components/session-modal.js";
+import { ConfirmModal } from "./components/confirm-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
 import { getSessionTitle, setSessionTitle, getCurrentModel, setCurrentModel, getAuxiliaryModel, setAuxiliaryModel, resolvePiModel } from "../config/settings.js";
 import { useKoiAgent } from "../agent/hooks.js";
+import type { SessionMeta } from "../agent/session-store.js";
 import { subscribePermissions, getPermissionQueue, resolvePermission } from "../agent/permission-ui.js";
 
 const SIDEBAR_WIDTH = 28;
@@ -41,6 +43,8 @@ export function App({ onExit }: AppProps) {
   const [showModelModal, setShowModelModal] = useState(false);
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showForkModal, setShowForkModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<SessionMeta | null>(null);
   const [currentModel, setCurrentModelState] = useState(getCurrentModel);
   const [auxiliaryModel, setAuxiliaryModelState] = useState(getAuxiliaryModel);
 
@@ -66,6 +70,7 @@ export function App({ onExit }: AppProps) {
     saveCurrentState,
     sessionTitle,
     setSessionTitle,
+    deleteSession,
   } = useKoiAgent();
 
   // Permission modal handling
@@ -192,7 +197,7 @@ export function App({ onExit }: AppProps) {
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const anyModalOpen =
-    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || showSessionModal || showForkModal || permissionModalOpen;
+    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm;
 
   const handleSubmit = useCallback(
     (text: string) => {
@@ -235,6 +240,25 @@ export function App({ onExit }: AppProps) {
     await forkSession(entryId);
     setShowForkModal(false);
   }, [forkSession]);
+
+  const handleDeleteRequest = useCallback((sessionId: string) => {
+    const meta = sessionList.find((s) => s.id === sessionId);
+    if (!meta) return;
+    setSessionToDelete(meta);
+    setShowDeleteConfirm(true);
+  }, [sessionList]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!sessionToDelete) return;
+    await deleteSession(sessionToDelete.id);
+    setShowDeleteConfirm(false);
+    setSessionToDelete(null);
+  }, [sessionToDelete, deleteSession]);
+
+  const handleCancelDelete = useCallback(() => {
+    setShowDeleteConfirm(false);
+    setSessionToDelete(null);
+  }, []);
 
   const commands = useMemo<CommandDef[]>(
     () => [
@@ -294,7 +318,7 @@ export function App({ onExit }: AppProps) {
 
   // Global keyboard shortcuts
   useKeyboard((key) => {
-    if (showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || showSessionModal || showForkModal) {
+    if (showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || showSessionModal || showForkModal || showDeleteConfirm) {
       return;
     }
 
@@ -474,12 +498,26 @@ export function App({ onExit }: AppProps) {
 
       <SessionModal
         isActive={showSessionModal}
+        keyboardDisabled={showDeleteConfirm}
         onClose={() => setShowSessionModal(false)}
         sessions={sessionList}
         currentSessionId={currentSessionId}
         onSelect={handleSwitchSession}
         onNewSession={handleNewSession}
+        onDelete={handleDeleteRequest}
       />
+
+      {showDeleteConfirm && sessionToDelete && (
+        <ConfirmModal
+          isActive={showDeleteConfirm}
+          title="Delete Session?"
+          message={`Are you sure you want to delete "${sessionToDelete.title}"?`}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          onConfirm={handleConfirmDelete}
+          onCancel={handleCancelDelete}
+        />
+      )}
 
       <ForkModal
         isActive={showForkModal}

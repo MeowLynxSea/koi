@@ -25,6 +25,7 @@ import {
   saveKoiState,
   loadKoiState,
   buildUIMessagesFromAgentSession,
+  deleteSession as deleteSessionStore,
   type SessionMeta,
   type KoiSessionState,
 } from "./session-store.js";
@@ -51,6 +52,7 @@ export interface KoiAgentState {
   refreshSessionList: () => Promise<void>;
   currentSessionId: string | null;
   saveCurrentState: () => void;
+  deleteSession: (sessionId: string) => Promise<void>;
 }
 
 function generateId(prefix: string): string {
@@ -678,6 +680,39 @@ export function useKoiAgent(): KoiAgentState {
     setSessionList(list);
   }, []);
 
+  const deleteSession = useCallback(async (sessionId: string) => {
+    const isCurrent = sessionId === currentSessionId;
+    const meta = sessionList.find((s) => s.id === sessionId);
+    if (!meta) return;
+
+    if (isCurrent && session) {
+      saveCurrentState();
+      await session.abort();
+      session.dispose();
+
+      await deleteSessionStore(meta);
+
+      try {
+        const result = await createNewSession(globalTaskManager);
+        setError(null);
+        setMessages([]);
+        streamingMsgIdRef.current = null;
+        pendingToolsRef.current.clear();
+        setSessionTitleState("New Session");
+        setSessionTitle("New Session");
+        currentModelRef.current = getCurrentModel();
+        auxiliaryModelRef.current = getAuxiliaryModel();
+        await setupSession(result);
+      } catch (err: any) {
+        setError(err?.message ?? String(err));
+        setIsReady(true);
+      }
+    } else {
+      await deleteSessionStore(meta);
+      setSessionList((prev) => prev.filter((s) => s.id !== sessionId));
+    }
+  }, [session, currentSessionId, sessionList, saveCurrentState, setupSession]);
+
   const prompt = useCallback(
     async (text: string) => {
       if (!session) return;
@@ -767,5 +802,6 @@ export function useKoiAgent(): KoiAgentState {
     saveCurrentState,
     sessionTitle,
     setSessionTitle: setSessionTitleWrapper,
+    deleteSession,
   };
 }
