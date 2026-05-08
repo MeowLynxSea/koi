@@ -213,7 +213,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           {messages.map((msg, msgIdx) => {
             const isLast = msgIdx === messages.length - 1;
             const msgStreaming = isStreaming && isLast;
-            const marginTop = msgIdx > 0 ? 1 : 0;
+            let marginTop = msgIdx > 0 ? 1 : 0;
+            if (msgIdx > 0) {
+              const prevMsg = messages[msgIdx - 1]!;
+              if (msg.type === "tool_call" && prevMsg.type === "tool_call") {
+                marginTop = 0;
+              }
+            }
 
             switch (msg.type) {
               case "user": {
@@ -282,7 +288,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                             {margin}  {line}
                           </text>
                         ))}
-                        {msg.content.length > 0 && <text />}
+                        {msg.content.trimEnd().length > 0 && <text />}
                       </>
                     )}
                     {msg.thinking && !thinkingInProgress && (
@@ -307,14 +313,14 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                             ))}
                           </>
                         )}
-                        {msg.content.length > 0 && <text />}
+                        {msg.content.trimEnd().length > 0 && <text />}
                       </>
                     )}
-                    {msg.content.length > 0 && (
+                    {msg.content.trimEnd().length > 0 && (
                       <box flexDirection="row" width={contentWidth}>
                         <text width={prefixWidth}>{prefix}</text>
                         <markdown
-                          content={msg.content}
+                          content={msg.content.trimEnd()}
                           syntaxStyle={syntaxStyle}
                           width={contentWidth - prefixWidth}
                           streaming={msgStreaming}

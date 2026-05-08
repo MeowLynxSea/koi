@@ -58,6 +58,34 @@ export function App({ onExit }: AppProps) {
 
   // Permission modal handling
   const processingPermissionRef = useRef(false);
+  const permissionResolveRef = useRef<((value: boolean) => void) | null>(null);
+  const [permissionModalOpen, setPermissionModalOpen] = useState(false);
+
+  const formatPermissionArgs = (toolName: string, args: unknown): string => {
+    if (!args || typeof args !== "object") return JSON.stringify(args);
+    const a = args as Record<string, unknown>;
+    switch (toolName) {
+      case "bash":
+        return `Command: ${String(a.command ?? "?")}`;
+      case "webfetch":
+        return `URL: ${String(a.url ?? "?")}`;
+      case "read":
+        return `Path: ${String(a.path ?? a.file ?? "?")}`;
+      case "write":
+        return `Path: ${String(a.path ?? a.file ?? "?")}`;
+      case "edit":
+        return `Path: ${String(a.path ?? a.file ?? "?")}`;
+      case "grep":
+        return `Pattern: ${String(a.pattern ?? "?")}`;
+      case "find":
+        return `Path: ${String(a.path ?? ".")}`;
+      case "ls":
+        return `Path: ${String(a.path ?? ".")}`;
+      default:
+        return JSON.stringify(args, null, 2);
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = subscribePermissions(async () => {
       if (processingPermissionRef.current) return;
@@ -70,6 +98,7 @@ export function App({ onExit }: AppProps) {
         return;
       }
       processingPermissionRef.current = true;
+      setPermissionModalOpen(true);
 
       const allowed = await dialog.confirm({
         backdropColor: "#000000",
@@ -77,8 +106,10 @@ export function App({ onExit }: AppProps) {
         closeOnEscape: true,
         unstyled: true,
         content: ({ resolve }) => {
-          const contentWidth = Math.min(50, Math.max(20, width - 8));
+          permissionResolveRef.current = resolve;
+          const contentWidth = Math.min(70, Math.max(20, width - 8));
           const toolLines = wrapText(`Tool: ${request.toolName}`, contentWidth, 0);
+          const argsLines = wrapText(formatPermissionArgs(request.toolName, request.args), contentWidth, 0);
           const reasonLines = wrapText(`Reason: ${request.reason}`, contentWidth, 0);
           return (
             <box
@@ -98,24 +129,29 @@ export function App({ onExit }: AppProps) {
                 {toolLines.map((line, i) => (
                   <text key={`t-${i}`} fg="#00f5ff">{line}</text>
                 ))}
+                {argsLines.map((line, i) => (
+                  <text key={`a-${i}`} fg="#a5b4fc">{line}</text>
+                ))}
                 {reasonLines.map((line, i) => (
                   <text key={`r-${i}`} fg="#ff79c6">{line}</text>
                 ))}
               </box>
               <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
                 <box
-                  paddingX={1}
+                  paddingX={2}
+                  paddingY={1}
                   backgroundColor="#2dd4bf"
                   onMouseUp={() => resolve(true)}
                 >
-                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Allow</text>
+                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Yes</text>
                 </box>
                 <box
-                  paddingX={1}
+                  paddingX={2}
+                  paddingY={1}
                   backgroundColor="#f43f5e"
                   onMouseUp={() => resolve(false)}
                 >
-                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Deny</text>
+                  <text fg="white" attributes={createTextAttributes({ bold: true })}>No!</text>
                 </box>
               </box>
             </box>
@@ -125,6 +161,8 @@ export function App({ onExit }: AppProps) {
 
       resolvePermission(request.id, !!allowed);
       processingPermissionRef.current = false;
+      setPermissionModalOpen(false);
+      permissionResolveRef.current = null;
     });
 
     return unsubscribe;
@@ -135,7 +173,7 @@ export function App({ onExit }: AppProps) {
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const anyModalOpen =
-    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || processingPermissionRef.current;
+    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || permissionModalOpen;
 
   const handleSubmit = useCallback(
     (text: string) => {
@@ -219,7 +257,19 @@ export function App({ onExit }: AppProps) {
 
   // Global keyboard shortcuts
   useKeyboard((key) => {
-    if (anyModalOpen) {
+    if (showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal) {
+      return;
+    }
+
+    if (permissionModalOpen && permissionResolveRef.current) {
+      if (key.name === "y" || key.name === "Y") {
+        permissionResolveRef.current(true);
+        return;
+      }
+      if (key.name === "n" || key.name === "N") {
+        permissionResolveRef.current(false);
+        return;
+      }
       return;
     }
 
