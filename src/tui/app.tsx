@@ -8,7 +8,7 @@
 
 import React, { useState, useCallback, useMemo, useRef } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { ChatPanel } from "./components/chat-panel.js";
+import { ChatPanel, type ChatPanelHandle } from "./components/chat-panel.js";
 import { InputBox } from "./components/input-box.js";
 import { InfoBar } from "./components/info-bar.js";
 import { SideBar } from "./components/side-bar.js";
@@ -51,6 +51,8 @@ export function App({ onExit }: AppProps) {
   } = useKoiAgent();
 
   const leftWidth = Math.max(1, width - SIDEBAR_WIDTH - 2);
+  const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1);
+  const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal;
@@ -169,6 +171,15 @@ export function App({ onExit }: AppProps) {
       }
       return;
     }
+
+    if (key.name === "pageup") {
+      chatPanelRef.current?.scrollUp?.();
+      return;
+    }
+    if (key.name === "pagedown") {
+      chatPanelRef.current?.scrollDown?.();
+      return;
+    }
   });
 
   const handleSlashEmpty = useCallback(() => {
@@ -203,7 +214,7 @@ export function App({ onExit }: AppProps) {
               <text fg="#ff5555">Error: {error}</text>
             </box>
           )}
-          <ChatPanel messages={messages} width={leftWidth} />
+          <ChatPanel ref={chatPanelRef} messages={messages} width={leftWidth} height={chatPanelHeight} />
           <InputBox
             value={inputText}
             onChange={setInputText}
