@@ -82,6 +82,12 @@ function wrapText(text: string, width: number, indent: number): string[] {
   return lines;
 }
 
+function padToWidth(text: string, width: number): string {
+  const w = stringWidth(text);
+  if (w >= width) return text;
+  return text + " ".repeat(Math.max(0, width - w));
+}
+
 function summarizeToolCall(toolName: string, args: any): string {
   try {
     switch (toolName) {
@@ -193,16 +199,19 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                     key={msg.id}
                     flexDirection="column"
                     width={contentWidth}
-                    bg="#333333"
                     marginTop={marginTop}
                   >
-                    {wrapped.map((line, j) => (
-                      <text key={j} bg="#333333">
-                        {j === 0
+                    {wrapped.map((line, j) => {
+                      const raw =
+                        j === 0
                           ? margin + prefix + line
-                          : margin + " ".repeat(prefixWidth) + line}
-                      </text>
-                    ))}
+                          : margin + " ".repeat(prefixWidth) + line;
+                      return (
+                        <text key={j} bg="#333333">
+                          {padToWidth(raw, contentWidth)}
+                        </text>
+                      );
+                    })}
                   </box>
                 );
               }
