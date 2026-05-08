@@ -187,7 +187,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
     useImperativeHandle(ref, () => ({
       scrollToBottom: () => {
         const sb = scrollboxRef.current;
-        if (sb) sb.scrollTo({ y: sb.scrollHeight });
+        if (sb) sb.scrollTo({ x: 0, y: sb.scrollHeight });
       },
       scrollUp: () => {
         scrollboxRef.current?.scrollBy(-3, "step");

@@ -6,8 +6,10 @@
  * Integrates with Pi AgentSession for LLM agent loop.
  */
 
-import React, { useState, useCallback, useMemo, useRef } from "react";
+import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { createTextAttributes } from "@opentui/core";
+import { useDialog } from "@opentui-ui/dialog/react";
 import { ChatPanel, type ChatPanelHandle } from "./components/chat-panel.js";
 import { InputBox } from "./components/input-box.js";
 import { InfoBar } from "./components/info-bar.js";
@@ -19,6 +21,7 @@ import { ConnectModal } from "./components/connect-modal.js";
 import { ModelModal } from "./components/model-modal.js";
 import { getSessionTitle, setSessionTitle, getCurrentModel, setCurrentModel, resolvePiModel } from "../config/settings.js";
 import { useKoiAgent } from "../agent/hooks.js";
+import { subscribePermissions, getPermissionQueue, resolvePermission } from "../agent/permission-ui.js";
 
 const SIDEBAR_WIDTH = 28;
 
@@ -37,6 +40,8 @@ export function App({ onExit }: AppProps) {
   const [sessionTitle, setSessionTitleState] = useState(getSessionTitle);
   const [currentModel, setCurrentModelState] = useState(getCurrentModel);
 
+  const dialog = useDialog();
+
   const {
     session,
     messages,
@@ -50,12 +55,62 @@ export function App({ onExit }: AppProps) {
     clearMessages,
   } = useKoiAgent();
 
+  // Permission modal handling
+  const processingPermissionRef = useRef(false);
+  useEffect(() => {
+    const unsubscribe = subscribePermissions(async () => {
+      if (processingPermissionRef.current) return;
+      const queue = getPermissionQueue();
+      if (queue.length === 0) return;
+
+      const request = queue[0];
+      if (!request) {
+        processingPermissionRef.current = false;
+        return;
+      }
+      processingPermissionRef.current = true;
+
+      const allowed = await dialog.confirm({
+        content: ({ resolve }) => (
+          <box flexDirection="column" alignItems="center" gap={1}>
+            <text attributes={createTextAttributes({ bold: true })} fg="#fbbf24">
+              Permission Request
+            </text>
+            <text>Tool: {request.toolName}</text>
+            <text>Reason: {request.reason}</text>
+            <box marginTop={1} flexDirection="row" gap={2}>
+              <box
+                paddingX={1}
+                backgroundColor="#2dd4bf"
+                onMouseUp={() => resolve(true)}
+              >
+                <text fg="white" attributes={createTextAttributes({ bold: true })}>Allow</text>
+              </box>
+              <box
+                paddingX={1}
+                backgroundColor="#f43f5e"
+                onMouseUp={() => resolve(false)}
+              >
+                <text fg="white" attributes={createTextAttributes({ bold: true })}>Deny</text>
+              </box>
+            </box>
+          </box>
+        ),
+      });
+
+      resolvePermission(request.id, !!allowed);
+      processingPermissionRef.current = false;
+    });
+
+    return unsubscribe;
+  }, [dialog]);
+
   const leftWidth = Math.max(1, width - SIDEBAR_WIDTH - 2);
   const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const anyModalOpen =
-    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal;
+    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || processingPermissionRef.current;
 
   const handleSubmit = useCallback(
     (text: string) => {

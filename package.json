@@ -17,14 +17,17 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@opentui/core": "latest",
-    "@opentui/react": "latest",
-    "@opentui-ui/dialog": "latest",
     "@mariozechner/pi-agent-core": "0.73.0",
     "@mariozechner/pi-ai": "0.73.0",
     "@mariozechner/pi-coding-agent": "0.73.0",
     "@mariozechner/pi-tui": "0.73.0",
+    "@opentui-ui/dialog": "latest",
+    "@opentui/core": "latest",
+    "@opentui/react": "latest",
+    "@types/diff": "^8.0.0",
     "commander": "^14.0.3",
+    "diff": "^9.0.0",
+    "fast-glob": "^3.3.3",
     "react": "^19.2.6"
   }
 }

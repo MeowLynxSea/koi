@@ -19,6 +19,7 @@ import {
   getPiSettingsManager,
   getCurrentPiModel,
 } from "../config/settings.js";
+import { createCodingToolDefinitions } from "../tools/index.js";
 
 const PI_AGENT_DIR = path.join(os.homedir(), ".config", "koi", "pi");
 
@@ -28,6 +29,8 @@ export async function createKoiSession(): Promise<CreateAgentSessionResult> {
   const settingsManager = getPiSettingsManager();
   const currentModel = getCurrentPiModel();
 
+  const customTools = createCodingToolDefinitions(process.cwd());
+
   const result = await createAgentSession({
     cwd: process.cwd(),
     agentDir: PI_AGENT_DIR,
@@ -35,6 +38,8 @@ export async function createKoiSession(): Promise<CreateAgentSessionResult> {
     modelRegistry,
     settingsManager,
     model: currentModel,
+    noTools: "builtin",
+    customTools,
   });
 
   return result;
