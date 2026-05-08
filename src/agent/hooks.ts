@@ -110,6 +110,7 @@ function handleEvent(
     }
 
     case "message_start": {
+      if (!isAssistantMessage(event.message)) break;
       const msgId = generateId("agent");
       streamingMsgIdRef.current = msgId;
       setMessages((prev) => [
@@ -120,6 +121,7 @@ function handleEvent(
     }
 
     case "message_update": {
+      if (!isAssistantMessage(event.message)) break;
       const msgId = streamingMsgIdRef.current;
       if (!msgId) return;
       const assistantMsg = event.message as AssistantMessage;
@@ -143,6 +145,7 @@ function handleEvent(
     }
 
     case "message_end": {
+      if (!isAssistantMessage(event.message)) break;
       const msgId = streamingMsgIdRef.current;
       if (msgId) {
         const assistantMsg = event.message as AssistantMessage;
