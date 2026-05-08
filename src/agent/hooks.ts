@@ -89,7 +89,9 @@ function handleEvent(
   setMessages: React.Dispatch<React.SetStateAction<UIMessage[]>>,
   setIsStreaming: React.Dispatch<React.SetStateAction<boolean>>,
   streamingMsgIdRef: React.MutableRefObject<string | null>,
-  pendingToolsRef: React.MutableRefObject<Map<string, string>>
+  pendingToolsRef: React.MutableRefObject<Map<string, string>>,
+  setSessionTitleState: React.Dispatch<React.SetStateAction<string>>,
+  setSessionTitle: (title: string) => void
 ) {
   switch (event.type) {
     case "agent_start": {
@@ -319,7 +321,13 @@ function handleEvent(
       break;
     }
 
-    case "session_info_changed":
+    case "session_info_changed": {
+      if (event.name) {
+        setSessionTitleState(event.name);
+        setSessionTitle(event.name);
+      }
+      break;
+    }
     case "thinking_level_changed":
     case "queue_update":
     case "turn_start":
@@ -404,7 +412,9 @@ export function useKoiAgent(): KoiAgentState {
           setMessages,
           setIsStreaming,
           streamingMsgIdRef,
-          pendingToolsRef
+          pendingToolsRef,
+          setSessionTitleState,
+          setSessionTitle
         );
       });
       return unsubscribe;

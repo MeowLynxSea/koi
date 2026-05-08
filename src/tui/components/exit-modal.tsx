@@ -1,8 +1,8 @@
 /**
  * Exit Confirmation Modal
  *
- * Displays a centered dialog asking the user to confirm exit.
- * Supports keyboard (Y/N/Esc) and native mouse click.
+ * Displays a centered dialog asking the user to confirm application exit.
+ * Supports keyboard (Y/Enter/N/Esc) and native mouse click.
  */
 
 import React, { useState } from "react";
@@ -51,7 +51,7 @@ function Button({
 
   return (
     <box
-      paddingX={1}
+      paddingX={2}
       backgroundColor={currentBg}
       onMouseUp={handleMouseUp}
       onMouseOver={handleMouseOver}
@@ -65,16 +65,14 @@ function Button({
 }
 
 export function ExitModal({ isActive, onConfirm, onCancel }: ExitModalProps) {
-  useKeyboard(
-    (key) => {
-      if (!isActive) return;
-      if (key.name === "y" || key.name === "y") {
-        onConfirm();
-      } else if (key.name === "n" || key.name === "escape") {
-        onCancel();
-      }
+  useKeyboard((key) => {
+    if (!isActive) return;
+    if (key.name === "y" || key.name === "return") {
+      onConfirm();
+    } else if (key.name === "n" || key.name === "escape") {
+      onCancel();
     }
-  );
+  });
 
   if (!isActive) return null;
 
@@ -91,34 +89,41 @@ export function ExitModal({ isActive, onConfirm, onCancel }: ExitModalProps) {
     >
       <box
         borderStyle="rounded"
-        borderColor="gray"
-        backgroundColor="black"
-        paddingX={2}
+        borderColor="#4a4a5a"
+        backgroundColor="#1a1a2e"
+        paddingX={3}
         paddingY={1}
         flexDirection="column"
         alignItems="center"
       >
-        <text attributes={createTextAttributes({ bold: true })} fg="#fb7185">
+        <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">
           Exit Koi?
         </text>
-        <text>Are you sure you want to exit?</text>
+        <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+          Are you sure you want to exit?
+        </text>
         <box marginTop={1} flexDirection="row" gap={2}>
           <Button
-            label=" Yes "
-            fgColor="white"
-            bgColor="#2dd4bf"
-            hoverBgColor="#5eead4"
-            isActive={isActive}
-            onClick={onConfirm}
-          />
-          <Button
-            label=" No! "
+            label="Exit"
             fgColor="white"
             bgColor="#f43f5e"
             hoverBgColor="#fb7185"
             isActive={isActive}
+            onClick={onConfirm}
+          />
+          <Button
+            label="Stay"
+            fgColor="white"
+            bgColor="#2dd4bf"
+            hoverBgColor="#5eead4"
+            isActive={isActive}
             onClick={onCancel}
           />
+        </box>
+        <box marginTop={1}>
+          <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+            Y/Enter Confirm  N/Esc Cancel
+          </text>
         </box>
       </box>
     </box>

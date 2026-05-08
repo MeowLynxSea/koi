@@ -1,7 +1,8 @@
 /**
  * Side Bar Component
  *
- * Right sidebar: Logo, session title, working directory, model info.
+ * Right sidebar: Logo, session title, working directory, model info,
+ * context usage, cost estimate, and task list.
  */
 
 import React from "react";
@@ -53,6 +54,34 @@ function abbreviatePath(path: string, maxLen: number = 24): string {
   return prefix ? `${prefix}/…/${abbreviatedLast}` : `/…/${abbreviatedLast}`;
 }
 
+function truncateText(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, Math.max(0, maxLen - 1)) + "…";
+}
+
+function FixedWidthText({
+  text,
+  width,
+  fg,
+}: {
+  text: string;
+  width: number;
+  fg?: string;
+}) {
+  const display = text.length <= width ? text : text.slice(0, Math.max(0, width - 1)) + "…";
+  return (
+    <box width={width}>
+      <text fg={fg}>{display}</text>
+    </box>
+  );
+}
+
+const TASK_STATUS_COLORS: Record<string, string> = {
+  pending: "#fbbf24",
+  in_progress: "#00d9ff",
+  completed: "#00ff99",
+};
+
 function Divider({
   width,
   char = "▒",
@@ -70,6 +99,12 @@ function Divider({
   );
 }
 
+interface TaskItem {
+  id: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
 interface SideBarProps {
   width?: number;
   workingDir?: string;
@@ -79,7 +114,7 @@ interface SideBarProps {
   contextUsage?: string;
   tokenCount?: string;
   cost?: string;
-
+  tasks?: TaskItem[];
 }
 
 export function SideBar({
@@ -91,11 +126,17 @@ export function SideBar({
   contextUsage = "0%",
   tokenCount = "(0)",
   cost = "$0.00",
+  tasks = [],
 }: SideBarProps) {
+  const usableWidth = Math.max(1, width - 1);
+
+  const visibleTasks = tasks.slice(0, 12);
+  const hasMoreTasks = tasks.length > visibleTasks.length;
+
   return (
     <box width={width} flexDirection="column" paddingLeft={1}>
       {/* Row 0: Meowdream™ (left) + version (right) */}
-      <box width={width - 1} flexDirection="row" justifyContent="space-between">
+      <box width={usableWidth} flexDirection="row" justifyContent="space-between">
         <text attributes={createTextAttributes({ bold: true })} fg="#00f5ff">Meowdream™</text>
         <text fg="#00ff99">{VERSION}</text>
       </box>
@@ -104,22 +145,22 @@ export function SideBar({
       <text> </text>
 
       {/* Divider above logo */}
-      <Divider width={width - 1} />
-      <Divider width={width - 1} char="░" fg="#334455" />
+      <Divider width={usableWidth} />
+      <Divider width={usableWidth} char="░" fg="#334455" />
 
       {/* Rows 1-5: KOI ASCII logo with gradient */}
       {KOI_LOGO.map((line, i) => {
         const color = GRADIENT_STOPS[Math.min(i, GRADIENT_STOPS.length - 1)];
         return (
           <text key={i} fg={color} wrapMode="none" truncate={true}>
-            {line.slice(0, width - 1)}
+            {line.slice(0, usableWidth)}
           </text>
         );
       })}
 
       {/* Divider below logo */}
-      <Divider width={width - 1} char="░" fg="#334455" />
-      <Divider width={width - 1} />
+      <Divider width={usableWidth} char="░" fg="#334455" />
+      <Divider width={usableWidth} />
 
       {/* Spacer */}
       <text> </text>
@@ -131,7 +172,7 @@ export function SideBar({
       <text> </text>
 
       {/* Working directory */}
-      <text fg="#0096c7">{abbreviatePath(workingDir, width - 1)}</text>
+      <text fg="#0096c7">{abbreviatePath(workingDir, usableWidth)}</text>
 
       {/* Empty row */}
       <text> </text>
@@ -142,8 +183,36 @@ export function SideBar({
       {/* Provider */}
       <text fg="#0096c7">{provider}</text>
 
-      {/* Context usage */}
+      {/* Context usage + cost */}
       <text fg="#0096c7">{`${contextUsage} ${tokenCount} ${cost}`}</text>
+
+      {/* Tasks section */}
+      {visibleTasks.length > 0 && (
+        <>
+          <text> </text>
+          <text attributes={createTextAttributes({ bold: true })} fg="#00d9ff">
+            Tasks ({tasks.length})
+          </text>
+          {visibleTasks.map((task) => {
+            const color = TASK_STATUS_COLORS[task.status] ?? "#fbbf24";
+            return (
+              <box key={task.id} flexDirection="row" gap={1}>
+                <text fg={color}>●</text>
+                <FixedWidthText
+                  text={task.content}
+                  width={Math.max(1, usableWidth - 4)}
+                  fg="#a5b4fc"
+                />
+              </box>
+            );
+          })}
+          {hasMoreTasks && (
+            <text fg="#445566">
+              {`… and ${tasks.length - visibleTasks.length} more`}
+            </text>
+          )}
+        </>
+      )}
     </box>
   );
 }

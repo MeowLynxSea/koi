@@ -25,6 +25,7 @@ import { ForkModal } from "./components/fork-modal.js";
 import { getSessionTitle, setSessionTitle, getCurrentModel, setCurrentModel, getAuxiliaryModel, setAuxiliaryModel, resolvePiModel } from "../config/settings.js";
 import { useKoiAgent } from "../agent/hooks.js";
 import type { SessionMeta } from "../agent/session-store.js";
+import { globalTaskManager, type Task } from "../agent/session-tasks.js";
 import { subscribePermissions, getPermissionQueue, resolvePermission } from "../agent/permission-ui.js";
 
 const SIDEBAR_WIDTH = 28;
@@ -47,6 +48,11 @@ export function App({ onExit }: AppProps) {
   const [sessionToDelete, setSessionToDelete] = useState<SessionMeta | null>(null);
   const [currentModel, setCurrentModelState] = useState(getCurrentModel);
   const [auxiliaryModel, setAuxiliaryModelState] = useState(getAuxiliaryModel);
+
+  const [sidebarContextUsage, setSidebarContextUsage] = useState("0%");
+  const [sidebarTokenCount, setSidebarTokenCount] = useState("(0)");
+  const [sidebarCost, setSidebarCost] = useState("$0.00");
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const dialog = useDialog();
 
@@ -72,6 +78,53 @@ export function App({ onExit }: AppProps) {
     setSessionTitle,
     deleteSession,
   } = useKoiAgent();
+
+  // Sidebar stats polling: context usage, token cost, tasks
+  useEffect(() => {
+    const update = () => {
+      if (!session) {
+        setSidebarContextUsage("0%");
+        setSidebarTokenCount("(0)");
+        setSidebarCost("$0.00");
+        setTasks([]);
+        return;
+      }
+
+      const usage = session.getContextUsage();
+      const stats = session.getSessionStats();
+      const model = session.model;
+
+      let costInput = 0,
+        costOutput = 0,
+        costCacheRead = 0,
+        costCacheWrite = 0;
+      if (model && stats) {
+        costInput = (stats.tokens.input * model.cost.input) / 1_000_000;
+        costOutput = (stats.tokens.output * model.cost.output) / 1_000_000;
+        costCacheRead = (stats.tokens.cacheRead * model.cost.cacheRead) / 1_000_000;
+        costCacheWrite = (stats.tokens.cacheWrite * model.cost.cacheWrite) / 1_000_000;
+      }
+      const totalCost = costInput + costOutput + costCacheRead + costCacheWrite;
+
+      const tokens = usage?.tokens ?? 0;
+      const tokenStr = tokens >= 1000
+        ? `(${(tokens / 1000).toFixed(1)}K)`
+        : tokens > 0
+        ? `(${tokens})`
+        : "(0)";
+      const percentStr = usage?.percent != null ? `${Math.round(usage.percent)}%` : "0%";
+      const costStr = totalCost > 0 ? `$${totalCost.toFixed(2)}` : "$0.00";
+
+      setSidebarContextUsage(percentStr);
+      setSidebarTokenCount(tokenStr);
+      setSidebarCost(costStr);
+      setTasks(globalTaskManager.listTasks());
+    };
+
+    update();
+    const interval = setInterval(update, 2000);
+    return () => clearInterval(interval);
+  }, [session]);
 
   // Permission modal handling
   const processingPermissionRef = useRef(false);
@@ -265,7 +318,7 @@ export function App({ onExit }: AppProps) {
       {
         id: "/new",
         label: "Start a new session",
-        section: "会话",
+        section: "Session",
         action: () => {
           handleNewSession();
         },
@@ -273,7 +326,7 @@ export function App({ onExit }: AppProps) {
       {
         id: "/fork",
         label: "Fork current session",
-        section: "会话",
+        section: "Session",
         action: () => {
           setShowForkModal(true);
         },
@@ -281,7 +334,7 @@ export function App({ onExit }: AppProps) {
       {
         id: "/sessions",
         label: "Browse sessions",
-        section: "会话",
+        section: "Session",
         action: () => {
           refreshSessionList().then(() => setShowSessionModal(true));
         },
@@ -289,7 +342,7 @@ export function App({ onExit }: AppProps) {
       {
         id: "/compact",
         label: "Compact current session",
-        section: "会话",
+        section: "Session",
         action: () => {
           session?.compact().catch(() => {});
         },
@@ -297,19 +350,19 @@ export function App({ onExit }: AppProps) {
       {
         id: "/rename",
         label: "Rename session",
-        section: "会话",
+        section: "Session",
         action: () => setShowRenameModal(true),
       },
       {
         id: "/connect",
         label: "Connect to a provider",
-        section: "设置",
+        section: "Model",
         action: () => setShowConnectModal(true),
       },
       {
         id: "/model",
         label: "Select a model",
-        section: "设置",
+        section: "Model",
         action: () => setShowModelModal(true),
       },
     ],
@@ -455,6 +508,10 @@ export function App({ onExit }: AppProps) {
             sessionTitle={sessionTitle}
             modelName={modelInfo.modelName}
             provider={modelInfo.provider}
+            contextUsage={sidebarContextUsage}
+            tokenCount={sidebarTokenCount}
+            cost={sidebarCost}
+            tasks={tasks}
           />
         </box>
       </box>
