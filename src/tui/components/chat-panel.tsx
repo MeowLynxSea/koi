@@ -138,7 +138,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       style.registerStyle("markup.link.label", { fg: "#8be9fd", underline: true });
       style.registerStyle("markup.link.url", { fg: "#8be9fd" });
       // Code (inline and blocks)
-      style.registerStyle("markup.raw", { fg: "#f8f8f2", bg: "#44475a" });
+      style.registerStyle("markup.raw", { fg: "#a5b4fc" });
       style.registerStyle("markup.raw.block", { fg: "#f8f8f2", bg: "#44475a" });
       // Lists
       style.registerStyle("markup.list", { fg: "#ff79c6" });
@@ -197,7 +197,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                     marginTop={marginTop}
                   >
                     {wrapped.map((line, j) => (
-                      <text key={j}>
+                      <text key={j} bg="#333333">
                         {j === 0
                           ? margin + prefix + line
                           : margin + " ".repeat(prefixWidth) + line}
@@ -250,7 +250,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                           width={contentWidth - prefixWidth}
                           streaming={msgStreaming}
                           conceal={true}
-                          tableOptions={{ borderColor: "#6272a4" }}
+                          tableOptions={{ borderColor: "#6272a4", style: "columns" }}
                         />
                       </box>
                     )}
