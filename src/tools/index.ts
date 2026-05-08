@@ -14,6 +14,12 @@ import { createBashToolDefinition } from "./bash.js";
 import { createEditToolDefinition } from "./edit.js";
 import { createWriteToolDefinition } from "./write.js";
 import { createWebFetchToolDefinition } from "./webfetch.js";
+import {
+  createTaskCreateToolDefinition,
+  createTaskGetToolDefinition,
+  createTaskListToolDefinition,
+  createTaskUpdateToolDefinition,
+} from "./task.js";
 
 export function createCodingToolDefinitions(cwd: string): ToolDefinition<any, any, any>[] {
   return [
@@ -25,6 +31,10 @@ export function createCodingToolDefinitions(cwd: string): ToolDefinition<any, an
     createEditToolDefinition(cwd),
     createWriteToolDefinition(cwd),
     createWebFetchToolDefinition(cwd),
+    createTaskCreateToolDefinition(cwd),
+    createTaskGetToolDefinition(cwd),
+    createTaskListToolDefinition(cwd),
+    createTaskUpdateToolDefinition(cwd),
   ];
 }
 

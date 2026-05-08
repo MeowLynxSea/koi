@@ -20,6 +20,10 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
   edit: { name: "edit", isReadOnly: false, isDestructive: false, riskLevel: "medium" },
   write: { name: "write", isReadOnly: false, isDestructive: true, riskLevel: "medium" },
   webfetch: { name: "webfetch", isReadOnly: true, isDestructive: false, riskLevel: "low" },
+  taskCreate: { name: "taskCreate", isReadOnly: false, isDestructive: false, riskLevel: "low" },
+  taskGet: { name: "taskGet", isReadOnly: true, isDestructive: false, riskLevel: "low" },
+  taskList: { name: "taskList", isReadOnly: true, isDestructive: false, riskLevel: "low" },
+  taskUpdate: { name: "taskUpdate", isReadOnly: false, isDestructive: false, riskLevel: "low" },
 };
 
 export type KoiToolName = keyof typeof TOOL_METADATA;

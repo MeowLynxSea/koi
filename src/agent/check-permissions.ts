@@ -110,6 +110,11 @@ export function checkPermission(
 ): PermissionCheckResult {
   const argStr = stringifyArgs(toolName, args);
 
+  // Task management tools are in-memory only — no permission needed
+  if (toolName === "taskCreate" || toolName === "taskGet" || toolName === "taskList" || toolName === "taskUpdate") {
+    return { decision: "allow" };
+  }
+
   // 1. Blocked paths (device files)
   if (toolName === "read" || toolName === "bash" || toolName === "edit" || toolName === "write") {
     const path = (args as Record<string, unknown>)?.path ?? (args as Record<string, unknown>)?.file_path;
