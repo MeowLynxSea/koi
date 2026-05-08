@@ -7,8 +7,10 @@
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { App } from "./tui/app.js";
+import { loadSettings } from "./config/settings.js";
 
 export async function main(): Promise<void> {
+  loadSettings();
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
   createRoot(renderer).render(
     <App

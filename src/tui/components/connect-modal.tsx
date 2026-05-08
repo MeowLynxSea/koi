@@ -15,6 +15,7 @@ import {
   removeProvider,
   isProviderConfigured,
   getProviderConfig,
+  validateProviderCredential,
   type ProviderConfig,
 } from "../../config/settings.js";
 import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
@@ -82,26 +83,52 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
     return () => clearInterval(interval);
   }, [isActive, step]);
 
-  // Simulate verification
+  // Real verification
   useEffect(() => {
     if (!isActive || step !== "verify") return;
-    const timer = setTimeout(() => {
-      const success = authInput.trim().length > 0;
-      const config: ProviderConfig = {
-        provider: selectedProvider!,
-        authMethod: getOAuthProvider(selectedProvider!) ? "oauth" : "apikey",
-        credential: authInput.trim(),
-      };
-      setVerifyResult({
-        success,
-        message: success ? `Connected to ${selectedProvider}!` : `Failed to connect to ${selectedProvider}.`,
-      });
-      if (success && selectedProvider) {
-        configureProvider(config);
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const result = await validateProviderCredential(
+          selectedProvider!,
+          authInput.trim()
+        );
+        if (cancelled) return;
+
+        const config: ProviderConfig = {
+          provider: selectedProvider!,
+          authMethod: getOAuthProvider(selectedProvider!) ? "oauth" : "apikey",
+          credential: authInput.trim(),
+        };
+
+        setVerifyResult({
+          success: result.valid,
+          message: result.valid
+            ? `Connected to ${selectedProvider}!`
+            : `Failed to connect to ${selectedProvider}: ${result.error}`,
+        });
+
+        if (result.valid && selectedProvider) {
+          configureProvider(config);
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        setVerifyResult({
+          success: false,
+          message: `Failed to connect to ${selectedProvider}: ${err?.message ?? String(err)}`,
+        });
+      } finally {
+        if (!cancelled) {
+          setStep("result");
+        }
       }
-      setStep("result");
-    }, 1500);
-    return () => clearTimeout(timer);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isActive, step, authInput, selectedProvider]);
 
   // Auto-scroll provider list
