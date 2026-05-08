@@ -19,6 +19,7 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
   bash: { name: "bash", isReadOnly: false, isDestructive: true, riskLevel: "high" },
   edit: { name: "edit", isReadOnly: false, isDestructive: false, riskLevel: "medium" },
   write: { name: "write", isReadOnly: false, isDestructive: true, riskLevel: "medium" },
+  webfetch: { name: "webfetch", isReadOnly: true, isDestructive: false, riskLevel: "low" },
 };
 
 export type KoiToolName = keyof typeof TOOL_METADATA;

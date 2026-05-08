@@ -13,6 +13,7 @@ import { createLsToolDefinition } from "./ls.js";
 import { createBashToolDefinition } from "./bash.js";
 import { createEditToolDefinition } from "./edit.js";
 import { createWriteToolDefinition } from "./write.js";
+import { createWebFetchToolDefinition } from "./webfetch.js";
 
 export function createCodingToolDefinitions(cwd: string): ToolDefinition<any, any, any>[] {
   return [
@@ -23,6 +24,7 @@ export function createCodingToolDefinitions(cwd: string): ToolDefinition<any, an
     createBashToolDefinition(cwd),
     createEditToolDefinition(cwd),
     createWriteToolDefinition(cwd),
+    createWebFetchToolDefinition(cwd),
   ];
 }
 
@@ -32,6 +34,7 @@ export function createReadOnlyToolDefinitions(cwd: string): ToolDefinition<any, 
     createGrepToolDefinition(cwd),
     createGlobToolDefinition(cwd),
     createLsToolDefinition(cwd),
+    createWebFetchToolDefinition(cwd),
   ];
 }
 

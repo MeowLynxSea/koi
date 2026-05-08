@@ -3,6 +3,9 @@
  *
  * Shows configured providers as section headers with their models as
  * selectable items. Uses Pi SDK model registry.
+ *
+ * Supports Primary / Auxiliary model selection via tab switcher
+ * in the top-right corner. Press Tab to toggle between modes.
  */
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -12,7 +15,9 @@ import type { MouseEvent } from "@opentui/core";
 import {
   getConfiguredProviders,
   getCurrentModel,
+  getAuxiliaryModel,
   setCurrentModel,
+  setAuxiliaryModel,
   getProviderModels,
   type ModelRef,
 } from "../../config/settings.js";
@@ -20,7 +25,8 @@ import {
 interface ModelModalProps {
   isActive: boolean;
   onClose: () => void;
-  onSelect?: (model: ModelRef) => void;
+  onSelectPrimary?: (model: ModelRef) => void;
+  onSelectAuxiliary?: (model: ModelRef) => void;
 }
 
 interface FlatItem {
@@ -31,20 +37,28 @@ interface FlatItem {
   modelIndex?: number;
 }
 
-export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
+export function ModelModal({
+  isActive,
+  onClose,
+  onSelectPrimary,
+  onSelectAuxiliary,
+}: ModelModalProps) {
   const { height } = useTerminalDimensions();
   const configuredProviders = getConfiguredProviders();
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [activeTab, setActiveTab] = useState<"primary" | "auxiliary">("primary");
 
   const listHeight = Math.min(12, Math.floor(height * 0.4));
-  const currentModel = getCurrentModel();
+  const primaryModel = getCurrentModel();
+  const auxiliaryModel = getAuxiliaryModel();
 
   // Reset when opened
   useEffect(() => {
     if (isActive) {
       setSelectedModelIndex(0);
       setScrollOffset(0);
+      setActiveTab("primary");
     }
   }, [isActive]);
 
@@ -91,6 +105,12 @@ export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
 
   useKeyboard((key) => {
     if (!isActive) return;
+
+    if (key.name === "tab" || key.name === "TAB") {
+      setActiveTab((prev) => (prev === "primary" ? "auxiliary" : "primary"));
+      return;
+    }
+
     if (key.name === "escape") {
       onClose();
       return;
@@ -100,7 +120,9 @@ export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
       return;
     }
     if (key.name === "down") {
-      setSelectedModelIndex((prev) => Math.max(0, Math.min(modelCount - 1, prev + 1)));
+      setSelectedModelIndex((prev) =>
+        Math.max(0, Math.min(modelCount - 1, prev + 1))
+      );
       return;
     }
     if (key.name === "return") {
@@ -108,9 +130,17 @@ export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
         (i) => i.type === "model" && i.modelIndex === selectedModelIndex
       );
       if (selectedItem?.provider && selectedItem.modelId) {
-        const ref = { provider: selectedItem.provider, modelId: selectedItem.modelId };
-        setCurrentModel(ref);
-        onSelect?.(ref);
+        const ref = {
+          provider: selectedItem.provider,
+          modelId: selectedItem.modelId,
+        };
+        if (activeTab === "primary") {
+          setCurrentModel(ref);
+          onSelectPrimary?.(ref);
+        } else {
+          setAuxiliaryModel(ref);
+          onSelectAuxiliary?.(ref);
+        }
         onClose();
       }
       return;
@@ -121,8 +151,29 @@ export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
 
   const visibleItems = flatItems.slice(scrollOffset, scrollOffset + listHeight);
 
-  const isCurrent = (provider?: string, modelId?: string) =>
-    currentModel?.provider === provider && currentModel?.modelId === modelId;
+  const isCurrent = (provider?: string, modelId?: string) => {
+    const target = activeTab === "primary" ? primaryModel : auxiliaryModel;
+    return target?.provider === provider && target?.modelId === modelId;
+  };
+
+  const handleMouseSelect = (
+    e: MouseEvent,
+    provider?: string,
+    modelId?: string
+  ) => {
+    e.stopPropagation();
+    if (provider && modelId) {
+      const ref = { provider, modelId };
+      if (activeTab === "primary") {
+        setCurrentModel(ref);
+        onSelectPrimary?.(ref);
+      } else {
+        setAuxiliaryModel(ref);
+        onSelectAuxiliary?.(ref);
+      }
+      onClose();
+    }
+  };
 
   return (
     <box
@@ -144,11 +195,56 @@ export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
         paddingX={2}
         paddingY={1}
       >
-        <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">
-          Select Model
-        </text>
+        {/* Header row with tabs */}
+        <box flexDirection="row" justifyContent="space-between">
+          <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">
+            Select Model
+          </text>
 
-        <box height={listHeight} flexDirection="column" overflow="hidden" marginTop={1}>
+          <box flexDirection="row" gap={1}>
+            <box
+              paddingX={1}
+              backgroundColor={
+                activeTab === "primary" ? "#44475a" : undefined
+              }
+              onMouseUp={(e: MouseEvent) => {
+                e.stopPropagation();
+                setActiveTab("primary");
+              }}
+            >
+              <text
+                fg={activeTab === "primary" ? "#ff79c6" : "#6c6c7c"}
+                attributes={createTextAttributes({ bold: activeTab === "primary" })}
+              >
+                Primary
+              </text>
+            </box>
+            <box
+              paddingX={1}
+              backgroundColor={
+                activeTab === "auxiliary" ? "#44475a" : undefined
+              }
+              onMouseUp={(e: MouseEvent) => {
+                e.stopPropagation();
+                setActiveTab("auxiliary");
+              }}
+            >
+              <text
+                fg={activeTab === "auxiliary" ? "#ff79c6" : "#6c6c7c"}
+                attributes={createTextAttributes({ bold: activeTab === "auxiliary" })}
+              >
+                Auxiliary
+              </text>
+            </box>
+          </box>
+        </box>
+
+        <box
+          height={listHeight}
+          flexDirection="column"
+          overflow="hidden"
+          marginTop={1}
+        >
           {configuredProviders.length === 0 && (
             <box height={1}>
               <text fg="#6c6c7c">
@@ -160,7 +256,11 @@ export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
             const flatIndex = scrollOffset + idx;
             if (item.type === "header") {
               return (
-                <box key={`h-${item.provider}-${flatIndex}`} height={1} marginTop={1}>
+                <box
+                  key={`h-${item.provider}-${flatIndex}`}
+                  height={1}
+                  marginTop={1}
+                >
                   <text
                     fg="#ff79c6"
                     attributes={createTextAttributes({ bold: true })}
@@ -179,15 +279,9 @@ export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
                 backgroundColor={isSelected ? "#44475a" : undefined}
                 paddingLeft={2}
                 flexDirection="row"
-                onMouseUp={(e: MouseEvent) => {
-                  e.stopPropagation();
-                  if (item.provider && item.modelId) {
-                    const ref = { provider: item.provider, modelId: item.modelId };
-                    setCurrentModel(ref);
-                    onSelect?.(ref);
-                    onClose();
-                  }
-                }}
+                onMouseUp={(e: MouseEvent) =>
+                  handleMouseSelect(e, item.provider, item.modelId)
+                }
               >
                 <text fg={isSelected ? "#ff79c6" : "#f8f8f2"}>
                   {current ? "● " : "  "}
@@ -198,9 +292,12 @@ export function ModelModal({ isActive, onClose, onSelect }: ModelModalProps) {
           })}
         </box>
 
-        <box marginTop={1}>
+        <box marginTop={1} flexDirection="row" justifyContent="space-between">
           <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
             ↑↓ Navigate  Enter Select  Esc Cancel
+          </text>
+          <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+            Tab Switch
           </text>
         </box>
       </box>

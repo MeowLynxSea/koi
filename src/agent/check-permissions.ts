@@ -157,6 +157,26 @@ export function checkPermission(
     }
   }
 
+  // 5. WebFetch: dangerous hosts → deny, non-preapproved → ask
+  if (toolName === "webfetch") {
+    const url = (args as Record<string, unknown>)?.url;
+    if (typeof url === "string") {
+      const { isPreapprovedDomain, isDangerousHost } = require("../tools/webfetch-domains.js");
+      try {
+        const parsed = new URL(url);
+        const hostname = parsed.hostname.toLowerCase();
+        if (isDangerousHost(hostname)) {
+          return { decision: "deny", reason: `Access to local/IP/internal host blocked: ${hostname}` };
+        }
+        if (!isPreapprovedDomain(url)) {
+          return { decision: "ask", reason: `Fetching from non-preapproved domain: ${hostname}. Confirm to proceed.` };
+        }
+      } catch {
+        return { decision: "deny", reason: "Invalid URL format" };
+      }
+    }
+  }
+
   // Default: read-only allow, write ask if destructive
   const meta =
     toolName === "bash" || toolName === "edit" || toolName === "write"

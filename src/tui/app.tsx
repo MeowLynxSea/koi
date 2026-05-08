@@ -19,7 +19,7 @@ import { CommandPanel, type CommandDef } from "./components/command-panel.js";
 import { RenameModal } from "./components/rename-modal.js";
 import { ConnectModal } from "./components/connect-modal.js";
 import { ModelModal } from "./components/model-modal.js";
-import { getSessionTitle, setSessionTitle, getCurrentModel, setCurrentModel, resolvePiModel } from "../config/settings.js";
+import { getSessionTitle, setSessionTitle, getCurrentModel, setCurrentModel, getAuxiliaryModel, setAuxiliaryModel, resolvePiModel } from "../config/settings.js";
 import { useKoiAgent } from "../agent/hooks.js";
 import { subscribePermissions, getPermissionQueue, resolvePermission } from "../agent/permission-ui.js";
 
@@ -39,6 +39,7 @@ export function App({ onExit }: AppProps) {
   const [showModelModal, setShowModelModal] = useState(false);
   const [sessionTitle, setSessionTitleState] = useState(getSessionTitle);
   const [currentModel, setCurrentModelState] = useState(getCurrentModel);
+  const [auxiliaryModel, setAuxiliaryModelState] = useState(getAuxiliaryModel);
 
   const dialog = useDialog();
 
@@ -242,7 +243,7 @@ export function App({ onExit }: AppProps) {
     setInputText("");
   }, []);
 
-  const handleSelectModel = useCallback(
+  const handleSelectPrimary = useCallback(
     (model: { provider: string; modelId: string }) => {
       setCurrentModelState(model);
       setCurrentModel(model);
@@ -256,6 +257,15 @@ export function App({ onExit }: AppProps) {
       }
     },
     [session]
+  );
+
+  const handleSelectAuxiliary = useCallback(
+    (model: { provider: string; modelId: string }) => {
+      setAuxiliaryModelState(model);
+      setAuxiliaryModel(model);
+      setShowModelModal(false);
+    },
+    []
   );
 
   return (
@@ -332,7 +342,8 @@ export function App({ onExit }: AppProps) {
       <ModelModal
         isActive={showModelModal}
         onClose={() => setShowModelModal(false)}
-        onSelect={handleSelectModel}
+        onSelectPrimary={handleSelectPrimary}
+        onSelectAuxiliary={handleSelectAuxiliary}
       />
     </box>
   );

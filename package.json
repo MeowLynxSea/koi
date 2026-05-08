@@ -14,6 +14,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
+    "@types/turndown": "^5.0.6",
     "typescript": "^5"
   },
   "dependencies": {
@@ -25,9 +26,11 @@
     "@opentui/core": "latest",
     "@opentui/react": "latest",
     "@types/diff": "^8.0.0",
+    "axios": "^1.16.0",
     "commander": "^14.0.3",
     "diff": "^9.0.0",
     "fast-glob": "^3.3.3",
-    "react": "^19.2.6"
+    "react": "^19.2.6",
+    "turndown": "^7.2.4"
   }
 }

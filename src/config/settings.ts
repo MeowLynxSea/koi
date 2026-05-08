@@ -44,6 +44,7 @@ interface SettingsFile {
   sessionTitle: string;
   providers: Record<string, ProviderConfig>;
   currentModel: ModelRef | null;
+  auxiliaryModel?: ModelRef | null;
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
@@ -53,6 +54,7 @@ const PI_AGENT_DIR = path.join(CONFIG_DIR, "pi");
 let sessionTitle = "New Session";
 let providerConfigs = new Map<string, ProviderConfig>();
 let currentModel: ModelRef | null = null;
+let auxiliaryModel: ModelRef | null = null;
 
 // Pi infrastructure (lazy-initialized)
 let piAuthStorage: AuthStorage | null = null;
@@ -154,6 +156,7 @@ export function saveSettings(): void {
       sessionTitle,
       providers: Object.fromEntries(providerConfigs),
       currentModel,
+      auxiliaryModel,
     };
     const json = JSON.stringify(data, null, 2);
     fs.writeFileSync(SETTINGS_PATH, json + "\n", { mode: 0o600 });
@@ -181,6 +184,9 @@ export function loadSettings(): void {
     }
     if (data.currentModel) {
       currentModel = data.currentModel;
+    }
+    if (data.auxiliaryModel) {
+      auxiliaryModel = data.auxiliaryModel;
     }
     syncCredentialsToPi();
   } catch {
@@ -246,6 +252,15 @@ export function getCurrentModel(): ModelRef | null {
 
 export function setCurrentModel(ref: ModelRef | null): void {
   currentModel = ref;
+  saveSettings();
+}
+
+export function getAuxiliaryModel(): ModelRef | null {
+  return auxiliaryModel;
+}
+
+export function setAuxiliaryModel(ref: ModelRef | null): void {
+  auxiliaryModel = ref;
   saveSettings();
 }
 
