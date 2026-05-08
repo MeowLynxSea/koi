@@ -55,7 +55,7 @@ export interface ChatPanelHandle {
   scrollDown: () => void;
 }
 
-function wrapText(text: string, width: number, indent: number): string[] {
+export function wrapText(text: string, width: number, indent: number): string[] {
   const available = Math.max(1, width - indent);
   const lines: string[] = [];
   let current = "";

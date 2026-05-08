@@ -10,7 +10,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import { useDialog } from "@opentui-ui/dialog/react";
-import { ChatPanel, type ChatPanelHandle } from "./components/chat-panel.js";
+import { ChatPanel, type ChatPanelHandle, wrapText } from "./components/chat-panel.js";
 import { InputBox } from "./components/input-box.js";
 import { InfoBar } from "./components/info-bar.js";
 import { SideBar } from "./components/side-bar.js";
@@ -72,31 +72,55 @@ export function App({ onExit }: AppProps) {
       processingPermissionRef.current = true;
 
       const allowed = await dialog.confirm({
-        content: ({ resolve }) => (
-          <box flexDirection="column" alignItems="center" gap={1}>
-            <text attributes={createTextAttributes({ bold: true })} fg="#fbbf24">
-              Permission Request
-            </text>
-            <text>Tool: {request.toolName}</text>
-            <text>Reason: {request.reason}</text>
-            <box marginTop={1} flexDirection="row" gap={2}>
-              <box
-                paddingX={1}
-                backgroundColor="#2dd4bf"
-                onMouseUp={() => resolve(true)}
-              >
-                <text fg="white" attributes={createTextAttributes({ bold: true })}>Allow</text>
+        backdropColor: "#000000",
+        backdropOpacity: "50%",
+        closeOnEscape: true,
+        unstyled: true,
+        content: ({ resolve }) => {
+          const contentWidth = Math.min(50, Math.max(20, width - 8));
+          const toolLines = wrapText(`Tool: ${request.toolName}`, contentWidth, 0);
+          const reasonLines = wrapText(`Reason: ${request.reason}`, contentWidth, 0);
+          return (
+            <box
+              flexDirection="column"
+              alignSelf="center"
+              borderStyle="rounded"
+              borderColor="#4a4a5a"
+              backgroundColor="#1a1a2e"
+              paddingX={2}
+              paddingY={1}
+              maxHeight={Math.max(10, height - 6)}
+            >
+              <text alignSelf="center" attributes={createTextAttributes({ bold: true })} fg="#fbbf24">
+                Permission Request
+              </text>
+              <box flexDirection="column" gap={1}>
+                {toolLines.map((line, i) => (
+                  <text key={`t-${i}`} fg="#00f5ff">{line}</text>
+                ))}
+                {reasonLines.map((line, i) => (
+                  <text key={`r-${i}`} fg="#ff79c6">{line}</text>
+                ))}
               </box>
-              <box
-                paddingX={1}
-                backgroundColor="#f43f5e"
-                onMouseUp={() => resolve(false)}
-              >
-                <text fg="white" attributes={createTextAttributes({ bold: true })}>Deny</text>
+              <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
+                <box
+                  paddingX={1}
+                  backgroundColor="#2dd4bf"
+                  onMouseUp={() => resolve(true)}
+                >
+                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Allow</text>
+                </box>
+                <box
+                  paddingX={1}
+                  backgroundColor="#f43f5e"
+                  onMouseUp={() => resolve(false)}
+                >
+                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Deny</text>
+                </box>
               </box>
             </box>
-          </box>
-        ),
+          );
+        },
       });
 
       resolvePermission(request.id, !!allowed);
