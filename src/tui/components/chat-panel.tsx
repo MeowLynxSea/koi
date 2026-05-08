@@ -4,7 +4,7 @@
  * Renders the scrollable message history using OpenTUI native components.
  */
 
-import React, { useMemo, useImperativeHandle, forwardRef, useRef } from "react";
+import React, { useMemo, useImperativeHandle, forwardRef, useRef, useState, useEffect } from "react";
 import stringWidth from "string-width";
 import { SyntaxStyle, type ScrollBoxRenderable } from "@opentui/core";
 
@@ -16,6 +16,9 @@ export type UIMessage =
       content: string;
       thinking?: string;
       thinkingCollapsed?: boolean;
+      thinkingStartTime?: number;
+      thinkingEndTime?: number;
+      thinkingTokens?: number;
     }
   | { id: string; type: "status"; content: string }
   | {
@@ -123,11 +126,35 @@ function formatResult(result: any, isError?: boolean): string {
   }
 }
 
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function formatDuration(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${s}s`;
+}
+
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
   function ChatPanel({ messages, width = 80, height, isStreaming }, ref) {
     const scrollboxRef = useRef<ScrollBoxRenderable>(null);
     const panelHeight = Math.max(1, height ?? 10);
     const contentWidth = Math.max(1, (width ?? 80) - 2);
+    const [spinnerFrame, setSpinnerFrame] = useState(0);
+
+    useEffect(() => {
+      const hasThinkingInProgress = messages.some(
+        (m) =>
+          m.type === "agent" &&
+          m.thinking &&
+          m.thinkingStartTime &&
+          !m.thinkingEndTime
+      );
+      if (!hasThinkingInProgress) return;
+      const interval = setInterval(() => {
+        setSpinnerFrame((f) => (f + 1) % SPINNER.length);
+      }, 80);
+      return () => clearInterval(interval);
+    }, [messages]);
+
     const syntaxStyle = useMemo(() => {
       const style = SyntaxStyle.create();
       // Heading levels (tree-sitter markdown captures)
@@ -221,6 +248,14 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                 const margin = "  ";
                 const prefix = "⏺ ";
                 const prefixWidth = stringWidth(prefix);
+                const thinkingInProgress =
+                  msg.thinking &&
+                  msg.thinkingStartTime &&
+                  !msg.thinkingEndTime;
+                const thinkingElapsed = thinkingInProgress
+                  ? Date.now() - (msg.thinkingStartTime ?? 0)
+                  : (msg.thinkingEndTime ?? 0) - (msg.thinkingStartTime ?? 0);
+                const thinkingDuration = formatDuration(thinkingElapsed);
                 return (
                   <box
                     key={msg.id}
@@ -228,15 +263,39 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                     width={contentWidth}
                     marginTop={marginTop}
                   >
-                    {msg.thinking && (
+                    {msg.thinking && thinkingInProgress && (
                       <>
-                        {msg.thinkingCollapsed ? (
+                        <box flexDirection="row">
+                          <text fg="#00f5ff">
+                            {margin}{SPINNER[spinnerFrame]}
+                          </text>
+                          <text fg="#6c6c7c" marginLeft={1}>
+                            Thinking... {thinkingDuration}
+                          </text>
+                        </box>
+                        {wrapText(
+                          msg.thinking,
+                          contentWidth - 2,
+                          2
+                        ).map((line, j) => (
+                          <text key={`think-${j}`} fg="#6c6c7c">
+                            {margin}  {line}
+                          </text>
+                        ))}
+                        {msg.content.length > 0 && <text />}
+                      </>
+                    )}
+                    {msg.thinking && !thinkingInProgress && (
+                      <>
+                        {(msg.thinkingCollapsed ?? true) ? (
                           <text fg="#6c6c7c">
-                            {margin}▶ Thinking... (ctrl+o to expand)
+                            {margin}▶ Thought for {thinkingDuration}
                           </text>
                         ) : (
                           <>
-                            <text fg="#6c6c7c">{margin}▼ Thinking:</text>
+                            <text fg="#6c6c7c">
+                              {margin}▼ Thought for {thinkingDuration}
+                            </text>
                             {wrapText(
                               msg.thinking,
                               contentWidth - 2,

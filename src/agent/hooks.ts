@@ -92,10 +92,16 @@ function handleEvent(
               if (text.length === 0 && thinking.length === 0) {
                 next.splice(idx, 1);
               } else {
+                const prevMsg = next[idx] as UIMessage & { type: "agent" };
                 next[idx] = {
-                  ...(next[idx] as UIMessage & { type: "agent" }),
+                  ...prevMsg,
                   content: text,
                   thinking: thinking.length > 0 ? thinking : undefined,
+                  thinkingEndTime:
+                    thinking.length > 0 && !prevMsg.thinkingEndTime
+                      ? Date.now()
+                      : prevMsg.thinkingEndTime,
+                  // tokens intentionally omitted — usage.output is global, not per-thinking
                 };
               }
             }
@@ -126,6 +132,7 @@ function handleEvent(
       if (!msgId) return;
       const assistantMsg = event.message as AssistantMessage;
       const { text, thinking } = extractTextAndThinking(assistantMsg);
+      const assistantEvent = (event as any).assistantMessageEvent;
 
       setMessages((prev) => {
         const next = [...prev];
@@ -133,10 +140,26 @@ function handleEvent(
           (m) => m.id === msgId && m.type === "agent"
         );
         if (idx >= 0) {
+          const prevMsg = next[idx] as UIMessage & { type: "agent" };
+          const thinkingStarted =
+            thinking.length > 0 && !prevMsg.thinkingStartTime;
+          const thinkingJustEnded =
+            prevMsg.thinkingStartTime &&
+            !prevMsg.thinkingEndTime &&
+            (assistantEvent?.type === "thinking_end" ||
+              assistantEvent?.type === "text_start" ||
+              assistantEvent?.type === "text_delta" ||
+              assistantEvent?.type === "toolcall_start" ||
+              assistantEvent?.type === "toolcall_delta");
           next[idx] = {
-            ...(next[idx] as UIMessage & { type: "agent" }),
+            ...prevMsg,
             content: text,
             thinking: thinking.length > 0 ? thinking : undefined,
+            thinkingStartTime: thinkingStarted
+              ? Date.now()
+              : prevMsg.thinkingStartTime,
+            thinkingEndTime: thinkingJustEnded ? Date.now() : prevMsg.thinkingEndTime,
+            // tokens intentionally omitted — usage.output is global, not per-thinking
           };
         }
         return next;
@@ -159,10 +182,15 @@ function handleEvent(
             if (text.length === 0 && thinking.length === 0) {
               next.splice(idx, 1);
             } else {
+              const prevMsg = next[idx] as UIMessage & { type: "agent" };
               next[idx] = {
-                ...(next[idx] as UIMessage & { type: "agent" }),
+                ...prevMsg,
                 content: text,
                 thinking: thinking.length > 0 ? thinking : undefined,
+                thinkingEndTime: thinking.length > 0 && !prevMsg.thinkingEndTime
+                  ? Date.now()
+                  : prevMsg.thinkingEndTime,
+                // tokens intentionally omitted — usage.output is global, not per-thinking
               };
             }
           }
