@@ -3,11 +3,12 @@
  *
  * Orchestrates the terminal UI using OpenTUI React: layout manager,
  * event routing, and the main render loop.
+ * Integrates with Pi AgentSession for LLM agent loop.
  */
 
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useRef } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { ChatPanel, type Message } from "./components/chat-panel.js";
+import { ChatPanel } from "./components/chat-panel.js";
 import { InputBox } from "./components/input-box.js";
 import { InfoBar } from "./components/info-bar.js";
 import { SideBar } from "./components/side-bar.js";
@@ -16,7 +17,8 @@ import { CommandPanel, type CommandDef } from "./components/command-panel.js";
 import { RenameModal } from "./components/rename-modal.js";
 import { ConnectModal } from "./components/connect-modal.js";
 import { ModelModal } from "./components/model-modal.js";
-import { getSessionTitle, setSessionTitle, getCurrentModel, getProviderModels } from "../config/settings.js";
+import { getSessionTitle, setSessionTitle, getCurrentModel, setCurrentModel, resolvePiModel } from "../config/settings.js";
+import { useKoiAgent } from "../agent/hooks.js";
 
 const SIDEBAR_WIDTH = 28;
 
@@ -26,7 +28,6 @@ interface AppProps {
 
 export function App({ onExit }: AppProps) {
   const { width, height } = useTerminalDimensions();
-  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
   const [showExitModal, setShowExitModal] = useState(false);
   const [showCommandPanel, setShowCommandPanel] = useState(false);
@@ -36,18 +37,32 @@ export function App({ onExit }: AppProps) {
   const [sessionTitle, setSessionTitleState] = useState(getSessionTitle);
   const [currentModel, setCurrentModelState] = useState(getCurrentModel);
 
+  const {
+    session,
+    messages,
+    isStreaming,
+    isReady,
+    error,
+    prompt,
+    abort,
+    expandAll,
+    collapseAll,
+    clearMessages,
+  } = useKoiAgent();
+
   const leftWidth = Math.max(1, width - SIDEBAR_WIDTH - 2);
 
-  const anyModalOpen = showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal;
+  const anyModalOpen =
+    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal;
 
   const handleSubmit = useCallback(
     (text: string) => {
-      if (text.trim()) {
-        setMessages((prev) => [...prev, { role: "user", content: text }]);
+      if (text.trim() && isReady && !isStreaming) {
+        prompt(text);
         setInputText("");
       }
     },
-    []
+    [isReady, isStreaming, prompt]
   );
 
   const handleRename = useCallback((newTitle: string) => {
@@ -61,10 +76,8 @@ export function App({ onExit }: AppProps) {
     if (!model) {
       return { modelName: "Not configured", provider: "Use /model to select" };
     }
-    const models = getProviderModels(model.provider);
-    const found = models.find((m) => m.id === model.modelId);
     return {
-      modelName: found?.name || model.modelId,
+      modelName: model.modelId,
       provider: `via ${model.provider}`,
     };
   }, [currentModel]);
@@ -76,20 +89,11 @@ export function App({ onExit }: AppProps) {
         label: "Start a new session",
         section: "会话",
         action: () => {
-          setMessages([]);
+          session?.agent.reset();
+          clearMessages();
+          setInputText("");
           setSessionTitle("New Session");
           setSessionTitleState("New Session");
-        },
-      },
-      {
-        id: "/compact",
-        label: "Compact current session",
-        section: "会话",
-        action: () => {
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content: "Session compacted." },
-          ]);
         },
       },
       {
@@ -97,10 +101,16 @@ export function App({ onExit }: AppProps) {
         label: "Fork current session",
         section: "会话",
         action: () => {
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content: "Session forked." },
-          ]);
+          // Session forking is managed by Pi SessionManager
+          // TODO: implement fork UI via session manager
+        },
+      },
+      {
+        id: "/compact",
+        label: "Compact current session",
+        section: "会话",
+        action: () => {
+          session?.compact().catch(() => {});
         },
       },
       {
@@ -122,21 +132,41 @@ export function App({ onExit }: AppProps) {
         action: () => setShowModelModal(true),
       },
     ],
-    []
+    [session, clearMessages]
   );
 
-  // Ctrl+C shows exit confirmation modal, Ctrl+P opens command panel
+  // Global keyboard shortcuts
   useKeyboard((key) => {
     if (anyModalOpen) {
-      // Let individual modals handle their own close shortcuts
       return;
     }
+
     if (key.ctrl && key.name === "c") {
-      setShowExitModal(true);
+      if (isStreaming) {
+        abort();
+      } else {
+        setShowExitModal(true);
+      }
       return;
     }
+
     if (key.ctrl && key.name === "p") {
       setShowCommandPanel(true);
+      return;
+    }
+
+    if (key.ctrl && key.name === "o") {
+      // Toggle all collapsible blocks: if any expanded, collapse all; else expand all
+      const hasExpanded = messages.some(
+        (m) =>
+          (m.type === "agent" && m.thinking && !m.thinkingCollapsed) ||
+          (m.type === "tool_call" && !m.collapsed)
+      );
+      if (hasExpanded) {
+        collapseAll();
+      } else {
+        expandAll();
+      }
       return;
     }
   });
@@ -146,19 +176,41 @@ export function App({ onExit }: AppProps) {
     setInputText("");
   }, []);
 
+  const handleSelectModel = useCallback(
+    (model: { provider: string; modelId: string }) => {
+      setCurrentModelState(model);
+      setCurrentModel(model);
+      setShowModelModal(false);
+      // Update AgentSession model if session is ready
+      if (session) {
+        const piModel = resolvePiModel(model);
+        if (piModel) {
+          session.setModel(piModel).catch(() => {});
+        }
+      }
+    },
+    [session]
+  );
+
   return (
     <box width={width} height={height} flexDirection="column">
       {/* Main content layer */}
       <box width={width} height={height} flexDirection="row">
         {/* Left column: chat + input + info bar */}
         <box width={leftWidth} flexDirection="column">
+          {error && (
+            <box height={1}>
+              <text fg="#ff5555">Error: {error}</text>
+            </box>
+          )}
           <ChatPanel messages={messages} width={leftWidth} />
           <InputBox
             value={inputText}
             onChange={setInputText}
             onSubmit={handleSubmit}
             onSlashEmpty={handleSlashEmpty}
-            focused={!anyModalOpen}
+            focused={!anyModalOpen && !isStreaming}
+            disabled={isStreaming || !isReady}
             width={leftWidth}
           />
           <InfoBar width={leftWidth} exitMode={showExitModal} />
@@ -214,7 +266,7 @@ export function App({ onExit }: AppProps) {
       <ModelModal
         isActive={showModelModal}
         onClose={() => setShowModelModal(false)}
-        onSelect={(model) => setCurrentModelState(model)}
+        onSelect={handleSelectModel}
       />
     </box>
   );

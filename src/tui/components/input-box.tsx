@@ -10,6 +10,7 @@ import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "
 import type { KeyEvent } from "@opentui/core";
 
 const MODE_PREFIX = "Agent > ";
+const BUSY_PREFIX = "Busy... ";
 
 interface InputBoxProps {
   value: string;
@@ -17,13 +18,23 @@ interface InputBoxProps {
   onSubmit: (value: string) => void;
   onSlashEmpty?: () => void;
   focused?: boolean;
+  disabled?: boolean;
   width?: number;
 }
 
-export function InputBox({ value, onChange, onSubmit, onSlashEmpty, focused = true, width }: InputBoxProps) {
+export function InputBox({
+  value,
+  onChange,
+  onSubmit,
+  onSlashEmpty,
+  focused = true,
+  disabled = false,
+  width,
+}: InputBoxProps) {
   const textareaRef = useRef<TextareaRenderable>(null);
 
   const handleContentChange = () => {
+    if (disabled) return;
     const text = textareaRef.current?.editBuffer.getText() ?? "";
     if (text !== value) {
       onChange(text);
@@ -31,6 +42,7 @@ export function InputBox({ value, onChange, onSubmit, onSlashEmpty, focused = tr
   };
 
   const handleSubmit = () => {
+    if (disabled) return;
     const text = textareaRef.current?.editBuffer.getText() ?? "";
     if (text.trim()) {
       onSubmit(text);
@@ -39,6 +51,7 @@ export function InputBox({ value, onChange, onSubmit, onSlashEmpty, focused = tr
   };
 
   const handleKeyDown = (event: KeyEvent) => {
+    if (disabled) return;
     if (event.name === "/" && value === "" && onSlashEmpty) {
       event.preventDefault();
       event.stopPropagation();
@@ -54,6 +67,9 @@ export function InputBox({ value, onChange, onSubmit, onSlashEmpty, focused = tr
     []
   );
 
+  const prefix = disabled ? BUSY_PREFIX : MODE_PREFIX;
+  const prefixColor = disabled ? "#6c6c7c" : "#ff79c6";
+
   return (
     <box
       width={width}
@@ -61,22 +77,22 @@ export function InputBox({ value, onChange, onSubmit, onSlashEmpty, focused = tr
       flexDirection="column"
       border={["top", "bottom"]}
       borderStyle="single"
-      borderColor="gray"
+      borderColor={disabled ? "#333333" : "gray"}
       paddingX={1}
       overflow="hidden"
     >
       <box flexDirection="row" height={3}>
         <box marginRight={1} flexShrink={0}>
-          <text fg="#ff79c6" attributes={createTextAttributes({ bold: true })}>
-            {MODE_PREFIX}
+          <text fg={prefixColor} attributes={createTextAttributes({ bold: true })}>
+            {prefix}
           </text>
         </box>
         <box flexGrow={1} height={3}>
           <textarea
             ref={textareaRef}
             initialValue={value}
-            focused={focused}
-            showCursor
+            focused={focused && !disabled}
+            showCursor={!disabled}
             height={3}
             onContentChange={handleContentChange}
             onSubmit={handleSubmit}

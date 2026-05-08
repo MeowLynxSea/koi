@@ -8,7 +8,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createTextAttributes } from "@opentui/core";
 
-const HINT_TEXT = "Ctrl+S Send  Ctrl+N New Session  Ctrl+P Command Panel  ↑↓ History  Esc Cancel";
+const HINT_TEXT =
+  "Enter Send  Shift+Enter Newline  Ctrl+P Command Panel  Ctrl+O Expand/Collapse  Ctrl+C Exit  Esc Cancel";
 const EXIT_TEXT = "Confirm exit in dialog";
 const SCROLL_INTERVAL_MS = 300;
 const MAX_HINT_WIDTH_RATIO = 0.6; // max 60% of width for hints
