@@ -214,7 +214,7 @@ export function App({ onExit }: AppProps) {
               <text fg="#ff5555">Error: {error}</text>
             </box>
           )}
-          <ChatPanel ref={chatPanelRef} messages={messages} width={leftWidth} height={chatPanelHeight} />
+          <ChatPanel ref={chatPanelRef} messages={messages} width={leftWidth} height={chatPanelHeight} isStreaming={isStreaming} />
           <InputBox
             value={inputText}
             onChange={setInputText}

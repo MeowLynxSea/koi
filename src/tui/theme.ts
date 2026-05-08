@@ -4,7 +4,6 @@
  * Color tokens, border styles, and semantic mappings.
  */
 
-import type { MarkdownTheme } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 
 // ─── Base Colors ───
@@ -44,25 +43,6 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const n = Number.parseInt(hex.slice(1), 16);
   return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
 }
-
-// ─── Markdown Theme ───
-
-export const markdownTheme: MarkdownTheme = {
-  heading: chalk.hex("#ff79c6").bold,
-  link: chalk.hex("#8be9fd").underline,
-  linkUrl: chalk.hex("#8be9fd"),
-  code: chalk.hex("#f8f8f2").bgHex("#44475a"),
-  codeBlock: chalk.hex("#f8f8f2"),
-  codeBlockBorder: chalk.hex("#6272a4"),
-  quote: chalk.hex("#f1fa8c"),
-  quoteBorder: chalk.hex("#6272a4"),
-  hr: chalk.hex("#6272a4"),
-  listBullet: chalk.hex("#ff79c6"),
-  bold: chalk.bold,
-  italic: chalk.italic,
-  strikethrough: chalk.strikethrough,
-  underline: chalk.underline,
-};
 
 // ─── Sidebar specific helpers ───
 
