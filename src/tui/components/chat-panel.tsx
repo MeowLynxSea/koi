@@ -182,6 +182,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
         scrollX={false}
       >
         <box flexDirection="column" width={contentWidth}>
+          <text />
           {messages.map((msg, msgIdx) => {
             const isLast = msgIdx === messages.length - 1;
             const msgStreaming = isStreaming && isLast;
@@ -355,6 +356,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               }
             }
           })}
+          <text />
         </box>
       </scrollbox>
     );
