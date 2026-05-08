@@ -89,9 +89,46 @@ function buildRgArgs(input: GrepToolInput): string[] {
   return args;
 }
 
-function execRipgrep(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+function buildGrepArgs(input: GrepToolInput): string[] {
+  const args: string[] = [];
+
+  args.push("-r", "-n");
+
+  // Exclude VCS dirs
+  for (const dir of VCS_DIRS) {
+    args.push("--exclude-dir", dir);
+  }
+
+  if (input["-i"]) {
+    args.push("-i");
+  }
+
+  const mode = input.output_mode ?? "content";
+  if (mode === "files_with_matches") {
+    args.push("-l");
+  } else if (mode === "count") {
+    args.push("-c");
+  }
+
+  if (mode === "content" && input.context !== undefined && input.context > 0) {
+    args.push("-C", String(input.context));
+  }
+
+  if (input.glob) {
+    args.push("--include", input.glob);
+  }
+
+  args.push("-e", input.pattern);
+
+  const searchPath = input.path ? resolve(input.path) : process.cwd();
+  args.push(searchPath);
+
+  return args;
+}
+
+function execSearch(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve, reject) => {
-    const child = spawn("rg", args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout?.on("data", (chunk) => { stdout += chunk; });
@@ -104,8 +141,22 @@ function execRipgrep(args: string[]): Promise<{ stdout: string; stderr: string; 
 }
 
 export async function executeGrep(params: GrepToolInput): Promise<{ content: TextContent[]; details: { matches: number; truncated: boolean } }> {
-  const args = buildRgArgs(params);
-  const { stdout, stderr, exitCode } = await execRipgrep(args);
+  let stdout: string;
+  let stderr: string;
+  let exitCode: number;
+
+  try {
+    const args = buildRgArgs(params);
+    ({ stdout, stderr, exitCode } = await execSearch("rg", args));
+  } catch (err: any) {
+    if (err.code === "ENOENT") {
+      // ripgrep not installed — fallback to system grep
+      const args = buildGrepArgs(params);
+      ({ stdout, stderr, exitCode } = await execSearch("grep", args));
+    } else {
+      throw err;
+    }
+  }
 
   if (exitCode !== 0 && exitCode !== 1) {
     // ripgrep exits 1 when no matches, >1 for errors
