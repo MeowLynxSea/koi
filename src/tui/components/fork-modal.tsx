@@ -116,10 +116,20 @@ function flattenTree(
 function treePrefix(depth: number, parentIsLast: boolean[], isLast: boolean): string {
   let prefix = "";
   for (let i = 0; i < depth; i++) {
-    prefix += parentIsLast[i] ? "  " : "│ ";
+    prefix += parentIsLast[i] ? " " : "│";
   }
   prefix += isLast ? "└ " : "├ ";
   return prefix;
+}
+
+function getVisiblePrefix(row: TreeRow, contentWidth: number): string {
+  const prefix = treePrefix(row.depth, row.parentIsLast, row.isLast);
+  if (prefix.length <= contentWidth) {
+    return prefix;
+  }
+  // Emergency fallback for impossibly deep trees: keep the rightmost part
+  // so local branch structure is still visible.
+  return "…" + prefix.slice(-(contentWidth - 2));
 }
 
 export function ForkModal({
@@ -135,6 +145,7 @@ export function ForkModal({
 
   const panelWidth = Math.min(80, Math.max(52, Math.floor(width * 0.8)));
   const listHeight = Math.min(16, Math.floor(height * 0.55));
+  const contentWidth = Math.max(1, panelWidth - 4);
 
   // Recompute tree rows every time the modal opens so new messages are visible
   useEffect(() => {
@@ -144,12 +155,28 @@ export function ForkModal({
     }
     try {
       const tree = session.sessionManager.getTree();
-      setRows(flattenTree(tree));
+      const newRows = flattenTree(tree);
+      setRows(newRows);
+
+      // Default to the last user message on the current active branch
+      const branch = session.sessionManager.getBranch();
+      const lastUserEntry = [...branch]
+        .reverse()
+        .find((e: any) => e.type === "message" && e.message?.role === "user");
+
+      const selectable = newRows.filter((r) => r.isUserMessage);
+      let defaultIndex = 0;
+      if (lastUserEntry) {
+        const idx = selectable.findIndex((r) => r.node.entry.id === lastUserEntry.id);
+        if (idx >= 0) defaultIndex = idx;
+      } else if (selectable.length > 0) {
+        defaultIndex = selectable.length - 1;
+      }
+      setSelectedIndex(defaultIndex);
     } catch {
       setRows([]);
+      setSelectedIndex(0);
     }
-    setSelectedIndex(0);
-    setScrollOffset(0);
   }, [isActive, session]);
 
   const selectableRows = useMemo(() => {
@@ -164,16 +191,17 @@ export function ForkModal({
 
   const selectedRow = safeIndex >= 0 ? selectableRows[safeIndex] : null;
 
-  // Auto-scroll selected into view
+  // Always keep the selected row near the 5th visible line (top-biased)
   useEffect(() => {
-    if (!selectedRow) return;
-    const flatIndex = selectedRow.index;
-    if (flatIndex < scrollOffset) {
-      setScrollOffset(flatIndex);
-    } else if (flatIndex >= scrollOffset + listHeight) {
-      setScrollOffset(flatIndex - listHeight + 1);
+    if (!selectedRow) {
+      setScrollOffset(0);
+      return;
     }
-  }, [selectedRow, listHeight, scrollOffset]);
+    const flatIndex = selectedRow.index;
+    const maxOffset = Math.max(0, rows.length - listHeight);
+    const targetOffset = Math.max(0, Math.min(flatIndex - 4, maxOffset));
+    setScrollOffset(targetOffset);
+  }, [selectedRow, listHeight, rows.length]);
 
   useKeyboard((key) => {
     if (!isActive) return;
@@ -245,8 +273,8 @@ export function ForkModal({
           )}
           {visibleRows.map((row) => {
             const isSelected = selectedRow?.index === row.index;
-            const prefix = treePrefix(row.depth, row.parentIsLast, row.isLast);
-            const availableWidth = Math.max(1, panelWidth - 4 - prefix.length);
+            const prefix = getVisiblePrefix(row, contentWidth);
+            const availableWidth = Math.max(1, contentWidth - prefix.length);
             const displayText =
               row.displayText.length > availableWidth
                 ? row.displayText.slice(0, availableWidth - 1) + "…"
@@ -272,8 +300,7 @@ export function ForkModal({
                 }}
               >
                 <text fg={fgColor} attributes={createTextAttributes({ dim: !row.isUserMessage })}>
-                  {prefix}
-                  {displayText}
+                  {prefix}{displayText}
                 </text>
               </box>
             );
