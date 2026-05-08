@@ -91,7 +91,8 @@ function handleEvent(
   streamingMsgIdRef: React.MutableRefObject<string | null>,
   pendingToolsRef: React.MutableRefObject<Map<string, string>>,
   setSessionTitleState: React.Dispatch<React.SetStateAction<string>>,
-  setSessionTitle: (title: string) => void
+  setSessionTitle: (title: string) => void,
+  allExpandedRef: React.MutableRefObject<boolean>
 ) {
   switch (event.type) {
     case "agent_start": {
@@ -237,7 +238,7 @@ function handleEvent(
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           args: event.args,
-          collapsed: true,
+          collapsed: !allExpandedRef.current,
         })
       );
       break;
@@ -367,6 +368,7 @@ export function useKoiAgent(): KoiAgentState {
   const sessionRef = useRef<AgentSession | null>(null);
   const messagesRef = useRef<UIMessage[]>([]);
   const currentSessionIdRef = useRef<string | null>(null);
+  const allExpandedRef = useRef<boolean>(false);
 
   // Debounced save of koi-state
   const scheduleSave = useCallback(
@@ -414,7 +416,8 @@ export function useKoiAgent(): KoiAgentState {
           streamingMsgIdRef,
           pendingToolsRef,
           setSessionTitleState,
-          setSessionTitle
+          setSessionTitle,
+          allExpandedRef
         );
       });
       return unsubscribe;
@@ -758,6 +761,7 @@ export function useKoiAgent(): KoiAgentState {
   }, []);
 
   const expandAll = useCallback(() => {
+    allExpandedRef.current = true;
     setMessages((prev) =>
       prev.map((m) => {
         if (m.type === "tool_call") {
@@ -772,6 +776,7 @@ export function useKoiAgent(): KoiAgentState {
   }, []);
 
   const collapseAll = useCallback(() => {
+    allExpandedRef.current = false;
     setMessages((prev) =>
       prev.map((m) => {
         if (m.type === "tool_call") {
