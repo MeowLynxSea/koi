@@ -20,6 +20,7 @@ import {
   getCurrentPiModel,
 } from "../config/settings.js";
 import { createCodingToolDefinitions } from "../tools/index.js";
+import { globalTaskManager } from "./session-tasks.js";
 
 const PI_AGENT_DIR = path.join(os.homedir(), ".config", "koi", "pi");
 
@@ -29,7 +30,7 @@ export async function createKoiSession(): Promise<CreateAgentSessionResult> {
   const settingsManager = getPiSettingsManager();
   const currentModel = getCurrentPiModel();
 
-  const customTools = createCodingToolDefinitions(process.cwd());
+  const customTools = createCodingToolDefinitions(process.cwd(), globalTaskManager);
 
   const result = await createAgentSession({
     cwd: process.cwd(),

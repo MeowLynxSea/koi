@@ -6,6 +6,7 @@
  */
 
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { SessionTaskManager } from "../agent/session-tasks.js";
 import { createReadToolDefinition } from "./read.js";
 import { createGrepToolDefinition } from "./grep.js";
 import { createGlobToolDefinition } from "./glob.js";
@@ -21,7 +22,10 @@ import {
   createTaskUpdateToolDefinition,
 } from "./task.js";
 
-export function createCodingToolDefinitions(cwd: string): ToolDefinition<any, any, any>[] {
+export function createCodingToolDefinitions(
+  cwd: string,
+  taskManager: SessionTaskManager
+): ToolDefinition<any, any, any>[] {
   return [
     createReadToolDefinition(cwd),
     createGrepToolDefinition(cwd),
@@ -31,10 +35,10 @@ export function createCodingToolDefinitions(cwd: string): ToolDefinition<any, an
     createEditToolDefinition(cwd),
     createWriteToolDefinition(cwd),
     createWebFetchToolDefinition(cwd),
-    createTaskCreateToolDefinition(cwd),
-    createTaskGetToolDefinition(cwd),
-    createTaskListToolDefinition(cwd),
-    createTaskUpdateToolDefinition(cwd),
+    createTaskCreateToolDefinition(cwd, taskManager),
+    createTaskGetToolDefinition(cwd, taskManager),
+    createTaskListToolDefinition(cwd, taskManager),
+    createTaskUpdateToolDefinition(cwd, taskManager),
   ];
 }
 

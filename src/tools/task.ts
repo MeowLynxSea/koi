@@ -1,5 +1,5 @@
 /**
- * Task Management Tools — Session-scoped in-memory task tracking
+ * Task Management Tools — Session-scoped task tracking with persistence
  *
  * Implements Claude Code's 4-tool task system:
  *   TaskCreate  → create a new task
@@ -7,59 +7,14 @@
  *   TaskList    → list all tasks (optionally filtered by status)
  *   TaskUpdate  → update task fields, status, and dependency relationships
  *
- * Design philosophy (matching Claude Code):
- * - Tasks live only in session memory — no persistence, no disk I/O
- * - Full-replacement updates are atomic
- * - Dependency graph support via blockedBy / blocks arrays
- * - Three-state lifecycle: pending → in_progress → completed
+ * Tasks are now isolated per session via SessionTaskManager and persisted
+ * to ~/.config/koi/sessions/<sessionId>/tasks.json.
  */
 
 import { Type } from "typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { TextContent } from "@mariozechner/pi-ai";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type TaskStatus = "pending" | "in_progress" | "completed";
-type TaskPriority = "high" | "medium" | "low";
-
-interface Task {
-  id: string;
-  content: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  blockedBy: string[];
-  blocks: string[];
-  createdAt: number;
-  updatedAt: number;
-}
-
-// ─── In-memory Store ─────────────────────────────────────────────────────────
-
-const tasks = new Map<string, Task>();
-let taskIdCounter = 0;
-
-function generateTaskId(): string {
-  return `task-${++taskIdCounter}`;
-}
-
-function serializeTask(task: Task): Record<string, unknown> {
-  return { ...task };
-}
-
-function formatTaskList(taskArray: Task[]): string {
-  if (taskArray.length === 0) return "No tasks found.";
-
-  const lines: string[] = [];
-  for (const t of taskArray) {
-    const depInfo: string[] = [];
-    if (t.blockedBy.length > 0) depInfo.push(`blockedBy:[${t.blockedBy.join(", ")}]`);
-    if (t.blocks.length > 0) depInfo.push(`blocks:[${t.blocks.join(", ")}]`);
-    const depStr = depInfo.length > 0 ? ` {${depInfo.join(", ")}}` : "";
-    lines.push(`- [${t.status}] ${t.id} (${t.priority}): ${t.content}${depStr}`);
-  }
-  return lines.join("\n");
-}
+import type { SessionTaskManager, Task } from "../agent/session-tasks.js";
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -151,39 +106,48 @@ export type TaskUpdateInput = {
   removeBlocks?: string[];
 };
 
-// ─── Execute Functions ───────────────────────────────────────────────────────
+// ─── Formatting ──────────────────────────────────────────────────────────────
+
+function formatTaskList(taskArray: Task[]): string {
+  if (taskArray.length === 0) return "No tasks found.";
+
+  const lines: string[] = [];
+  for (const t of taskArray) {
+    const depInfo: string[] = [];
+    if (t.blockedBy.length > 0) depInfo.push(`blockedBy:[${t.blockedBy.join(", ")}]`);
+    if (t.blocks.length > 0) depInfo.push(`blocks:[${t.blocks.join(", ")}]`);
+    const depStr = depInfo.length > 0 ? ` {${depInfo.join(", ")}}` : "";
+    lines.push(`- [${t.status}] ${t.id} (${t.priority}): ${t.content}${depStr}`);
+  }
+  return lines.join("\n");
+}
+
+// ─── Execute Functions (injected with SessionTaskManager) ────────────────────
 
 export async function executeTaskCreate(
+  taskManager: SessionTaskManager,
   _toolCallId: string,
   params: TaskCreateInput
 ): Promise<{ content: TextContent[]; details: { task: Task } }> {
-  const id = generateTaskId();
-  const now = Date.now();
-
-  const task: Task = {
-    id,
-    content: params.content,
-    status: "pending",
-    priority: params.priority ?? "medium",
-    blockedBy: params.blockedBy ? [...params.blockedBy] : [],
-    blocks: params.blocks ? [...params.blocks] : [],
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  tasks.set(id, task);
+  const task = taskManager.createTask(
+    params.content,
+    params.priority ?? "medium",
+    params.blockedBy,
+    params.blocks
+  );
 
   return {
-    content: [{ type: "text", text: `Created task ${id}: ${task.content}` }],
+    content: [{ type: "text", text: `Created task ${task.id}: ${task.content}` }],
     details: { task },
   };
 }
 
 export async function executeTaskGet(
+  taskManager: SessionTaskManager,
   _toolCallId: string,
   params: TaskGetInput
 ): Promise<{ content: TextContent[]; details: { task: Task | null } }> {
-  const task = tasks.get(params.taskId) ?? null;
+  const task = taskManager.getTask(params.taskId);
 
   if (!task) {
     return {
@@ -209,24 +173,11 @@ export async function executeTaskGet(
 }
 
 export async function executeTaskList(
+  taskManager: SessionTaskManager,
   _toolCallId: string,
   params: TaskListInput
 ): Promise<{ content: TextContent[]; details: { tasks: Task[]; count: number } }> {
-  let all = Array.from(tasks.values());
-
-  if (params.status) {
-    all = all.filter((t) => t.status === params.status);
-  }
-
-  // Sort: in_progress first, then pending, then completed; within same status, high priority first
-  const statusOrder = { in_progress: 0, pending: 1, completed: 2 };
-  const priorityOrder = { high: 0, medium: 1, low: 2 };
-  all.sort((a, b) => {
-    const s = statusOrder[a.status] - statusOrder[b.status];
-    if (s !== 0) return s;
-    return priorityOrder[a.priority] - priorityOrder[b.priority];
-  });
-
+  const all = taskManager.listTasks(params.status);
   const text = formatTaskList(all);
 
   return {
@@ -236,10 +187,19 @@ export async function executeTaskList(
 }
 
 export async function executeTaskUpdate(
+  taskManager: SessionTaskManager,
   _toolCallId: string,
   params: TaskUpdateInput
 ): Promise<{ content: TextContent[]; details: { task: Task | null } }> {
-  const task = tasks.get(params.taskId);
+  const task = taskManager.updateTask(params.taskId, {
+    content: params.content,
+    status: params.status,
+    priority: params.priority,
+    addBlockedBy: params.addBlockedBy,
+    removeBlockedBy: params.removeBlockedBy,
+    addBlocks: params.addBlocks,
+    removeBlocks: params.removeBlocks,
+  });
 
   if (!task) {
     return {
@@ -249,34 +209,6 @@ export async function executeTaskUpdate(
     } as any;
   }
 
-  if (params.content !== undefined) {
-    task.content = params.content;
-  }
-  if (params.status !== undefined) {
-    task.status = params.status;
-  }
-  if (params.priority !== undefined) {
-    task.priority = params.priority;
-  }
-  if (params.addBlockedBy) {
-    for (const id of params.addBlockedBy) {
-      if (!task.blockedBy.includes(id)) task.blockedBy.push(id);
-    }
-  }
-  if (params.removeBlockedBy) {
-    task.blockedBy = task.blockedBy.filter((id) => !params.removeBlockedBy!.includes(id));
-  }
-  if (params.addBlocks) {
-    for (const id of params.addBlocks) {
-      if (!task.blocks.includes(id)) task.blocks.push(id);
-    }
-  }
-  if (params.removeBlocks) {
-    task.blocks = task.blocks.filter((id) => !params.removeBlocks!.includes(id));
-  }
-
-  task.updatedAt = Date.now();
-
   return {
     content: [{ type: "text", text: `Updated task ${task.id}: ${task.content} [${task.status}]` }],
     details: { task },
@@ -285,7 +217,10 @@ export async function executeTaskUpdate(
 
 // ─── Tool Definition Factories ───────────────────────────────────────────────
 
-export function createTaskCreateToolDefinition(_cwd: string): ToolDefinition<typeof taskCreateSchema, { task: Task }> {
+export function createTaskCreateToolDefinition(
+  _cwd: string,
+  taskManager: SessionTaskManager
+): ToolDefinition<typeof taskCreateSchema, { task: Task }> {
   return {
     name: "taskCreate",
     label: "TaskCreate",
@@ -305,12 +240,15 @@ export function createTaskCreateToolDefinition(_cwd: string): ToolDefinition<typ
     parameters: taskCreateSchema,
     executionMode: "parallel",
     async execute(toolCallId, params, _signal, _onUpdate) {
-      return executeTaskCreate(toolCallId, params);
+      return executeTaskCreate(taskManager, toolCallId, params);
     },
   };
 }
 
-export function createTaskGetToolDefinition(_cwd: string): ToolDefinition<typeof taskGetSchema, { task: Task | null }> {
+export function createTaskGetToolDefinition(
+  _cwd: string,
+  taskManager: SessionTaskManager
+): ToolDefinition<typeof taskGetSchema, { task: Task | null }> {
   return {
     name: "taskGet",
     label: "TaskGet",
@@ -322,12 +260,15 @@ export function createTaskGetToolDefinition(_cwd: string): ToolDefinition<typeof
     parameters: taskGetSchema,
     executionMode: "parallel",
     async execute(toolCallId, params, _signal, _onUpdate) {
-      return executeTaskGet(toolCallId, params);
+      return executeTaskGet(taskManager, toolCallId, params);
     },
   };
 }
 
-export function createTaskListToolDefinition(_cwd: string): ToolDefinition<typeof taskListSchema, { tasks: Task[]; count: number }> {
+export function createTaskListToolDefinition(
+  _cwd: string,
+  taskManager: SessionTaskManager
+): ToolDefinition<typeof taskListSchema, { tasks: Task[]; count: number }> {
   return {
     name: "taskList",
     label: "TaskList",
@@ -344,12 +285,15 @@ export function createTaskListToolDefinition(_cwd: string): ToolDefinition<typeo
     parameters: taskListSchema,
     executionMode: "parallel",
     async execute(toolCallId, params, _signal, _onUpdate) {
-      return executeTaskList(toolCallId, params);
+      return executeTaskList(taskManager, toolCallId, params);
     },
   };
 }
 
-export function createTaskUpdateToolDefinition(_cwd: string): ToolDefinition<typeof taskUpdateSchema, { task: Task | null }> {
+export function createTaskUpdateToolDefinition(
+  _cwd: string,
+  taskManager: SessionTaskManager
+): ToolDefinition<typeof taskUpdateSchema, { task: Task | null }> {
   return {
     name: "taskUpdate",
     label: "TaskUpdate",
@@ -369,7 +313,7 @@ export function createTaskUpdateToolDefinition(_cwd: string): ToolDefinition<typ
     parameters: taskUpdateSchema,
     executionMode: "parallel",
     async execute(toolCallId, params, _signal, _onUpdate) {
-      return executeTaskUpdate(toolCallId, params);
+      return executeTaskUpdate(taskManager, toolCallId, params);
     },
   };
 }

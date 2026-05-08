@@ -19,6 +19,8 @@ import { CommandPanel, type CommandDef } from "./components/command-panel.js";
 import { RenameModal } from "./components/rename-modal.js";
 import { ConnectModal } from "./components/connect-modal.js";
 import { ModelModal } from "./components/model-modal.js";
+import { SessionModal } from "./components/session-modal.js";
+import { ForkModal } from "./components/fork-modal.js";
 import { getSessionTitle, setSessionTitle, getCurrentModel, setCurrentModel, getAuxiliaryModel, setAuxiliaryModel, resolvePiModel } from "../config/settings.js";
 import { useKoiAgent } from "../agent/hooks.js";
 import { subscribePermissions, getPermissionQueue, resolvePermission } from "../agent/permission-ui.js";
@@ -37,7 +39,8 @@ export function App({ onExit }: AppProps) {
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
-  const [sessionTitle, setSessionTitleState] = useState(getSessionTitle);
+  const [showSessionModal, setShowSessionModal] = useState(false);
+  const [showForkModal, setShowForkModal] = useState(false);
   const [currentModel, setCurrentModelState] = useState(getCurrentModel);
   const [auxiliaryModel, setAuxiliaryModelState] = useState(getAuxiliaryModel);
 
@@ -54,6 +57,15 @@ export function App({ onExit }: AppProps) {
     expandAll,
     collapseAll,
     clearMessages,
+    switchSession,
+    newSession,
+    forkSession,
+    sessionList,
+    refreshSessionList,
+    currentSessionId,
+    saveCurrentState,
+    sessionTitle,
+    setSessionTitle,
   } = useKoiAgent();
 
   // Permission modal handling
@@ -180,7 +192,7 @@ export function App({ onExit }: AppProps) {
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const anyModalOpen =
-    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || permissionModalOpen;
+    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || showSessionModal || showForkModal || permissionModalOpen;
 
   const handleSubmit = useCallback(
     (text: string) => {
@@ -194,9 +206,8 @@ export function App({ onExit }: AppProps) {
 
   const handleRename = useCallback((newTitle: string) => {
     setSessionTitle(newTitle);
-    setSessionTitleState(newTitle);
     setShowRenameModal(false);
-  }, []);
+  }, [setSessionTitle]);
 
   const modelInfo = useMemo(() => {
     const model = currentModel;
@@ -209,6 +220,22 @@ export function App({ onExit }: AppProps) {
     };
   }, [currentModel]);
 
+  const handleNewSession = useCallback(async () => {
+    await newSession();
+    setInputText("");
+    setShowSessionModal(false);
+  }, [newSession]);
+
+  const handleSwitchSession = useCallback(async (filePath: string) => {
+    await switchSession(filePath);
+    setShowSessionModal(false);
+  }, [switchSession]);
+
+  const handleFork = useCallback(async (entryId: string) => {
+    await forkSession(entryId);
+    setShowForkModal(false);
+  }, [forkSession]);
+
   const commands = useMemo<CommandDef[]>(
     () => [
       {
@@ -216,11 +243,7 @@ export function App({ onExit }: AppProps) {
         label: "Start a new session",
         section: "会话",
         action: () => {
-          session?.agent.reset();
-          clearMessages();
-          setInputText("");
-          setSessionTitle("New Session");
-          setSessionTitleState("New Session");
+          handleNewSession();
         },
       },
       {
@@ -228,8 +251,15 @@ export function App({ onExit }: AppProps) {
         label: "Fork current session",
         section: "会话",
         action: () => {
-          // Session forking is managed by Pi SessionManager
-          // TODO: implement fork UI via session manager
+          setShowForkModal(true);
+        },
+      },
+      {
+        id: "/sessions",
+        label: "Browse sessions",
+        section: "会话",
+        action: () => {
+          refreshSessionList().then(() => setShowSessionModal(true));
         },
       },
       {
@@ -259,12 +289,12 @@ export function App({ onExit }: AppProps) {
         action: () => setShowModelModal(true),
       },
     ],
-    [session, clearMessages]
+    [session, handleNewSession, refreshSessionList]
   );
 
   // Global keyboard shortcuts
   useKeyboard((key) => {
-    if (showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal) {
+    if (showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || showSessionModal || showForkModal) {
       return;
     }
 
@@ -291,6 +321,16 @@ export function App({ onExit }: AppProps) {
 
     if (key.ctrl && key.name === "p") {
       setShowCommandPanel(true);
+      return;
+    }
+
+    if (key.ctrl && key.name === "s") {
+      refreshSessionList().then(() => setShowSessionModal(true));
+      return;
+    }
+
+    if (key.ctrl && key.name === "f") {
+      setShowForkModal(true);
       return;
     }
 
@@ -349,6 +389,8 @@ export function App({ onExit }: AppProps) {
     []
   );
 
+  // userMessagesForForking removed; ForkModal now receives session directly
+
   return (
     <box width={width} height={height} flexDirection="column">
       {/* Main content layer */}
@@ -397,7 +439,10 @@ export function App({ onExit }: AppProps) {
       {showExitModal && (
         <ExitModal
           isActive={showExitModal}
-          onConfirm={onExit}
+          onConfirm={() => {
+            saveCurrentState();
+            onExit();
+          }}
           onCancel={() => setShowExitModal(false)}
         />
       )}
@@ -425,6 +470,22 @@ export function App({ onExit }: AppProps) {
         onClose={() => setShowModelModal(false)}
         onSelectPrimary={handleSelectPrimary}
         onSelectAuxiliary={handleSelectAuxiliary}
+      />
+
+      <SessionModal
+        isActive={showSessionModal}
+        onClose={() => setShowSessionModal(false)}
+        sessions={sessionList}
+        currentSessionId={currentSessionId}
+        onSelect={handleSwitchSession}
+        onNewSession={handleNewSession}
+      />
+
+      <ForkModal
+        isActive={showForkModal}
+        onClose={() => setShowForkModal(false)}
+        session={session}
+        onFork={handleFork}
       />
     </box>
   );

@@ -79,6 +79,7 @@ interface SideBarProps {
   contextUsage?: string;
   tokenCount?: string;
   cost?: string;
+
 }
 
 export function SideBar({
