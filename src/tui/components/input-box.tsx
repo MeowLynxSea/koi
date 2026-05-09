@@ -5,7 +5,7 @@
  * Uses OpenTUI <textarea> for editing logic.
  */
 
-import { useRef, useMemo, useEffect } from "react";
+import { useRef, useMemo, useEffect, useState } from "react";
 import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
 import type { KeyEvent } from "@opentui/core";
 import type { AgentMode } from "../../agent/mode.js";
@@ -22,6 +22,18 @@ const MODE_COLOR: Record<AgentMode, string> = {
   plan: "#60a5fa",
 };
 
+// Ink wave colors for busy state - subtle gray gradient animation
+const INK_WAVE_COLORS = [
+  "#666666",
+  "#5a5a5a",
+  "#4e4e4e",
+  "#434343",
+  "#383838",
+  "#2d2d2d",
+  "#222222",
+  "#171717",
+];
+
 interface InputBoxProps {
   value: string;
   onChange: (value: string) => void;
@@ -32,6 +44,7 @@ interface InputBoxProps {
   disabled?: boolean;
   width?: number;
   mode?: AgentMode;
+  isBusy?: boolean;
   onModeSwitch?: () => void;
 }
 
@@ -96,6 +109,7 @@ export function InputBox({
   disabled = false,
   width,
   mode = "build",
+  isBusy = false,
   onModeSwitch,
 }: InputBoxProps) {
   const textareaRef = useRef<TextareaRenderable>(null);
@@ -108,6 +122,18 @@ export function InputBox({
     onSlashEmpty,
     onModeSwitch
   );
+
+  // Ink wave animation state
+  const [waveFrame, setWaveFrame] = useState(0);
+
+  // Animate ink wave effect when busy
+  useEffect(() => {
+    if (!isBusy) return;
+    const interval = setInterval(() => {
+      setWaveFrame((f) => (f + 1) % INK_WAVE_COLORS.length);
+    }, 300);
+    return () => clearInterval(interval);
+  }, [isBusy]);
 
   // Sync external value changes into the textarea editBuffer
   // (e.g. when a pending message is retracted back into the input box)
@@ -128,6 +154,13 @@ export function InputBox({
     []
   );
 
+  // Determine border color based on state
+  const getBorderColor = () => {
+    if (disabled) return "#333333";
+    if (isBusy) return INK_WAVE_COLORS[waveFrame];
+    return "gray";
+  };
+
   return (
     <box
       width={width}
@@ -135,7 +168,7 @@ export function InputBox({
       flexDirection="column"
       border={["top", "bottom"]}
       borderStyle="single"
-      borderColor={disabled ? "#333333" : "gray"}
+      borderColor={getBorderColor()}
       paddingX={1}
       overflow="hidden"
     >

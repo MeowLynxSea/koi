@@ -363,13 +363,9 @@ function rebuildMessagesFromHistory(
   return reordered;
 }
 
-/** Fired when the LLM begins generating a response. Shows a status indicator. */
+/** Fired when the LLM begins generating a response. */
 function handleAgentStart(ctx: EventHandlerContext) {
   ctx.setIsStreaming(true);
-  ctx.setMessages((prev) => [
-    ...prev.filter((m) => m.type !== "status"),
-    { id: generateId("status"), type: "status", content: "Imagining..." },
-  ]);
 }
 
 /**

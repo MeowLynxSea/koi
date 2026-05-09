@@ -920,6 +920,7 @@ export function App({ onExit }: AppProps) {
             disabled={!isReady}
             width={leftWidth}
             mode={agentMode}
+            isBusy={isStreaming}
             onModeSwitch={handleModeSwitch}
           />
           <InfoBar width={leftWidth} exitMode={showExitModal} yoloMode={yoloMode} onToggleYolo={() => setYoloMode((prev) => !prev)} />

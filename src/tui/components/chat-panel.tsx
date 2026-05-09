@@ -709,19 +709,27 @@ function ToolCallMessage({
   msg,
   contentWidth,
   marginTop,
+  spinnerFrame,
   onToggleCollapse,
 }: {
   msg: UIMessage & { type: "tool_call" };
   contentWidth: number;
   marginTop: number;
+  spinnerFrame?: number;
   onToggleCollapse?: (id: string) => void;
 }) {
   const margin = "  ";
   const summary = summarizeToolCall(msg.toolName, msg.args);
+  const isExecuting = msg.result === undefined && !msg.isError;
+  const statusIcon = msg.isError
+    ? "·"
+    : isExecuting
+      ? SPINNER[spinnerFrame ?? 0]
+      : "·";
   const statusColor = msg.isError
     ? "#ff5555"
-    : msg.result === undefined
-      ? "#f1fa8c"
+    : isExecuting
+      ? "#00f5ff"
       : "#50fa7b";
 
   const expandable = isToolExpandable(msg.toolName);
@@ -739,7 +747,7 @@ function ToolCallMessage({
     return (
       <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
         <box flexDirection="row">
-          <text fg={statusColor}>{margin}• </text>
+          <text fg={statusColor}>{margin}{statusIcon} </text>
           <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
             {summary}{msg.isError ? " [error]" : ""}
           </text>
@@ -755,7 +763,7 @@ function ToolCallMessage({
     return (
       <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
         <box flexDirection="row">
-          <text fg={statusColor}>{margin}• </text>
+          <text fg={statusColor}>{margin}{statusIcon} </text>
           <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>{msg.toolName} {filePath}</text>
         </box>
         {msg.result !== undefined && diff ? (
@@ -771,7 +779,7 @@ function ToolCallMessage({
             </text>
           ))
         ) : (
-          <text fg="#f1fa8c">{margin}  Executing...</text>
+          <text fg="#00f5ff">{margin}  Executing...</text>
         )}
       </box>
     );
@@ -784,7 +792,7 @@ function ToolCallMessage({
     <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
       {isCollapsed ? (
         <box flexDirection="row" onMouseUp={handleToggle}>
-          <text fg={statusColor}>{margin}• </text>
+          <text fg={statusColor}>{margin}{statusIcon} </text>
           <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
             {summary}{msg.isError ? " [error]" : ""} (ctrl+o to expand)
           </text>
@@ -792,7 +800,7 @@ function ToolCallMessage({
       ) : (
         <>
           <box flexDirection="row" onMouseUp={handleToggle}>
-            <text fg={statusColor}>{margin}• </text>
+            <text fg={statusColor}>{margin}{statusIcon} </text>
             <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>{msg.toolName}</text>
           </box>
           {wrapText(JSON.stringify(msg.args, null, 2), contentWidth, 2).map((line, j) => (
@@ -818,7 +826,7 @@ function ToolCallMessage({
               )}
             </>
           ) : (
-            <text fg="#f1fa8c">{margin}  Executing...</text>
+            <text fg="#00f5ff">{margin}  Executing...</text>
           )}
         </>
       )}
@@ -845,7 +853,19 @@ function SystemMessage({
   );
 }
 
-function SimpleMessage({ msg, marginTop }: { msg: UIMessage & { type: "compaction" | "retry" }; marginTop: number }) {
+function SimpleMessage({ msg, marginTop, spinnerFrame }: { msg: UIMessage & { type: "compaction" | "retry" }; marginTop: number; spinnerFrame?: number }) {
+  const margin = "  ";
+  // For compaction messages, show spinner during compaction, dot on success
+  if (msg.type === "compaction") {
+    const isCompacting = msg.content.includes("Compacting");
+    const isSuccess = msg.content === "Session compacted." || msg.content === "Compaction aborted.";
+    if (isCompacting) {
+      return <text fg="#00f5ff" marginTop={marginTop}>{margin}{SPINNER[spinnerFrame ?? 0]} {msg.content}</text>;
+    }
+    if (isSuccess) {
+      return <text fg="#6c6c7c" marginTop={marginTop}>{margin}· {msg.content}</text>;
+    }
+  }
   return <text fg="#6c6c7c" marginTop={marginTop}>{msg.content}</text>;
 }
 
@@ -968,7 +988,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
       const hasThinkingInProgress = messages.some(
         (m) => m.type === "agent" && m.thinking && m.thinkingStartTime && !m.thinkingEndTime
       );
-      if (!hasThinkingInProgress) return;
+      const hasToolExecuting = messages.some(
+        (m) => m.type === "tool_call" && m.result === undefined && !m.isError
+      );
+      const hasCompacting = messages.some(
+        (m) => m.type === "compaction" && m.content.includes("Compacting")
+      );
+      if (!hasThinkingInProgress && !hasToolExecuting && !hasCompacting) return;
       const interval = setInterval(() => setSpinnerFrame((f) => (f + 1) % SPINNER.length), 80);
       return () => clearInterval(interval);
     }, [messages]);
@@ -1024,6 +1050,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                     msg={msg}
                     contentWidth={contentWidth}
                     marginTop={marginTop}
+                    spinnerFrame={spinnerFrame}
                     onToggleCollapse={onToggleCollapse}
                   />
                 );
@@ -1031,7 +1058,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                 return <SystemMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} />;
               case "compaction":
               case "retry":
-                return <SimpleMessage key={msg.id} msg={msg} marginTop={marginTop} />;
+                return <SimpleMessage key={msg.id} msg={msg} marginTop={marginTop} spinnerFrame={spinnerFrame} />;
               case "plan":
                 return <PlanMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} />;
             }
