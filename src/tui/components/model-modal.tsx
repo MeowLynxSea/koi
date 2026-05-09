@@ -8,7 +8,7 @@
  * in the top-right corner. Press Tab to toggle between modes.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
@@ -46,19 +46,19 @@ export function ModelModal({
   const { height } = useTerminalDimensions();
   const configuredProviders = getConfiguredProviders();
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
-  const [scrollOffset, setScrollOffset] = useState(0);
   const [activeTab, setActiveTab] = useState<"primary" | "auxiliary">("primary");
+  const scrollOffsetRef = useRef(0);
 
   const listHeight = Math.min(12, Math.floor(height * 0.4));
   const primaryModel = getCurrentModel();
   const auxiliaryModel = getAuxiliaryModel();
 
   // Reset when opened
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isActive) {
       setSelectedModelIndex(0);
-      setScrollOffset(0);
       setActiveTab("primary");
+      scrollOffsetRef.current = 0;
     }
   }, [isActive]);
 
@@ -90,18 +90,8 @@ export function ModelModal({
     }
   }, [modelCount, selectedModelIndex]);
 
-  // Auto-scroll selected into view
-  useEffect(() => {
-    const selectedFlatIndex = flatItems.findIndex(
-      (i) => i.type === "model" && i.modelIndex === selectedModelIndex
-    );
-    if (selectedFlatIndex === -1) return;
-    if (selectedFlatIndex < scrollOffset) {
-      setScrollOffset(selectedFlatIndex);
-    } else if (selectedFlatIndex >= scrollOffset + listHeight) {
-      setScrollOffset(selectedFlatIndex - listHeight + 1);
-    }
-  }, [selectedModelIndex, flatItems, listHeight, scrollOffset]);
+  // Effective scroll offset
+  const effectiveScrollOffset = scrollOffsetRef.current;
 
   useKeyboard((key) => {
     if (!isActive) return;
@@ -115,14 +105,28 @@ export function ModelModal({
       onClose();
       return;
     }
-    if (key.name === "up") {
-      setSelectedModelIndex((prev) => Math.max(0, prev - 1));
-      return;
-    }
-    if (key.name === "down") {
-      setSelectedModelIndex((prev) =>
-        Math.max(0, Math.min(modelCount - 1, prev + 1))
+
+    // Navigation with direct scroll calculation
+    if (key.name === "up" || key.name === "down") {
+      const newIndex = key.name === "up"
+        ? Math.max(0, selectedModelIndex - 1)
+        : Math.min(modelCount - 1, selectedModelIndex + 1);
+
+      const newFlatIndex = flatItems.findIndex(
+        (i) => i.type === "model" && i.modelIndex === newIndex
       );
+
+      let newScrollOffset = scrollOffsetRef.current;
+      if (newFlatIndex !== -1) {
+        if (newFlatIndex < scrollOffsetRef.current) {
+          newScrollOffset = newFlatIndex;
+        } else if (newFlatIndex > scrollOffsetRef.current + listHeight - 1) {
+          newScrollOffset = newFlatIndex - listHeight + 1;
+        }
+      }
+
+      scrollOffsetRef.current = newScrollOffset;
+      setSelectedModelIndex(newIndex);
       return;
     }
     if (key.name === "return") {
@@ -149,7 +153,7 @@ export function ModelModal({
 
   if (!isActive) return null;
 
-  const visibleItems = flatItems.slice(scrollOffset, scrollOffset + listHeight);
+  const visibleItems = flatItems.slice(effectiveScrollOffset, effectiveScrollOffset + listHeight);
 
   const isCurrent = (provider?: string, modelId?: string) => {
     const target = activeTab === "primary" ? primaryModel : auxiliaryModel;
@@ -253,7 +257,7 @@ export function ModelModal({
             </box>
           )}
           {visibleItems.map((item, idx) => {
-            const flatIndex = scrollOffset + idx;
+            const flatIndex = effectiveScrollOffset + idx;
             if (item.type === "header") {
               return (
                 <box
