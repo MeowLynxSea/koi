@@ -13,15 +13,15 @@ export const dimText = chalk.hex("#6c6c7c");
 export const highlightText = chalk.hex("#ff79c6");
 export const agentPrefixColor = chalk.hex("#ff79c6").bold;
 
-// ─── Gradient: Pink → Purple ───
-// Crush-style gradient for the logo
+// ─── 水墨风渐变 ───
+// 从淡墨到浓墨的渐变色
 
 const gradientStops = [
-  "#00f5ff", // bright cyan
-  "#00d9ff",
-  "#00bdff",
-  "#00ffcc", // teal
-  "#00ff99", // green
+  "#8fbc8f", // 淡石绿（远山）
+  "#708090", // 石板灰（主色调）
+  "#5a6a7a", // 中墨色
+  "#4a5a6a", // 浓墨
+  "#3a4a5a", // 最深墨色
 ];
 
 export function gradientPinkPurple(text: string, rowIndex: number, totalRows: number): string {
@@ -44,20 +44,20 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
 }
 
-// ─── Sidebar specific helpers ───
+// ─── Sidebar 水墨风配色 ───
 
 export function sidebarTitle(text: string): string {
-  return chalk.hex("#00f5ff").bold(text);
+  return chalk.hex("#5a6a7a").bold(text);
 }
 
 export function sidebarVersion(text: string): string {
-  return chalk.hex("#00ff99")(text);
+  return chalk.hex("#7a8a9a")(text);
 }
 
 export function sidebarModelName(text: string): string {
-  return chalk.hex("#00d9ff")(text);
+  return chalk.hex("#5a6a7a")(text);
 }
 
 export function sidebarDim(text: string): string {
-  return chalk.hex("#0096c7")(text);
+  return chalk.hex("#8a9aaa")(text);
 }

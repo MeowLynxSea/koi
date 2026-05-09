@@ -8,21 +8,22 @@
 import { createTextAttributes } from "@opentui/core";
 
 const KOI_LOGO = [
-  "██   ██   ███████   ████████",
-  "██  ██   ██     ██    ███   ",
-  "████     ██     ██    ███   ",
-  "██  ██   ██     ██    ███   ",
-  "██   ██   ███████   ████████",
+  "██   ██   ███████   ███████",
+  "██  ██   ██    ███    ███   ",
+  "████     ██  █  ██    ███   ",
+  "██  ██   ███    ██    ███   ",
+  "██   ██   ███████   ███████",
 ];
 
 const VERSION = "v0.1.0";
 
+// 水墨风格渐变色：从淡蓝墨到浓墨
 const GRADIENT_STOPS = [
-  "#00f5ff",
-  "#00d9ff",
-  "#00bdff",
-  "#00ffcc",
-  "#00ff99",
+  "#778899", // 淡蓝灰（偏向蓝色）
+  "#708090", // 石板灰（主色调）
+  "#5a6a7a", // 中墨色
+  "#4a5a6a", // 浓墨
+  "#3a4a5a", // 最深墨色
 ];
 
 function abbreviatePath(path: string, maxLen: number = 24): string {
@@ -78,8 +79,8 @@ const TASK_STATUS_COLORS: Record<string, string> = {
 
 function Divider({
   width,
-  char = "▒",
-  fg: color = "#445566",
+  char = "─",
+  fg: color = "#9aabb8",
 }: {
   width: number;
   char?: string;
@@ -129,10 +130,13 @@ export function SideBar({
 
   return (
     <box width={width} flexDirection="column" paddingLeft={1}>
+      {/* Top spacer */}
+      <text> </text>
+
       {/* Row 0: Meowdream (left) + version (right) */}
       <box width={usableWidth} flexDirection="row" justifyContent="space-between">
-        <text attributes={createTextAttributes({ bold: true })} fg="#00f5ff">Meowdream</text>
-        <text fg="#00ff99">{VERSION}</text>
+        <text attributes={createTextAttributes({ bold: true })} fg="#5a6a7a">Meowdream</text>
+        <text fg="#7a8a9a">{VERSION}</text>
       </box>
 
       {/* Spacer between header and logo */}
@@ -140,7 +144,7 @@ export function SideBar({
 
       {/* Divider above logo */}
       <Divider width={usableWidth} />
-      <Divider width={usableWidth} char="░" fg="#334455" />
+      <Divider width={usableWidth} char="·" fg="#c5cdd5" />
 
       {/* Rows 1-5: KOI ASCII logo with gradient */}
       {KOI_LOGO.map((line, i) => {
@@ -153,38 +157,38 @@ export function SideBar({
       })}
 
       {/* Divider below logo */}
-      <Divider width={usableWidth} char="░" fg="#334455" />
+      <Divider width={usableWidth} char="·" fg="#c5cdd5" />
       <Divider width={usableWidth} />
 
       {/* Spacer */}
       <text> </text>
 
       {/* Session title */}
-      <text attributes={createTextAttributes({ bold: true })} fg="#00d9ff">{sessionTitle}</text>
+      <text attributes={createTextAttributes({ bold: true })} fg="#5a6a7a">{sessionTitle}</text>
 
       {/* Spacer between session title and directory */}
       <text> </text>
 
       {/* Working directory */}
-      <text fg="#0096c7">{abbreviatePath(workingDir, usableWidth)}</text>
+      <text fg="#8a9aaa">{abbreviatePath(workingDir, usableWidth)}</text>
 
       {/* Empty row */}
       <text> </text>
 
       {/* Model name */}
-      <text attributes={createTextAttributes({ bold: true })} fg="#00d9ff">{modelName}</text>
+      <text attributes={createTextAttributes({ bold: true })} fg="#5a6a7a">{modelName}</text>
 
       {/* Provider */}
-      <text fg="#0096c7">{provider}</text>
+      <text fg="#8a9aaa">{provider}</text>
 
       {/* Context usage + cost */}
-      <text fg="#0096c7">{`${contextUsage} ${tokenCount} ${cost}`}</text>
+      <text fg="#8a9aaa">{`${contextUsage} ${tokenCount} ${cost}`}</text>
 
       {/* Tasks section */}
       {visibleTasks.length > 0 && (
         <>
           <text> </text>
-          <text attributes={createTextAttributes({ bold: true })} fg="#00d9ff">
+          <text attributes={createTextAttributes({ bold: true })} fg="#5a6a7a">
             Tasks ({tasks.length})
           </text>
           {visibleTasks.map((task) => {
@@ -195,13 +199,13 @@ export function SideBar({
                 <FixedWidthText
                   text={task.content}
                   width={Math.max(1, usableWidth - 4)}
-                  fg="#a5b4fc"
+                  fg="#8a9aaa"
                 />
               </box>
             );
           })}
           {hasMoreTasks && (
-            <text fg="#445566">
+            <text fg="#9aa5b0">
               {`… and ${tasks.length - visibleTasks.length} more`}
             </text>
           )}
