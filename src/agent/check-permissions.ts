@@ -29,7 +29,8 @@ export interface PermissionCheckResult {
   reason?: string;
 }
 
-// Dangerous bash command patterns
+/* ───────── Static Rule Data ───────── */
+
 const DANGEROUS_BASH_PATTERNS = [
   /\brm\s+-(rf|fr|r\s+f|f\s+r)\b/i,
   /\bgit\s+reset\s+--hard\b/i,
@@ -48,32 +49,23 @@ const DANGEROUS_BASH_PATTERNS = [
   /\bterraform\s+destroy\b/i,
 ];
 
-// Blocked device / dangerous paths
 const BLOCKED_PATHS = [
-  "/dev/zero",
-  "/dev/random",
-  "/dev/urandom",
-  "/dev/full",
-  "/dev/stdin",
-  "/dev/tty",
-  "/dev/console",
-  "/dev/stdout",
-  "/dev/stderr",
+  "/dev/zero", "/dev/random", "/dev/urandom", "/dev/full",
+  "/dev/stdin", "/dev/tty", "/dev/console", "/dev/stdout", "/dev/stderr",
 ];
 
-// Sensitive file patterns
 const SENSITIVE_FILE_PATTERNS = [
-  /\.env$/i,
-  /\.env\./i,
-  /secret/i,
-  /private.*key/i,
-  /id_rsa/i,
-  /id_ed25519/i,
-  /\.ssh\//i,
-  /credentials/i,
-  /token/i,
-  /password/i,
+  /\.env$/i, /\.env\./i, /secret/i, /private.*key/i,
+  /id_rsa/i, /id_ed25519/i, /\.ssh\//i, /credentials/i,
+  /token/i, /password/i,
 ];
+
+const ALWAYS_ALLOW_TOOLS = new Set(["taskCreate", "taskGet", "taskList", "taskUpdate"]);
+const PATH_TOOLS = new Set(["read", "bash", "edit", "write"]);
+const DESTRUCTIVE_TOOLS = new Set(["bash", "write"]);
+const WRITE_TOOLS = new Set(["edit", "write"]);
+
+/* ───────── String & Path Helpers ───────── */
 
 export function isDangerousBashCommand(command: string): boolean {
   return DANGEROUS_BASH_PATTERNS.some((p) => p.test(command));
@@ -93,15 +85,95 @@ function stringifyArgs(toolName: string, args: unknown): string {
 
 function matchesBlockedPath(path: string): boolean {
   const normalized = path.toLowerCase().replace(/\\/g, "/");
-  for (const blocked of BLOCKED_PATHS) {
-    if (normalized.startsWith(blocked.toLowerCase())) return true;
-  }
-  return false;
+  return BLOCKED_PATHS.some((blocked) => normalized.startsWith(blocked.toLowerCase()));
 }
 
 function isSensitiveFile(path: string): boolean {
   return SENSITIVE_FILE_PATTERNS.some((p) => p.test(path));
 }
+
+function extractPath(args: unknown): string | undefined {
+  const obj = args as Record<string, unknown> | undefined;
+  if (typeof obj?.["path"] === "string") return obj["path"];
+  if (typeof obj?.["file_path"] === "string") return obj["file_path"];
+  return undefined;
+}
+
+/* ───────── Tool-Specific Checkers ───────── */
+
+type ToolChecker = (toolName: string, args: unknown, argStr: string) => PermissionCheckResult | null;
+
+const checkBlockedPaths: ToolChecker = (toolName, args) => {
+  if (!PATH_TOOLS.has(toolName)) return null;
+  const path = extractPath(args);
+  if (path && matchesBlockedPath(path)) {
+    return { decision: "deny", reason: `Access to device/special path blocked: ${path}` };
+  }
+  return null;
+};
+
+const checkDangerousBash: ToolChecker = (toolName, _args, argStr) => {
+  if (toolName !== "bash") return null;
+  if (isDangerousBashCommand(argStr)) {
+    return {
+      decision: "ask",
+      reason: `Destructive command detected: "${argStr.trim()}". Confirm to proceed.`,
+    };
+  }
+  return null;
+};
+
+const checkSensitiveFiles: ToolChecker = (toolName, args) => {
+  if (!WRITE_TOOLS.has(toolName)) return null;
+  const path = extractPath(args);
+  if (path && isSensitiveFile(path)) {
+    return { decision: "ask", reason: `Editing sensitive file: ${path}. Confirm to proceed.` };
+  }
+  return null;
+};
+
+const checkLargeFileRead: ToolChecker = (toolName, args) => {
+  if (toolName !== "read") return null;
+  const path = extractPath(args);
+  if (!path) return null;
+  try {
+    const stats = statSync(path);
+    if (stats.size > 1024 * 1024 * 1024) {
+      return { decision: "ask", reason: `File is very large (${(stats.size / 1024 / 1024).toFixed(0)} MiB). Confirm to read.` };
+    }
+  } catch {
+    return { decision: "ask", reason: `Unable to verify file size for ${path}. Confirm to read.` };
+  }
+  return null;
+};
+
+const checkWebFetch: ToolChecker = (_toolName, args) => {
+  const url = (args as Record<string, unknown>)?.["url"];
+  if (typeof url !== "string") return null;
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    if (isDangerousHost(hostname)) {
+      return { decision: "deny", reason: `Access to local/IP/internal host blocked: ${hostname}` };
+    }
+    if (!isPreapprovedDomain(url)) {
+      return { decision: "ask", reason: `Fetching from non-preapproved domain: ${hostname}. Confirm to proceed.` };
+    }
+  } catch {
+    return { decision: "deny", reason: "Invalid URL format" };
+  }
+  return null;
+};
+
+const toolCheckers: ToolChecker[] = [
+  checkBlockedPaths,
+  checkDangerousBash,
+  checkSensitiveFiles,
+  checkLargeFileRead,
+  checkWebFetch,
+];
+
+/* ───────── Main API ───────── */
 
 /**
  * Check permission for a tool call.
@@ -115,88 +187,21 @@ export function checkPermission(
   args: unknown,
   _customRules?: PermissionRule[]
 ): PermissionCheckResult {
+  // Task management tools are in-memory only — no permission needed
+  if (ALWAYS_ALLOW_TOOLS.has(toolName)) {
+    return { decision: "allow" };
+  }
+
   const argStr = stringifyArgs(toolName, args);
 
-  // Task management tools are in-memory only — no permission needed
-  if (toolName === "taskCreate" || toolName === "taskGet" || toolName === "taskList" || toolName === "taskUpdate") {
-    return { decision: "allow" };
+  for (const checker of toolCheckers) {
+    const result = checker(toolName, args, argStr);
+    if (result) return result;
   }
 
-  // 1. Blocked paths (device files)
-  if (toolName === "read" || toolName === "bash" || toolName === "edit" || toolName === "write") {
-    const path = (args as Record<string, unknown>)?.["path"] ?? (args as Record<string, unknown>)?.["file_path"];
-    if (typeof path === "string" && matchesBlockedPath(path)) {
-      return { decision: "deny", reason: `Access to device/special path blocked: ${path}` };
-    }
-  }
-
-  // 2. Dangerous bash commands
-  if (toolName === "bash") {
-    for (const pattern of DANGEROUS_BASH_PATTERNS) {
-      if (pattern.test(argStr)) {
-        return {
-          decision: "ask",
-          reason: `Destructive command detected: "${argStr.trim()}". Confirm to proceed.`,
-        };
-      }
-    }
-  }
-
-  // 3. Sensitive files for edit/write
-  if (toolName === "edit" || toolName === "write") {
-    const path = (args as Record<string, unknown>)?.["path"] ?? (args as Record<string, unknown>)?.["file_path"];
-    if (typeof path === "string" && isSensitiveFile(path)) {
-      return {
-        decision: "ask",
-        reason: `Editing sensitive file: ${path}. Confirm to proceed.`,
-      };
-    }
-  }
-
-  // 4. Large file reads (> 1 GiB) — ask
-  if (toolName === "read") {
-    const path = (args as Record<string, unknown>)?.["path"];
-    if (typeof path === "string") {
-      try {
-        const stats = statSync(path);
-        if (stats.size > 1024 * 1024 * 1024) {
-          return { decision: "ask", reason: `File is very large (${(stats.size / 1024 / 1024).toFixed(0)} MiB). Confirm to read.` };
-        }
-      } catch {
-        return { decision: "ask", reason: `Unable to verify file size for ${path}. Confirm to read.` };
-      }
-    }
-  }
-
-  // 5. WebFetch: dangerous hosts → deny, non-preapproved → ask
-  if (toolName === "webfetch") {
-    const url = (args as Record<string, unknown>)?.["url"];
-    if (typeof url === "string") {
-      try {
-        const parsed = new URL(url);
-        const hostname = parsed.hostname.toLowerCase();
-        if (isDangerousHost(hostname)) {
-          return { decision: "deny", reason: `Access to local/IP/internal host blocked: ${hostname}` };
-        }
-        if (!isPreapprovedDomain(url)) {
-          return { decision: "ask", reason: `Fetching from non-preapproved domain: ${hostname}. Confirm to proceed.` };
-        }
-      } catch {
-        return { decision: "deny", reason: "Invalid URL format" };
-      }
-    }
-  }
-
-  // Default: read-only allow, write ask if destructive
-  const meta =
-    toolName === "bash" || toolName === "edit" || toolName === "write"
-      ? { isReadOnly: false, isDestructive: toolName !== "edit" }
-      : { isReadOnly: true, isDestructive: false };
-
-  if (meta.isReadOnly) {
-    return { decision: "allow" };
-  }
-  if (meta.isDestructive) {
+  // Default: read-only allow, destructive ask
+  const isDestructive = DESTRUCTIVE_TOOLS.has(toolName);
+  if (isDestructive) {
     return { decision: "ask", reason: `${toolName} is a destructive operation. Confirm to proceed.` };
   }
   return { decision: "allow" };

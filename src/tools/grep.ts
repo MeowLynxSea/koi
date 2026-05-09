@@ -42,23 +42,21 @@ export type GrepToolInput = {
 const VCS_DIRS = [".git", ".svn", ".hg", ".bzr", ".jj", ".sl"];
 const DEFAULT_HEAD_LIMIT = 250;
 
-function buildRgArgs(input: GrepToolInput): string[] {
-  const args: string[] = [];
+/* ───────── Arg Builders ───────── */
 
-  args.push("--hidden");
-  for (const dir of VCS_DIRS) {
-    args.push("--glob", `!${dir}`);
+function addVcsExcludes(args: string[], cmd: "rg" | "grep"): void {
+  if (cmd === "rg") {
+    for (const dir of VCS_DIRS) {
+      args.push("--glob", `!${dir}`);
+    }
+  } else {
+    for (const dir of VCS_DIRS) {
+      args.push("--exclude-dir", dir);
+    }
   }
-  args.push("--max-columns", "500");
+}
 
-  if (input.multiline) {
-    args.push("-U", "--multiline-dotall");
-  }
-  if (input["-i"]) {
-    args.push("-i");
-  }
-
-  const mode = input.output_mode ?? "content";
+function addModeFlags(args: string[], mode: string, cmd: "rg" | "grep", context?: number): void {
   if (mode === "files_with_matches") {
     args.push("-l");
   } else if (mode === "count") {
@@ -66,110 +64,77 @@ function buildRgArgs(input: GrepToolInput): string[] {
   }
 
   if (mode === "content") {
-    if (input.context !== undefined && input.context > 0) {
-      args.push("-C", String(input.context));
+    if (context !== undefined && context > 0) {
+      args.push("-C", String(context));
     }
-    args.push("-n"); // line numbers
+    if (cmd === "rg") args.push("-n");
   }
+}
 
-  if (input.glob) {
-    args.push("--glob", input.glob);
-  }
-
-  // Pattern: prefix with -e if it starts with -
-  const pattern = input.pattern;
+function addPattern(args: string[], pattern: string): void {
   if (pattern.startsWith("-")) {
     args.push("-e", pattern);
   } else {
     args.push(pattern);
   }
+}
 
-  const searchPath = input.path ? resolve(input.path) : process.cwd();
-  args.push(searchPath);
+function buildRgArgs(input: GrepToolInput): string[] {
+  const args: string[] = ["--hidden", "--max-columns", "500"];
+  addVcsExcludes(args, "rg");
+
+  if (input.multiline) args.push("-U", "--multiline-dotall");
+  if (input["-i"]) args.push("-i");
+
+  addModeFlags(args, input.output_mode ?? "content", "rg", input.context);
+
+  if (input.glob) args.push("--glob", input.glob);
+  addPattern(args, input.pattern);
+  args.push(input.path ? resolve(input.path) : process.cwd());
 
   return args;
 }
 
 function buildGrepArgs(input: GrepToolInput): string[] {
-  const args: string[] = [];
+  const args: string[] = ["-r", "-n"];
+  addVcsExcludes(args, "grep");
 
-  args.push("-r", "-n");
+  if (input["-i"]) args.push("-i");
+  addModeFlags(args, input.output_mode ?? "content", "grep", input.context);
 
-  // Exclude VCS dirs
-  for (const dir of VCS_DIRS) {
-    args.push("--exclude-dir", dir);
-  }
-
-  if (input["-i"]) {
-    args.push("-i");
-  }
-
-  const mode = input.output_mode ?? "content";
-  if (mode === "files_with_matches") {
-    args.push("-l");
-  } else if (mode === "count") {
-    args.push("-c");
-  }
-
-  if (mode === "content" && input.context !== undefined && input.context > 0) {
-    args.push("-C", String(input.context));
-  }
-
-  if (input.glob) {
-    args.push("--include", input.glob);
-  }
-
+  if (input.glob) args.push("--include", input.glob);
   args.push("-e", input.pattern);
-
-  const searchPath = input.path ? resolve(input.path) : process.cwd();
-  args.push(searchPath);
+  args.push(input.path ? resolve(input.path) : process.cwd());
 
   return args;
 }
 
-function execSearch(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+/* ───────── Execution ───────── */
+
+interface SearchResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+function execSearch(cmd: string, args: string[]): Promise<SearchResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+
     child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf-8"); });
     child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf-8"); });
     child.on("error", (err) => reject(err));
-    child.on("close", (code) => {
-      resolve({ stdout, stderr, exitCode: code ?? 0 });
-    });
+    child.on("close", (code) => resolve({ stdout, stderr, exitCode: code ?? 0 }));
   });
 }
 
-export async function executeGrep(params: GrepToolInput): Promise<{ content: TextContent[]; details: { matches: number; truncated: boolean } }> {
-  let stdout: string;
-  let stderr: string;
-  let exitCode: number;
-
-  try {
-    const args = buildRgArgs(params);
-    ({ stdout, stderr, exitCode } = await execSearch("rg", args));
-  } catch (err: unknown) {
-    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
-      // ripgrep not installed — fallback to system grep
-      const args = buildGrepArgs(params);
-      ({ stdout, stderr, exitCode } = await execSearch("grep", args));
-    } else {
-      throw err;
-    }
-  }
-
-  if (exitCode !== 0 && exitCode !== 1) {
-    // ripgrep exits 1 when no matches, >1 for errors
-    throw new Error(stderr || `ripgrep exited with code ${exitCode}`);
-  }
-
-  const limit = params.head_limit ?? DEFAULT_HEAD_LIMIT;
+function truncateOutput(stdout: string, stderr: string, limit: number): { text: string; truncated: boolean } {
   const lines = stdout.split("\n");
   const truncated = lines.length > limit;
-  const output = truncated ? lines.slice(0, limit).join("\n") : stdout;
+  let text = truncated ? lines.slice(0, limit).join("\n") : stdout;
 
-  let text = output;
   if (truncated) {
     text += `\n\n[Showing results with pagination = limit: ${limit}, offset: 0]`;
   }
@@ -177,13 +142,64 @@ export async function executeGrep(params: GrepToolInput): Promise<{ content: Tex
     text += `\n\n(stderr: ${stderr.trim()})`;
   }
 
-  const matchCount = exitCode === 0 ? (params.output_mode === "count" ? lines.length - 1 : lines.filter((l) => l.trim()).length) : 0;
+  return { text, truncated };
+}
+
+function countMatches(exitCode: number, outputMode: string | undefined, lines: string[]): number {
+  if (exitCode !== 0) return 0;
+  if (outputMode === "count") return lines.length - 1;
+  return lines.filter((l) => l.trim()).length;
+}
+
+export async function executeGrep(params: GrepToolInput): Promise<{
+  content: TextContent[];
+  details: { matches: number; truncated: boolean };
+}> {
+  let result: SearchResult;
+
+  try {
+    result = await execSearch("rg", buildRgArgs(params));
+  } catch (err: unknown) {
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      result = await execSearch("grep", buildGrepArgs(params));
+    } else {
+      throw err;
+    }
+  }
+
+  if (result.exitCode !== 0 && result.exitCode !== 1) {
+    throw new Error(result.stderr || `ripgrep exited with code ${result.exitCode}`);
+  }
+
+  const limit = params.head_limit ?? DEFAULT_HEAD_LIMIT;
+  const { text, truncated } = truncateOutput(result.stdout, result.stderr, limit);
+  const matchCount = countMatches(result.exitCode, params.output_mode, result.stdout.split("\n"));
 
   return {
     content: [{ type: "text", text }],
     details: { matches: matchCount, truncated },
   };
 }
+
+/* ───────── Permission Helpers ───────── */
+
+function buildDeniedResult(): ToolResultWithError<{ matches: number; truncated: boolean }> {
+  return {
+    content: [{ type: "text", text: "Permission denied: grep operation blocked" }],
+    details: { matches: 0, truncated: false },
+    isError: true,
+  };
+}
+
+function buildUserDeniedResult(): ToolResultWithError<{ matches: number; truncated: boolean }> {
+  return {
+    content: [{ type: "text", text: "User denied permission to search." }],
+    details: { matches: 0, truncated: false },
+    isError: true,
+  };
+}
+
+/* ───────── ToolDefinition ───────── */
 
 export function createGrepToolDefinition(_cwd: string): ToolDefinition<typeof grepSchema, { matches: number; truncated: boolean }> {
   return {
@@ -203,24 +219,14 @@ export function createGrepToolDefinition(_cwd: string): ToolDefinition<typeof gr
     executionMode: "parallel",
     async execute(_toolCallId, params, _signal, _onUpdate) {
       const perm = checkPermission("grep", params);
-      if (perm.decision === "deny") {
-        const result: ToolResultWithError<{ matches: number; truncated: boolean }> = {
-          content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "grep operation blocked"}` }],
-          details: { matches: 0, truncated: false },
-          isError: true,
-        };
-        return result;
-      }
+      if (perm.decision === "deny") return buildDeniedResult();
       if (perm.decision === "ask") {
-        const allowed = await requestPermission({ toolName: "grep", args: params as GrepToolInput, reason: perm.reason ?? "Confirm search" });
-        if (!allowed) {
-          const result: ToolResultWithError<{ matches: number; truncated: boolean }> = {
-            content: [{ type: "text", text: "User denied permission to search." }],
-            details: { matches: 0, truncated: false },
-            isError: true,
-          };
-          return result;
-        }
+        const allowed = await requestPermission({
+          toolName: "grep",
+          args: params as GrepToolInput,
+          reason: perm.reason ?? "Confirm search",
+        });
+        if (!allowed) return buildUserDeniedResult();
       }
       return await executeGrep(params);
     },

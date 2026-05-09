@@ -27,6 +27,8 @@ export interface Task {
   updatedAt: number;
 }
 
+/* ───────── File System Helpers ───────── */
+
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -36,6 +38,67 @@ function ensureDir(dir: string): void {
 function getTasksPath(sessionId: string): string {
   return path.join(KOI_SESSIONS_DIR, sessionId, "tasks.json");
 }
+
+function safeReadTasks(filePath: string): Task[] | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return JSON.parse(raw) as Task[];
+  } catch {
+    return null;
+  }
+}
+
+function safeWriteTasks(filePath: string, tasks: Task[]): void {
+  try {
+    ensureDir(path.dirname(filePath));
+    fs.writeFileSync(filePath, JSON.stringify(tasks, null, 2) + "\n", { mode: 0o600 });
+  } catch {
+    // Silently ignore write errors
+  }
+}
+
+function safeDeleteFile(filePath: string): void {
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {
+    // ignore
+  }
+}
+
+/* ───────── Task Update Helpers ───────── */
+
+function updateStringArray(current: string[], add?: string[], remove?: string[]): string[] {
+  let result = [...current];
+  if (add) {
+    for (const id of add) {
+      if (!result.includes(id)) result.push(id);
+    }
+  }
+  if (remove) {
+    result = result.filter((id) => !remove.includes(id));
+  }
+  return result;
+}
+
+function applyTaskUpdates(
+  task: Task,
+  updates: Partial<Pick<Task, "content" | "status" | "priority">> & {
+    addBlockedBy?: string[];
+    removeBlockedBy?: string[];
+    addBlocks?: string[];
+    removeBlocks?: string[];
+  }
+): void {
+  if (updates.content !== undefined) task.content = updates.content;
+  if (updates.status !== undefined) task.status = updates.status;
+  if (updates.priority !== undefined) task.priority = updates.priority;
+
+  task.blockedBy = updateStringArray(task.blockedBy, updates.addBlockedBy, updates.removeBlockedBy);
+  task.blocks = updateStringArray(task.blocks, updates.addBlocks, updates.removeBlocks);
+}
+
+/* ───────── SessionTaskManager ───────── */
 
 export class SessionTaskManager {
   private stores = new Map<string, Map<string, Task>>();
@@ -54,7 +117,6 @@ export class SessionTaskManager {
 
   private getStore(): Map<string, Task> {
     if (!this.activeSessionId) {
-      // Fallback to a transient in-memory store if no session is active
       const transientId = "__transient__";
       if (!this.stores.has(transientId)) {
         this.stores.set(transientId, new Map());
@@ -90,7 +152,7 @@ export class SessionTaskManager {
       updatedAt: now,
     };
     this.getStore().set(id, task);
-    if (this.activeSessionId) this.save(this.activeSessionId);
+    this.saveActive();
     return task;
   }
 
@@ -115,79 +177,40 @@ export class SessionTaskManager {
 
   updateTask(
     taskId: string,
-    updates: Partial<Pick<Task, "content" | "status" | "priority">> & {
-      addBlockedBy?: string[];
-      removeBlockedBy?: string[];
-      addBlocks?: string[];
-      removeBlocks?: string[];
-    }
+    updates: Parameters<typeof applyTaskUpdates>[1]
   ): Task | null {
     const task = this.getStore().get(taskId);
     if (!task) return null;
 
-    if (updates.content !== undefined) task.content = updates.content;
-    if (updates.status !== undefined) task.status = updates.status;
-    if (updates.priority !== undefined) task.priority = updates.priority;
-    if (updates.addBlockedBy) {
-      for (const id of updates.addBlockedBy) {
-        if (!task.blockedBy.includes(id)) task.blockedBy.push(id);
-      }
-    }
-    if (updates.removeBlockedBy) {
-      task.blockedBy = task.blockedBy.filter((id) => !updates.removeBlockedBy!.includes(id));
-    }
-    if (updates.addBlocks) {
-      for (const id of updates.addBlocks) {
-        if (!task.blocks.includes(id)) task.blocks.push(id);
-      }
-    }
-    if (updates.removeBlocks) {
-      task.blocks = task.blocks.filter((id) => !updates.removeBlocks!.includes(id));
-    }
-
+    applyTaskUpdates(task, updates);
     task.updatedAt = Date.now();
-    if (this.activeSessionId) this.save(this.activeSessionId);
+    this.saveActive();
     return task;
   }
 
   deleteTask(taskId: string): boolean {
     const ok = this.getStore().delete(taskId);
-    if (ok && this.activeSessionId) this.save(this.activeSessionId);
+    if (ok) this.saveActive();
     return ok;
   }
 
   load(sessionId: string): void {
-    try {
-      const filePath = getTasksPath(sessionId);
-      if (!fs.existsSync(filePath)) {
-        this.stores.set(sessionId, new Map());
-        return;
-      }
-      const raw = fs.readFileSync(filePath, "utf-8");
-      const tasksArray: Task[] = JSON.parse(raw) as Task[];
-      const map = new Map<string, Task>();
-      for (const t of tasksArray) {
-        map.set(t.id, t);
-      }
-      this.stores.set(sessionId, map);
-    } catch {
+    const tasksArray = safeReadTasks(getTasksPath(sessionId));
+    if (!tasksArray) {
       this.stores.set(sessionId, new Map());
+      return;
     }
+    const map = new Map<string, Task>();
+    for (const t of tasksArray) {
+      map.set(t.id, t);
+    }
+    this.stores.set(sessionId, map);
   }
 
   save(sessionId: string): void {
-    try {
-      const dir = path.join(KOI_SESSIONS_DIR, sessionId);
-      ensureDir(dir);
-      const store = this.stores.get(sessionId);
-      if (!store) return;
-      const tasksArray = Array.from(store.values());
-      fs.writeFileSync(getTasksPath(sessionId), JSON.stringify(tasksArray, null, 2) + "\n", {
-        mode: 0o600,
-      });
-    } catch {
-      // Silently ignore write errors
-    }
+    const store = this.stores.get(sessionId);
+    if (!store) return;
+    safeWriteTasks(getTasksPath(sessionId), Array.from(store.values()));
   }
 
   saveActive(): void {
@@ -198,14 +221,7 @@ export class SessionTaskManager {
 
   clearSession(sessionId: string): void {
     this.stores.delete(sessionId);
-    try {
-      const filePath = getTasksPath(sessionId);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch {
-      // ignore
-    }
+    safeDeleteFile(getTasksPath(sessionId));
   }
 }
 

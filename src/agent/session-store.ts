@@ -46,6 +46,8 @@ export interface KoiSessionState {
   updatedAt: number;
 }
 
+/* ───────── File System Helpers ───────── */
+
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -60,6 +62,43 @@ function getKoiStatePath(sessionId: string): string {
   return path.join(getKoiSessionDir(sessionId), "koi-state.json");
 }
 
+function safeReadFile<T>(path: string, parser: (raw: string) => T): T | null {
+  try {
+    if (!fs.existsSync(path)) return null;
+    const raw = fs.readFileSync(path, "utf-8");
+    return parser(raw);
+  } catch {
+    return null;
+  }
+}
+
+function safeWriteFile(filePath: string, data: string): void {
+  try {
+    ensureDir(path.dirname(filePath));
+    fs.writeFileSync(filePath, data, { mode: 0o600 });
+  } catch {
+    // Silently ignore write errors
+  }
+}
+
+function safeDeleteFile(filePath: string): void {
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {
+    // ignore
+  }
+}
+
+function safeDeleteDir(dir: string): void {
+  try {
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+}
+
+/* ───────── Session Helpers ───────── */
+
 function sessionInfoToMeta(info: SessionInfo): SessionMeta {
   return {
     id: info.id,
@@ -70,6 +109,41 @@ function sessionInfoToMeta(info: SessionInfo): SessionMeta {
     updatedAt: info.modified,
     messageCount: info.messageCount,
   };
+}
+
+interface SessionConfig {
+  authStorage: ReturnType<typeof getPiAuthStorage>;
+  modelRegistry: ReturnType<typeof getPiModelRegistry>;
+  settingsManager: ReturnType<typeof getPiSettingsManager>;
+  currentModel: ReturnType<typeof getCurrentPiModel>;
+  customTools: ReturnType<typeof createCodingToolDefinitions>;
+}
+
+function buildSessionConfig(taskManager: SessionTaskManager): SessionConfig {
+  return {
+    authStorage: getPiAuthStorage(),
+    modelRegistry: getPiModelRegistry(),
+    settingsManager: getPiSettingsManager(),
+    currentModel: getCurrentPiModel(),
+    customTools: createCodingToolDefinitions(process.cwd(), taskManager),
+  };
+}
+
+async function createAgentSessionWithConfig(
+  sessionManager: ReturnType<typeof SessionManager.create>,
+  config: SessionConfig
+): Promise<CreateAgentSessionResult> {
+  return createAgentSession({
+    cwd: process.cwd(),
+    agentDir: PI_AGENT_DIR,
+    authStorage: config.authStorage,
+    modelRegistry: config.modelRegistry,
+    settingsManager: config.settingsManager,
+    model: config.currentModel,
+    noTools: "builtin",
+    customTools: config.customTools,
+    sessionManager,
+  });
 }
 
 /* ───────── Public API ───────── */
@@ -87,40 +161,21 @@ export async function createNewSession(
   taskManager: SessionTaskManager
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-
-  const authStorage = getPiAuthStorage();
-  const modelRegistry = getPiModelRegistry();
-  const settingsManager = getPiSettingsManager();
-  const currentModel = getCurrentPiModel();
-
+  const config = buildSessionConfig(taskManager);
   const sessionManager = SessionManager.create(process.cwd());
-  const customTools = createCodingToolDefinitions(process.cwd(), taskManager);
+  const result = await createAgentSessionWithConfig(sessionManager, config);
 
-  const result = await createAgentSession({
-    cwd: process.cwd(),
-    agentDir: PI_AGENT_DIR,
-    authStorage,
-    modelRegistry,
-    settingsManager,
-    model: currentModel,
-    noTools: "builtin",
-    customTools,
-    sessionManager,
-  });
-
-  // Save initial koi-state
   const now = Date.now();
   const state: KoiSessionState = {
     sessionId: result.session.sessionId,
     title: "New Session",
-    currentModel: currentModel ? { provider: currentModel.provider, modelId: currentModel.id } : null,
+    currentModel: config.currentModel ? { provider: config.currentModel.provider, modelId: config.currentModel.id } : null,
     auxiliaryModel: null,
     messages: [],
     createdAt: now,
     updatedAt: now,
   };
   saveKoiState(result.session.sessionId, state);
-
   return result;
 }
 
@@ -129,100 +184,65 @@ export async function loadSession(
   taskManager: SessionTaskManager
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-
-  const authStorage = getPiAuthStorage();
-  const modelRegistry = getPiModelRegistry();
-  const settingsManager = getPiSettingsManager();
-  const currentModel = getCurrentPiModel();
-
+  const config = buildSessionConfig(taskManager);
   const sessionManager = SessionManager.open(filePath, undefined, process.cwd());
-  const customTools = createCodingToolDefinitions(process.cwd(), taskManager);
-
-  const result = await createAgentSession({
-    cwd: process.cwd(),
-    agentDir: PI_AGENT_DIR,
-    authStorage,
-    modelRegistry,
-    settingsManager,
-    model: currentModel,
-    noTools: "builtin",
-    customTools,
-    sessionManager,
-  });
-
-  return result;
+  return createAgentSessionWithConfig(sessionManager, config);
 }
 
 export async function continueRecentSession(
   taskManager: SessionTaskManager
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-
-  const authStorage = getPiAuthStorage();
-  const modelRegistry = getPiModelRegistry();
-  const settingsManager = getPiSettingsManager();
-  const currentModel = getCurrentPiModel();
-
+  const config = buildSessionConfig(taskManager);
   const sessionManager = SessionManager.continueRecent(process.cwd());
-  const customTools = createCodingToolDefinitions(process.cwd(), taskManager);
-
-  const result = await createAgentSession({
-    cwd: process.cwd(),
-    agentDir: PI_AGENT_DIR,
-    authStorage,
-    modelRegistry,
-    settingsManager,
-    model: currentModel,
-    noTools: "builtin",
-    customTools,
-    sessionManager,
-  });
-
-  return result;
+  return createAgentSessionWithConfig(sessionManager, config);
 }
 
 export function saveKoiState(sessionId: string, state: KoiSessionState): void {
-  try {
-    const dir = getKoiSessionDir(sessionId);
-    ensureDir(dir);
-    const filePath = getKoiStatePath(sessionId);
-    fs.writeFileSync(filePath, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
-  } catch {
-    // Silently ignore write errors
-  }
+  safeWriteFile(getKoiStatePath(sessionId), JSON.stringify(state, null, 2) + "\n");
 }
 
 export function loadKoiState(sessionId: string): KoiSessionState | null {
-  try {
-    const filePath = getKoiStatePath(sessionId);
-    if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(raw) as KoiSessionState;
-  } catch {
-    return null;
-  }
+  return safeReadFile(getKoiStatePath(sessionId), (raw) => JSON.parse(raw) as KoiSessionState);
 }
 
 export function deleteKoiSessionData(sessionId: string): void {
-  try {
-    const dir = getKoiSessionDir(sessionId);
-    if (fs.existsSync(dir)) {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  } catch {
-    // ignore
-  }
+  safeDeleteDir(getKoiSessionDir(sessionId));
 }
 
 export async function deleteSession(meta: SessionMeta): Promise<void> {
-  try {
-    if (fs.existsSync(meta.filePath)) {
-      fs.unlinkSync(meta.filePath);
-    }
-  } catch {
-    // ignore
-  }
+  safeDeleteFile(meta.filePath);
   deleteKoiSessionData(meta.id);
+}
+
+/* ───────── Message Builders ───────── */
+
+function extractUserContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((c): c is { type: "text"; text: string } =>
+        typeof c === "object" && c !== null && "type" in c && (c as Record<string, unknown>)["type"] === "text"
+      )
+      .map((c) => c.text)
+      .join("");
+  }
+  return "";
+}
+
+function extractAssistantContent(msg: { content: unknown[] }): { text: string; thinking: string } {
+  let text = "";
+  let thinking = "";
+  for (const block of msg.content) {
+    if (typeof block !== "object" || block === null) continue;
+    const type = (block as Record<string, unknown>)["type"];
+    if (type === "text") {
+      text += String((block as Record<string, unknown>)["text"] ?? "");
+    } else if (type === "thinking" && "thinking" in block) {
+      thinking += String((block as Record<string, unknown>)["thinking"] ?? "");
+    }
+  }
+  return { text, thinking };
 }
 
 /**
@@ -230,35 +250,17 @@ export async function deleteSession(meta: SessionMeta): Promise<void> {
  * koi-state.json is missing. This is a best-effort reconstruction.
  */
 export function buildUIMessagesFromAgentSession(session: AgentSession): UIMessage[] {
-  const messages = session.messages;
   const uiMessages: UIMessage[] = [];
 
-  for (const msg of messages) {
+  for (const msg of session.messages) {
     if (msg.role === "user") {
-      let content = "";
-      if (typeof msg.content === "string") {
-        content = msg.content;
-      } else if (Array.isArray(msg.content)) {
-        content = msg.content
-          .filter((c): c is { type: "text"; text: string } => c.type === "text")
-          .map((c) => c.text)
-          .join("");
-      }
       uiMessages.push({
         id: `user-${msg.timestamp}`,
         type: "user",
-        content,
+        content: extractUserContent(msg.content),
       });
     } else if (msg.role === "assistant") {
-      let text = "";
-      let thinking = "";
-      for (const block of msg.content) {
-        if (block.type === "text") {
-          text += block.text;
-        } else if (block.type === "thinking" && "thinking" in block) {
-          thinking += (block as { thinking: string }).thinking || "";
-        }
-      }
+      const { text, thinking } = extractAssistantContent(msg as { content: unknown[] });
       uiMessages.push({
         id: `agent-${msg.timestamp}`,
         type: "agent",
@@ -268,7 +270,6 @@ export function buildUIMessagesFromAgentSession(session: AgentSession): UIMessag
       });
     }
     // tool_result messages are skipped in fallback reconstruction
-    // because we don't have the original args from AgentMessage alone.
   }
 
   return uiMessages;

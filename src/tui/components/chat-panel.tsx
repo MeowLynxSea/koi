@@ -55,12 +55,15 @@ export interface ChatPanelHandle {
   scrollDown: () => void;
 }
 
+/* ───────── Text Utilities ───────── */
+
 export function wrapText(text: string, width: number, indent: number): string[] {
   const available = Math.max(1, width - indent);
   const lines: string[] = [];
   let current = "";
   let currentWidth = 0;
   const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+
   for (const seg of segmenter.segment(text)) {
     const g = seg.segment;
     const w = stringWidth(g);
@@ -91,26 +94,26 @@ function padToWidth(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - w));
 }
 
+/* ───────── Tool Summary ───────── */
+
+const TOOL_SUMMARY_MAP: Record<string, (args: Record<string, unknown>) => string> = {
+  read: (a) => `read: ${String(a["path"] ?? a["file"] ?? "?")}`,
+  bash: (a) => {
+    const cmd = String(a["command"] ?? "");
+    return `bash: ${cmd.slice(0, 40)}${cmd.length > 40 ? "..." : ""}`;
+  },
+  edit: (a) => `edit: ${String(a["path"] ?? a["file"] ?? "?")}`,
+  write: (a) => `write: ${String(a["path"] ?? a["file"] ?? "?")}`,
+  grep: (a) => `grep: ${String(a["pattern"] ?? "?")}`,
+  find: (a) => `find: ${String(a["path"] ?? ".")}`,
+  ls: (a) => `ls: ${String(a["path"] ?? ".")}`,
+};
+
 function summarizeToolCall(toolName: string, args: Record<string, unknown>): string {
   try {
-    switch (toolName) {
-      case "read":
-        return `read: ${String(args["path"] ?? args["file"] ?? "?")}`;
-      case "bash":
-        return `bash: ${String(args["command"] ?? "").slice(0, 40)}${String(args["command"] ?? "").length > 40 ? "..." : ""}`;
-      case "edit":
-        return `edit: ${String(args["path"] ?? args["file"] ?? "?")}`;
-      case "write":
-        return `write: ${String(args["path"] ?? args["file"] ?? "?")}`;
-      case "grep":
-        return `grep: ${String(args["pattern"] ?? "?")}`;
-      case "find":
-        return `find: ${String(args["path"] ?? ".")}`;
-      case "ls":
-        return `ls: ${String(args["path"] ?? ".")}`;
-      default:
-        return `${toolName}: ${JSON.stringify(args).slice(0, 40)}`;
-    }
+    const formatter = TOOL_SUMMARY_MAP[toolName];
+    if (formatter) return formatter(args);
+    return `${toolName}: ${JSON.stringify(args).slice(0, 40)}`;
   } catch {
     return `${toolName}: ...`;
   }
@@ -129,9 +132,248 @@ function formatResult(result: unknown): string {
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 function formatDuration(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  return `${s}s`;
+  return `${Math.max(0, Math.floor(ms / 1000))}s`;
 }
+
+/* ───────── Message Renderers ───────── */
+
+function UserMessage({
+  msg,
+  contentWidth,
+  marginTop,
+}: {
+  msg: UIMessage & { type: "user" };
+  contentWidth: number;
+  marginTop: number;
+}) {
+  const margin = "  ";
+  const prefix = "> ";
+  const prefixWidth = stringWidth(prefix);
+  const available = Math.max(1, contentWidth - 2 - prefixWidth);
+  const wrapped = wrapText(msg.content, available, prefixWidth);
+
+  return (
+    <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
+      {wrapped.map((line, j) => {
+        const raw = j === 0 ? margin + prefix + line : margin + " ".repeat(prefixWidth) + line;
+        return (
+          <text key={j} bg="#333333">
+            {padToWidth(raw, contentWidth)}
+          </text>
+        );
+      })}
+    </box>
+  );
+}
+
+function AgentMessage({
+  msg,
+  contentWidth,
+  marginTop,
+  isStreaming,
+  spinnerFrame,
+}: {
+  msg: UIMessage & { type: "agent" };
+  contentWidth: number;
+  marginTop: number;
+  isStreaming: boolean;
+  spinnerFrame: number;
+}) {
+  const margin = "  ";
+  const prefix = "⏺ ";
+  const prefixWidth = stringWidth(prefix);
+  const thinkingInProgress = msg.thinking && msg.thinkingStartTime && !msg.thinkingEndTime;
+  const thinkingElapsed = thinkingInProgress
+    ? Date.now() - (msg.thinkingStartTime ?? 0)
+    : (msg.thinkingEndTime ?? 0) - (msg.thinkingStartTime ?? 0);
+  const thinkingDuration = formatDuration(thinkingElapsed);
+
+  return (
+    <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
+      {msg.thinking && thinkingInProgress && (
+        <>
+          <box flexDirection="row">
+            <text fg="#00f5ff">{margin}{SPINNER[spinnerFrame]}</text>
+            <text fg="#6c6c7c" marginLeft={1}>Thinking... {thinkingDuration}</text>
+          </box>
+          {wrapText(msg.thinking, contentWidth - 2, 2).map((line, j) => (
+            <text key={`think-${j}`} fg="#6c6c7c">{margin}  {line}</text>
+          ))}
+          {msg.content.trimEnd().length > 0 && <text />}
+        </>
+      )}
+      {msg.thinking && !thinkingInProgress && (
+        <>
+          {(msg.thinkingCollapsed ?? true) ? (
+            <text fg="#6c6c7c">{margin}▶ Thought for {thinkingDuration}</text>
+          ) : (
+            <>
+              <text fg="#6c6c7c">{margin}▼ Thought for {thinkingDuration}</text>
+              {wrapText(msg.thinking, contentWidth - 2, 2).map((line, j) => (
+                <text key={`think-${j}`} fg="#6c6c7c">{margin}  {line}</text>
+              ))}
+            </>
+          )}
+          {msg.content.trimEnd().length > 0 && <text />}
+        </>
+      )}
+      {msg.content.trimEnd().length > 0 && (
+        <box flexDirection="row" width={contentWidth}>
+          <text width={prefixWidth}>{prefix}</text>
+          <MarkdownContent
+            content={msg.content.trimEnd()}
+            width={contentWidth - prefixWidth}
+            streaming={isStreaming}
+          />
+        </box>
+      )}
+    </box>
+  );
+}
+
+function StatusMessage({ msg, marginTop }: { msg: UIMessage & { type: "status" }; marginTop: number }) {
+  return (
+    <text fg="#6c6c7c" marginTop={marginTop}>* {msg.content}</text>
+  );
+}
+
+function ToolCallMessage({
+  msg,
+  contentWidth,
+  marginTop,
+}: {
+  msg: UIMessage & { type: "tool_call" };
+  contentWidth: number;
+  marginTop: number;
+}) {
+  const margin = "  ";
+  const summary = summarizeToolCall(msg.toolName, msg.args);
+  const statusColor = msg.isError
+    ? "#ff5555"
+    : msg.result === undefined
+      ? "#f1fa8c"
+      : "#50fa7b";
+
+  return (
+    <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
+      {msg.collapsed ? (
+        <box flexDirection="row">
+          <text fg={statusColor}>{margin}• </text>
+          <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
+            {summary}{msg.isError ? " [error]" : ""} (ctrl+o to expand)
+          </text>
+        </box>
+      ) : (
+        <>
+          <box flexDirection="row">
+            <text fg={statusColor}>{margin}• </text>
+            <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>{msg.toolName}</text>
+          </box>
+          {wrapText(JSON.stringify(msg.args, null, 2), contentWidth, 2).map((line, j) => (
+            <text key={`args-${j}`} fg="#6c6c7c">{margin}  {line}</text>
+          ))}
+          {msg.result !== undefined ? (
+            <>
+              <text fg="#6c6c7c">{margin}  ──</text>
+              {wrapText(
+                msg.isError ? `Error: ${formatResult(msg.result)}` : formatResult(msg.result),
+                contentWidth,
+                2
+              ).map((line, j) => (
+                <text key={`res-${j}`} fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
+                  {margin}  {line}
+                </text>
+              ))}
+            </>
+          ) : (
+            <text fg="#f1fa8c">{margin}  Executing...</text>
+          )}
+        </>
+      )}
+    </box>
+  );
+}
+
+function SystemMessage({
+  msg,
+  contentWidth,
+  marginTop,
+}: {
+  msg: UIMessage & { type: "system" };
+  contentWidth: number;
+  marginTop: number;
+}) {
+  const wrapped = wrapText(msg.content, contentWidth, 0);
+  return (
+    <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
+      {wrapped.map((line, j) => (
+        <text key={j} fg="#6c6c7c">{line}</text>
+      ))}
+    </box>
+  );
+}
+
+function SimpleMessage({ msg, marginTop }: { msg: UIMessage & { type: "compaction" | "retry" }; marginTop: number }) {
+  return <text fg="#6c6c7c" marginTop={marginTop}>{msg.content}</text>;
+}
+
+/* ───────── Syntax Style ───────── */
+
+function buildSyntaxStyle() {
+  const style = SyntaxStyle.create();
+  for (let i = 1; i <= 6; i++) {
+    style.registerStyle(`markup.heading.${i}`, { fg: "#ff79c6", bold: true });
+  }
+  style.registerStyle("markup.heading", { fg: "#ff79c6", bold: true });
+  style.registerStyle("markup.strong", { bold: true });
+  style.registerStyle("markup.italic", { fg: "#bd93f9", italic: true });
+  style.registerStyle("markup.strikethrough", {});
+  style.registerStyle("markup.link", { fg: "#8be9fd", underline: true });
+  style.registerStyle("markup.link.label", { fg: "#8be9fd", underline: true });
+  style.registerStyle("markup.link.url", { fg: "#8be9fd" });
+  style.registerStyle("markup.raw", { fg: "#a5b4fc" });
+  style.registerStyle("markup.raw.block", { fg: "#f8f8f2", bg: "#44475a" });
+  style.registerStyle("markup.list", { fg: "#ff79c6" });
+  style.registerStyle("markup.list.unchecked", { fg: "#ff79c6" });
+  style.registerStyle("markup.list.checked", { fg: "#ff79c6" });
+  style.registerStyle("markup.quote", { fg: "#6272a4" });
+  style.registerStyle("punctuation.special", { fg: "#6272a4" });
+  return style;
+}
+
+function MarkdownContent({
+  content,
+  width,
+  streaming,
+}: {
+  content: string;
+  width: number;
+  streaming: boolean;
+}) {
+  const syntaxStyle = useMemo(() => buildSyntaxStyle(), []);
+  return (
+    <markdown
+      content={content}
+      syntaxStyle={syntaxStyle}
+      width={width}
+      streaming={streaming}
+      conceal={true}
+      tableOptions={{ borderColor: "#6272a4", style: "columns" }}
+    />
+  );
+}
+
+/* ───────── Margin Calculator ───────── */
+
+function getMarginTop(messages: UIMessage[], msgIdx: number): number {
+  if (msgIdx === 0) return 0;
+  const prevMsg = messages[msgIdx - 1];
+  const msg = messages[msgIdx];
+  if (msg?.type === "tool_call" && prevMsg?.type === "tool_call") return 0;
+  return 1;
+}
+
+/* ───────── ChatPanel ───────── */
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
   function ChatPanel({ messages, width = 80, height, isStreaming }, ref) {
@@ -142,59 +384,20 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
     useEffect(() => {
       const hasThinkingInProgress = messages.some(
-        (m) =>
-          m.type === "agent" &&
-          m.thinking &&
-          m.thinkingStartTime &&
-          !m.thinkingEndTime
+        (m) => m.type === "agent" && m.thinking && m.thinkingStartTime && !m.thinkingEndTime
       );
       if (!hasThinkingInProgress) return;
-      const interval = setInterval(() => {
-        setSpinnerFrame((f) => (f + 1) % SPINNER.length);
-      }, 80);
+      const interval = setInterval(() => setSpinnerFrame((f) => (f + 1) % SPINNER.length), 80);
       return () => clearInterval(interval);
     }, [messages]);
-
-    const syntaxStyle = useMemo(() => {
-      const style = SyntaxStyle.create();
-      // Heading levels (tree-sitter markdown captures)
-      for (let i = 1; i <= 6; i++) {
-        style.registerStyle(`markup.heading.${i}`, { fg: "#ff79c6", bold: true });
-      }
-      style.registerStyle("markup.heading", { fg: "#ff79c6", bold: true });
-      // Inline text styles
-      style.registerStyle("markup.strong", { bold: true });
-      style.registerStyle("markup.italic", { fg: "#bd93f9", italic: true });
-      style.registerStyle("markup.strikethrough", {});
-      // Links
-      style.registerStyle("markup.link", { fg: "#8be9fd", underline: true });
-      style.registerStyle("markup.link.label", { fg: "#8be9fd", underline: true });
-      style.registerStyle("markup.link.url", { fg: "#8be9fd" });
-      // Code (inline and blocks)
-      style.registerStyle("markup.raw", { fg: "#a5b4fc" });
-      style.registerStyle("markup.raw.block", { fg: "#f8f8f2", bg: "#44475a" });
-      // Lists
-      style.registerStyle("markup.list", { fg: "#ff79c6" });
-      style.registerStyle("markup.list.unchecked", { fg: "#ff79c6" });
-      style.registerStyle("markup.list.checked", { fg: "#ff79c6" });
-      // Blockquote
-      style.registerStyle("markup.quote", { fg: "#6272a4" });
-      // Punctuation (hr, block quote markers, table borders)
-      style.registerStyle("punctuation.special", { fg: "#6272a4" });
-      return style;
-    }, []);
 
     useImperativeHandle(ref, () => ({
       scrollToBottom: () => {
         const sb = scrollboxRef.current;
         if (sb) sb.scrollTo({ x: 0, y: sb.scrollHeight });
       },
-      scrollUp: () => {
-        scrollboxRef.current?.scrollBy(-3, "step");
-      },
-      scrollDown: () => {
-        scrollboxRef.current?.scrollBy(3, "step");
-      },
+      scrollUp: () => scrollboxRef.current?.scrollBy(-3, "step"),
+      scrollDown: () => scrollboxRef.current?.scrollBy(3, "step"),
     }));
 
     return (
@@ -212,226 +415,32 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
           <text />
           {messages.map((msg, msgIdx) => {
             const isLast = msgIdx === messages.length - 1;
-            const msgStreaming = isStreaming && isLast;
-            let marginTop = msgIdx > 0 ? 1 : 0;
-            if (msgIdx > 0) {
-              const prevMsg = messages[msgIdx - 1]!;
-              if (msg.type === "tool_call" && prevMsg.type === "tool_call") {
-                marginTop = 0;
-              }
-            }
+            const msgStreaming = Boolean(isStreaming && isLast);
+            const marginTop = getMarginTop(messages, msgIdx);
 
             switch (msg.type) {
-              case "user": {
-                const margin = "  ";
-                const prefix = "> ";
-                const prefixWidth = stringWidth(prefix);
-                const available = Math.max(1, contentWidth - 2 - prefixWidth);
-                const wrapped = wrapText(msg.content, available, prefixWidth);
+              case "user":
+                return <UserMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} />;
+              case "agent":
                 return (
-                  <box
+                  <AgentMessage
                     key={msg.id}
-                    flexDirection="column"
-                    width={contentWidth}
+                    msg={msg}
+                    contentWidth={contentWidth}
                     marginTop={marginTop}
-                  >
-                    {wrapped.map((line, j) => {
-                      const raw =
-                        j === 0
-                          ? margin + prefix + line
-                          : margin + " ".repeat(prefixWidth) + line;
-                      return (
-                        <text key={j} bg="#333333">
-                          {padToWidth(raw, contentWidth)}
-                        </text>
-                      );
-                    })}
-                  </box>
+                    isStreaming={msgStreaming}
+                    spinnerFrame={spinnerFrame}
+                  />
                 );
-              }
-
-              case "agent": {
-                const margin = "  ";
-                const prefix = "⏺ ";
-                const prefixWidth = stringWidth(prefix);
-                const thinkingInProgress =
-                  msg.thinking &&
-                  msg.thinkingStartTime &&
-                  !msg.thinkingEndTime;
-                const thinkingElapsed = thinkingInProgress
-                  ? Date.now() - (msg.thinkingStartTime ?? 0)
-                  : (msg.thinkingEndTime ?? 0) - (msg.thinkingStartTime ?? 0);
-                const thinkingDuration = formatDuration(thinkingElapsed);
-                return (
-                  <box
-                    key={msg.id}
-                    flexDirection="column"
-                    width={contentWidth}
-                    marginTop={marginTop}
-                  >
-                    {msg.thinking && thinkingInProgress && (
-                      <>
-                        <box flexDirection="row">
-                          <text fg="#00f5ff">
-                            {margin}{SPINNER[spinnerFrame]}
-                          </text>
-                          <text fg="#6c6c7c" marginLeft={1}>
-                            Thinking... {thinkingDuration}
-                          </text>
-                        </box>
-                        {wrapText(
-                          msg.thinking,
-                          contentWidth - 2,
-                          2
-                        ).map((line, j) => (
-                          <text key={`think-${j}`} fg="#6c6c7c">
-                            {margin}  {line}
-                          </text>
-                        ))}
-                        {msg.content.trimEnd().length > 0 && <text />}
-                      </>
-                    )}
-                    {msg.thinking && !thinkingInProgress && (
-                      <>
-                        {(msg.thinkingCollapsed ?? true) ? (
-                          <text fg="#6c6c7c">
-                            {margin}▶ Thought for {thinkingDuration}
-                          </text>
-                        ) : (
-                          <>
-                            <text fg="#6c6c7c">
-                              {margin}▼ Thought for {thinkingDuration}
-                            </text>
-                            {wrapText(
-                              msg.thinking,
-                              contentWidth - 2,
-                              2
-                            ).map((line, j) => (
-                              <text key={`think-${j}`} fg="#6c6c7c">
-                                {margin}  {line}
-                              </text>
-                            ))}
-                          </>
-                        )}
-                        {msg.content.trimEnd().length > 0 && <text />}
-                      </>
-                    )}
-                    {msg.content.trimEnd().length > 0 && (
-                      <box flexDirection="row" width={contentWidth}>
-                        <text width={prefixWidth}>{prefix}</text>
-                        <markdown
-                          content={msg.content.trimEnd()}
-                          syntaxStyle={syntaxStyle}
-                          width={contentWidth - prefixWidth}
-                          streaming={msgStreaming}
-                          conceal={true}
-                          tableOptions={{ borderColor: "#6272a4", style: "columns" }}
-                        />
-                      </box>
-                    )}
-                  </box>
-                );
-              }
-
-              case "status": {
-                return (
-                  <text key={msg.id} fg="#6c6c7c" marginTop={marginTop}>
-                    * {msg.content}
-                  </text>
-                );
-              }
-
-              case "tool_call": {
-                const margin = "  ";
-                const summary = summarizeToolCall(msg.toolName, msg.args);
-                const statusColor = msg.isError
-                  ? "#ff5555"
-                  : msg.result === undefined
-                    ? "#f1fa8c"
-                    : "#50fa7b";
-                return (
-                  <box
-                    key={msg.id}
-                    flexDirection="column"
-                    width={contentWidth}
-                    marginTop={marginTop}
-                  >
-                    {msg.collapsed ? (
-                      <box flexDirection="row">
-                        <text fg={statusColor}>{margin}• </text>
-                        <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
-                          {summary}
-                          {msg.isError ? " [error]" : ""} (ctrl+o to expand)
-                        </text>
-                      </box>
-                    ) : (
-                      <>
-                        <box flexDirection="row">
-                          <text fg={statusColor}>{margin}• </text>
-                          <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
-                            {msg.toolName}
-                          </text>
-                        </box>
-                        {wrapText(
-                          JSON.stringify(msg.args, null, 2),
-                          contentWidth,
-                          2
-                        ).map((line, j) => (
-                          <text key={`args-${j}`} fg="#6c6c7c">
-                            {margin}  {line}
-                          </text>
-                        ))}
-                        {msg.result !== undefined ? (
-                          <>
-                            <text fg="#6c6c7c">{margin}  ──</text>
-                            {wrapText(
-                              msg.isError ? `Error: ${formatResult(msg.result)}` : formatResult(msg.result),
-                              contentWidth,
-                              2
-                            ).map((line, j) => (
-                              <text
-                                key={`res-${j}`}
-                                fg={msg.isError ? "#ff5555" : "#6c6c7c"}
-                              >
-                                {margin}  {line}
-                              </text>
-                            ))}
-                          </>
-                        ) : (
-                          <text fg="#f1fa8c">{margin}  Executing...</text>
-                        )}
-                      </>
-                    )}
-                  </box>
-                );
-              }
-
-              case "system": {
-                const wrapped = wrapText(msg.content, contentWidth, 0);
-                return (
-                  <box
-                    key={msg.id}
-                    flexDirection="column"
-                    width={contentWidth}
-                    marginTop={marginTop}
-                  >
-                    {wrapped.map((line, j) => (
-                      <text key={j} fg="#6c6c7c">
-                        {line}
-                      </text>
-                    ))}
-                  </box>
-                );
-              }
-
+              case "status":
+                return <StatusMessage key={msg.id} msg={msg} marginTop={marginTop} />;
+              case "tool_call":
+                return <ToolCallMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} />;
+              case "system":
+                return <SystemMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} />;
               case "compaction":
-              case "retry": {
-                return (
-                  <text key={msg.id} fg="#6c6c7c" marginTop={marginTop}>
-                    {msg.content}
-                  </text>
-                );
-              }
+              case "retry":
+                return <SimpleMessage key={msg.id} msg={msg} marginTop={marginTop} />;
             }
           })}
           <text />

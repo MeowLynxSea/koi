@@ -55,6 +55,8 @@ export interface KoiAgentState {
   deleteSession: (sessionId: string) => Promise<void>;
 }
 
+/* ───────── ID & Type Guards ───────── */
+
 function generateId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -93,262 +95,246 @@ function extractTextAndThinking(msg: AssistantMessage): {
   return { text, thinking };
 }
 
-function handleEvent(
-  event: AgentSessionEvent,
-  setMessages: React.Dispatch<React.SetStateAction<UIMessage[]>>,
-  setIsStreaming: React.Dispatch<React.SetStateAction<boolean>>,
-  streamingMsgIdRef: React.MutableRefObject<string | null>,
-  pendingToolsRef: React.MutableRefObject<Map<string, string>>,
-  setSessionTitleState: React.Dispatch<React.SetStateAction<string>>,
-  setSessionTitle: (title: string) => void,
-  allExpandedRef: React.MutableRefObject<boolean>
-) {
-  switch (event.type) {
-    case "agent_start": {
-      setIsStreaming(true);
-      setMessages((prev) => [
-        ...prev.filter((m) => m.type !== "status"),
-        { id: generateId("status"), type: "status", content: "Imagining..." },
-      ]);
-      break;
-    }
+/* ───────── Event Handlers ───────── */
 
-    case "agent_end": {
-      setIsStreaming(false);
-      const pendingMsgId = streamingMsgIdRef.current;
-      if (pendingMsgId && event.messages.length > 0) {
-        const lastAssistant = [...event.messages]
-          .reverse()
-          .find(isAssistantMessage);
-        if (lastAssistant) {
-          const { text, thinking } = extractTextAndThinking(lastAssistant);
-          setMessages((prev) => {
-            const next = [...prev];
-            const idx = next.findIndex(
-              (m) => m.id === pendingMsgId && m.type === "agent"
-            );
-            if (idx >= 0) {
-              if (text.length === 0 && thinking.length === 0) {
-                next.splice(idx, 1);
-              } else {
-                const prevMsg = next[idx] as UIMessage & { type: "agent" };
-                next[idx] = {
-                  ...prevMsg,
-                  content: text,
-                  thinking: thinking.length > 0 ? thinking : undefined,
-                  thinkingEndTime:
-                    thinking.length > 0 && !prevMsg.thinkingEndTime
-                      ? Date.now()
-                      : prevMsg.thinkingEndTime,
-                };
-              }
-            }
-            return next;
-          });
-        }
-      }
-      setMessages((prev) => prev.filter((m) => m.type !== "status"));
-      streamingMsgIdRef.current = null;
-      pendingToolsRef.current.clear();
-      break;
-    }
+interface EventHandlerContext {
+  setMessages: React.Dispatch<React.SetStateAction<UIMessage[]>>;
+  setIsStreaming: React.Dispatch<React.SetStateAction<boolean>>;
+  streamingMsgIdRef: React.MutableRefObject<string | null>;
+  pendingToolsRef: React.MutableRefObject<Map<string, string>>;
+  setSessionTitleState: React.Dispatch<React.SetStateAction<string>>;
+  setSessionTitle: (title: string) => void;
+  allExpandedRef: React.MutableRefObject<boolean>;
+}
 
-    case "message_start": {
-      if (!isAssistantMessage(event.message)) break;
-      const msgId = generateId("agent");
-      streamingMsgIdRef.current = msgId;
-      setMessages((prev) => [
-        ...prev.filter((m) => m.type !== "status"),
-        { id: msgId, type: "agent", content: "", thinkingCollapsed: true },
-      ]);
-      break;
-    }
+function buildAgentMessageUpdate(
+  prevMsg: UIMessage & { type: "agent" },
+  text: string,
+  thinking: string,
+  assistantEvent?: { type: string }
+): UIMessage {
+  const thinkingStarted = thinking.length > 0 && !prevMsg.thinkingStartTime;
+  const thinkingJustEnded =
+    prevMsg.thinkingStartTime &&
+    !prevMsg.thinkingEndTime &&
+    (assistantEvent?.type === "thinking_end" ||
+      assistantEvent?.type === "text_start" ||
+      assistantEvent?.type === "text_delta" ||
+      assistantEvent?.type === "toolcall_start" ||
+      assistantEvent?.type === "toolcall_delta");
 
-    case "message_update": {
-      if (!isAssistantMessage(event.message)) break;
-      const msgId = streamingMsgIdRef.current;
-      if (!msgId) return;
-      const assistantMsg = event.message;
-      const { text, thinking } = extractTextAndThinking(assistantMsg);
-      const assistantEvent =
-        "assistantMessageEvent" in event
-          ? (event as { assistantMessageEvent: { type: string } }).assistantMessageEvent
-          : undefined;
+  return {
+    ...prevMsg,
+    content: text,
+    thinking: thinking.length > 0 ? thinking : undefined,
+    thinkingStartTime: thinkingStarted ? Date.now() : prevMsg.thinkingStartTime,
+    thinkingEndTime: thinkingJustEnded ? Date.now() : prevMsg.thinkingEndTime,
+  };
+}
 
-      setMessages((prev) => {
-        const next = [...prev];
-        const idx = next.findIndex(
-          (m) => m.id === msgId && m.type === "agent"
-        );
-        if (idx >= 0) {
-          const prevMsg = next[idx] as UIMessage & { type: "agent" };
-          const thinkingStarted =
-            thinking.length > 0 && !prevMsg.thinkingStartTime;
-          const thinkingJustEnded =
-            prevMsg.thinkingStartTime &&
-            !prevMsg.thinkingEndTime &&
-            (assistantEvent?.type === "thinking_end" ||
-              assistantEvent?.type === "text_start" ||
-              assistantEvent?.type === "text_delta" ||
-              assistantEvent?.type === "toolcall_start" ||
-              assistantEvent?.type === "toolcall_delta");
-          next[idx] = {
-            ...prevMsg,
-            content: text,
-            thinking: thinking.length > 0 ? thinking : undefined,
-            thinkingStartTime: thinkingStarted
-              ? Date.now()
-              : prevMsg.thinkingStartTime,
-            thinkingEndTime: thinkingJustEnded ? Date.now() : prevMsg.thinkingEndTime,
-          };
-        }
-        return next;
-      });
-      break;
-    }
+function updateAgentMessage(
+  messages: UIMessage[],
+  msgId: string,
+  updater: (msg: UIMessage & { type: "agent" }) => UIMessage
+): UIMessage[] {
+  const next = [...messages];
+  const idx = next.findIndex((m) => m.id === msgId && m.type === "agent");
+  if (idx >= 0) {
+    next[idx] = updater(next[idx] as UIMessage & { type: "agent" });
+  }
+  return next;
+}
 
-    case "message_end": {
-      if (!isAssistantMessage(event.message)) break;
-      const msgId = streamingMsgIdRef.current;
-      if (msgId) {
-        const assistantMsg = event.message as AssistantMessage;
-        const { text, thinking } = extractTextAndThinking(assistantMsg);
-        setMessages((prev) => {
-          const next = [...prev];
-          const idx = next.findIndex(
-            (m) => m.id === msgId && m.type === "agent"
-          );
-          if (idx >= 0) {
-            if (text.length === 0 && thinking.length === 0) {
-              next.splice(idx, 1);
-            } else {
-              const prevMsg = next[idx] as UIMessage & { type: "agent" };
-              next[idx] = {
-                ...prevMsg,
-                content: text,
-                thinking: thinking.length > 0 ? thinking : undefined,
-                thinkingEndTime: thinking.length > 0 && !prevMsg.thinkingEndTime
-                  ? Date.now()
-                  : prevMsg.thinkingEndTime,
-              };
-            }
-          }
-          return next;
-        });
-      }
-      streamingMsgIdRef.current = null;
-      break;
-    }
-
-    case "tool_execution_start": {
-      const toolMsgId = generateId("tool");
-      pendingToolsRef.current.set(event.toolCallId, toolMsgId);
-      setMessages((prev) =>
-        prev.concat({
-          id: toolMsgId,
-          type: "tool_call",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          args: event.args as Record<string, unknown>,
-          collapsed: !allExpandedRef.current,
-        })
-      );
-      break;
-    }
-
-    case "tool_execution_update": {
-      const toolMsgId = pendingToolsRef.current.get(event.toolCallId);
-      if (!toolMsgId) return;
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.id === toolMsgId && m.type === "tool_call") {
-            return { ...m, result: event.partialResult };
-          }
-          return m;
-        })
-      );
-      break;
-    }
-
-    case "tool_execution_end": {
-      const toolMsgId = pendingToolsRef.current.get(event.toolCallId);
-      if (!toolMsgId) return;
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.id === toolMsgId && m.type === "tool_call") {
-            return {
-              ...m,
-              result: event.result,
-              isError: event.isError,
-            };
-          }
-          return m;
-        })
-      );
-      break;
-    }
-
-    case "compaction_start": {
-      setMessages((prev) =>
-        prev.concat({
-          id: generateId("compact"),
-          type: "compaction",
-          content: `Compacting session (${event.reason})...`,
-        })
-      );
-      break;
-    }
-
-    case "compaction_end": {
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (m.type === "compaction" && m.content.includes("Compacting")) {
-            return {
-              ...m,
-              content: event.aborted
-                ? "Compaction aborted."
-                : "Session compacted.",
-            };
-          }
-          return m;
-        })
-      );
-      break;
-    }
-
-    case "auto_retry_start": {
-      setMessages((prev) =>
-        prev.filter((m) => m.type !== "status").concat({
-          id: generateId("retry"),
-          type: "retry",
-          attempt: event.attempt,
-          maxAttempts: event.maxAttempts,
-          content: `Retrying... (${event.attempt}/${event.maxAttempts}): ${event.errorMessage}`,
-        })
-      );
-      break;
-    }
-
-    case "auto_retry_end": {
-      setMessages((prev) => prev.filter((m) => m.type !== "retry"));
-      break;
-    }
-
-    case "session_info_changed": {
-      if (event.name) {
-        setSessionTitleState(event.name);
-        setSessionTitle(event.name);
-      }
-      break;
-    }
-    case "thinking_level_changed":
-    case "queue_update":
-    case "turn_start":
-    case "turn_end": {
-      break;
+function removeAgentMessageIfEmpty(
+  messages: UIMessage[],
+  msgId: string,
+  text: string,
+  thinking: string
+): UIMessage[] {
+  const next = [...messages];
+  const idx = next.findIndex((m) => m.id === msgId && m.type === "agent");
+  if (idx >= 0) {
+    if (text.length === 0 && thinking.length === 0) {
+      next.splice(idx, 1);
+    } else {
+      const prevMsg = next[idx] as UIMessage & { type: "agent" };
+      next[idx] = {
+        ...prevMsg,
+        content: text,
+        thinking: thinking.length > 0 ? thinking : undefined,
+        thinkingEndTime:
+          thinking.length > 0 && !prevMsg.thinkingEndTime
+            ? Date.now()
+            : prevMsg.thinkingEndTime,
+      };
     }
   }
+  return next;
 }
+
+function handleAgentStart(ctx: EventHandlerContext) {
+  ctx.setIsStreaming(true);
+  ctx.setMessages((prev) => [
+    ...prev.filter((m) => m.type !== "status"),
+    { id: generateId("status"), type: "status", content: "Imagining..." },
+  ]);
+}
+
+function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>, ctx: EventHandlerContext) {
+  ctx.setIsStreaming(false);
+  const pendingMsgId = ctx.streamingMsgIdRef.current;
+  if (pendingMsgId && event.messages.length > 0) {
+    const lastAssistant = [...event.messages].reverse().find(isAssistantMessage);
+    if (lastAssistant) {
+      const { text, thinking } = extractTextAndThinking(lastAssistant);
+      ctx.setMessages((prev) => removeAgentMessageIfEmpty(prev, pendingMsgId, text, thinking));
+    }
+  }
+  ctx.setMessages((prev) => prev.filter((m) => m.type !== "status"));
+  ctx.streamingMsgIdRef.current = null;
+  ctx.pendingToolsRef.current.clear();
+}
+
+function handleMessageStart(event: Extract<AgentSessionEvent, { type: "message_start" }>, ctx: EventHandlerContext) {
+  if (!isAssistantMessage(event.message)) return;
+  const msgId = generateId("agent");
+  ctx.streamingMsgIdRef.current = msgId;
+  ctx.setMessages((prev) => [
+    ...prev.filter((m) => m.type !== "status"),
+    { id: msgId, type: "agent", content: "", thinkingCollapsed: true },
+  ]);
+}
+
+function handleMessageUpdate(event: Extract<AgentSessionEvent, { type: "message_update" }>, ctx: EventHandlerContext) {
+  if (!isAssistantMessage(event.message)) return;
+  const msgId = ctx.streamingMsgIdRef.current;
+  if (!msgId) return;
+  const { text, thinking } = extractTextAndThinking(event.message);
+  const assistantEvent = event.assistantMessageEvent;
+  ctx.setMessages((prev) =>
+    updateAgentMessage(prev, msgId, (prevMsg) =>
+      buildAgentMessageUpdate(prevMsg, text, thinking, assistantEvent)
+    )
+  );
+}
+
+function handleMessageEnd(event: Extract<AgentSessionEvent, { type: "message_end" }>, ctx: EventHandlerContext) {
+  if (!isAssistantMessage(event.message)) return;
+  const msgId = ctx.streamingMsgIdRef.current;
+  if (msgId) {
+    const { text, thinking } = extractTextAndThinking(event.message);
+    ctx.setMessages((prev) => removeAgentMessageIfEmpty(prev, msgId, text, thinking));
+  }
+  ctx.streamingMsgIdRef.current = null;
+}
+
+function handleToolExecutionStart(event: Extract<AgentSessionEvent, { type: "tool_execution_start" }>, ctx: EventHandlerContext) {
+  const toolMsgId = generateId("tool");
+  ctx.pendingToolsRef.current.set(event.toolCallId, toolMsgId);
+  ctx.setMessages((prev) =>
+    prev.concat({
+      id: toolMsgId,
+      type: "tool_call",
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      args: event.args as Record<string, unknown>,
+      collapsed: !ctx.allExpandedRef.current,
+    })
+  );
+}
+
+function handleToolExecutionUpdate(event: Extract<AgentSessionEvent, { type: "tool_execution_update" }>, ctx: EventHandlerContext) {
+  const toolMsgId = ctx.pendingToolsRef.current.get(event.toolCallId);
+  if (!toolMsgId) return;
+  ctx.setMessages((prev) =>
+    prev.map((m) =>
+      m.id === toolMsgId && m.type === "tool_call"
+        ? { ...m, result: event.partialResult }
+        : m
+    )
+  );
+}
+
+function handleToolExecutionEnd(event: Extract<AgentSessionEvent, { type: "tool_execution_end" }>, ctx: EventHandlerContext) {
+  const toolMsgId = ctx.pendingToolsRef.current.get(event.toolCallId);
+  if (!toolMsgId) return;
+  ctx.setMessages((prev) =>
+    prev.map((m) =>
+      m.id === toolMsgId && m.type === "tool_call"
+        ? { ...m, result: event.result, isError: event.isError }
+        : m
+    )
+  );
+}
+
+function handleCompactionStart(event: Extract<AgentSessionEvent, { type: "compaction_start" }>, ctx: EventHandlerContext) {
+  ctx.setMessages((prev) =>
+    prev.concat({
+      id: generateId("compact"),
+      type: "compaction",
+      content: `Compacting session (${event.reason})...`,
+    })
+  );
+}
+
+function handleCompactionEnd(event: Extract<AgentSessionEvent, { type: "compaction_end" }>, ctx: EventHandlerContext) {
+  ctx.setMessages((prev) =>
+    prev.map((m) =>
+      m.type === "compaction" && m.content.includes("Compacting")
+        ? {
+            ...m,
+            content: event.aborted ? "Compaction aborted." : "Session compacted.",
+          }
+        : m
+    )
+  );
+}
+
+function handleAutoRetryStart(event: Extract<AgentSessionEvent, { type: "auto_retry_start" }>, ctx: EventHandlerContext) {
+  ctx.setMessages((prev) =>
+    prev
+      .filter((m) => m.type !== "status")
+      .concat({
+        id: generateId("retry"),
+        type: "retry",
+        attempt: event.attempt,
+        maxAttempts: event.maxAttempts,
+        content: `Retrying... (${event.attempt}/${event.maxAttempts}): ${event.errorMessage}`,
+      })
+  );
+}
+
+function handleAutoRetryEnd(_event: Extract<AgentSessionEvent, { type: "auto_retry_end" }>, ctx: EventHandlerContext) {
+  ctx.setMessages((prev) => prev.filter((m) => m.type !== "retry"));
+}
+
+function handleSessionInfoChanged(event: Extract<AgentSessionEvent, { type: "session_info_changed" }>, ctx: EventHandlerContext) {
+  if (event.name) {
+    ctx.setSessionTitleState(event.name);
+    ctx.setSessionTitle(event.name);
+  }
+}
+
+function handleEvent(event: AgentSessionEvent, ctx: EventHandlerContext) {
+  switch (event.type) {
+    case "agent_start": handleAgentStart(ctx); break;
+    case "agent_end": handleAgentEnd(event, ctx); break;
+    case "message_start": handleMessageStart(event, ctx); break;
+    case "message_update": handleMessageUpdate(event, ctx); break;
+    case "message_end": handleMessageEnd(event, ctx); break;
+    case "tool_execution_start": handleToolExecutionStart(event, ctx); break;
+    case "tool_execution_update": handleToolExecutionUpdate(event, ctx); break;
+    case "tool_execution_end": handleToolExecutionEnd(event, ctx); break;
+    case "compaction_start": handleCompactionStart(event, ctx); break;
+    case "compaction_end": handleCompactionEnd(event, ctx); break;
+    case "auto_retry_start": handleAutoRetryStart(event, ctx); break;
+    case "auto_retry_end": handleAutoRetryEnd(event, ctx); break;
+    case "session_info_changed": handleSessionInfoChanged(event, ctx); break;
+    default: break;
+  }
+}
+
+/* ───────── Tree Navigation ───────── */
 
 function findNodeInTree(
   nodes: SessionTreeNode[],
@@ -361,6 +347,8 @@ function findNodeInTree(
   }
   return null;
 }
+
+/* ───────── useKoiAgent ───────── */
 
 export function useKoiAgent(): KoiAgentState {
   const [session, setSession] = useState<AgentSession | null>(null);
@@ -382,12 +370,15 @@ export function useKoiAgent(): KoiAgentState {
   const currentSessionIdRef = useRef<string | null>(null);
   const allExpandedRef = useRef<boolean>(false);
 
-  // Debounced save of koi-state
+  /* ── Ref Sync ── */
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
+
+  /* ── Debounced Save ── */
   const scheduleSave = useCallback(
     (sessionId: string, msgs: UIMessage[], title: string) => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         const state: KoiSessionState = {
           sessionId,
@@ -405,64 +396,41 @@ export function useKoiAgent(): KoiAgentState {
     []
   );
 
-  // Keep refs in sync with latest state for cleanup handlers
-  useEffect(() => { sessionRef.current = session; }, [session]);
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
-  useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
-
-  // Auto-save when messages change
   useEffect(() => {
     if (currentSessionId && session) {
-      const title = session.sessionName || getSessionTitle();
-      scheduleSave(currentSessionId, messages, title);
+      scheduleSave(currentSessionId, messages, session.sessionName || getSessionTitle());
     }
   }, [messages, currentSessionId, session, scheduleSave]);
 
-  const subscribeToSession = useCallback(
-    (s: AgentSession) => {
-      const unsubscribe = s.subscribe((event: AgentSessionEvent) => {
-        handleEvent(
-          event,
-          setMessages,
-          setIsStreaming,
-          streamingMsgIdRef,
-          pendingToolsRef,
-          setSessionTitleState,
-          setSessionTitle,
-          allExpandedRef
-        );
-      });
-      return unsubscribe;
-    },
-    []
-  );
+  /* ── Subscribe to Session ── */
+  const subscribeToSession = useCallback((s: AgentSession) => {
+    const ctx: EventHandlerContext = {
+      setMessages,
+      setIsStreaming,
+      streamingMsgIdRef,
+      pendingToolsRef,
+      setSessionTitleState,
+      setSessionTitle,
+      allExpandedRef,
+    };
+    return s.subscribe((event: AgentSessionEvent) => handleEvent(event, ctx));
+  }, []);
 
-  const restoreSessionState = useCallback(
-    (s: AgentSession) => {
-      const koiState = loadKoiState(s.sessionId);
-      if (koiState && koiState.messages.length > 0) {
-        setMessages(koiState.messages);
-      } else {
-        const rebuilt = buildUIMessagesFromAgentSession(s);
-        setMessages(rebuilt);
-      }
-      // Restore title if available
-      if (koiState?.title) {
-        setSessionTitleState(koiState.title);
-        setSessionTitle(koiState.title);
-      } else if (s.sessionName) {
-        setSessionTitleState(s.sessionName);
-      }
-      if (koiState?.currentModel) {
-        currentModelRef.current = koiState.currentModel;
-      }
-      if (koiState?.auxiliaryModel) {
-        auxiliaryModelRef.current = koiState.auxiliaryModel;
-      }
-    },
-    []
-  );
+  /* ── Restore State ── */
+  const restoreSessionState = useCallback((s: AgentSession) => {
+    const koiState = loadKoiState(s.sessionId);
+    setMessages(koiState?.messages.length ? koiState.messages : buildUIMessagesFromAgentSession(s));
 
+    const title = koiState?.title ?? s.sessionName;
+    if (title) {
+      setSessionTitleState(title);
+      setSessionTitle(title);
+    }
+    if (koiState?.currentModel) currentModelRef.current = koiState.currentModel;
+    if (koiState?.auxiliaryModel) auxiliaryModelRef.current = koiState.auxiliaryModel;
+  }, []);
+
+  /* ── Setup Session ── */
   const setupSession = useCallback(
     async (result: { session: AgentSession }) => {
       const s = result.session;
@@ -472,17 +440,28 @@ export function useKoiAgent(): KoiAgentState {
       subscribeToSession(s);
       restoreSessionState(s);
       setIsReady(true);
-      // Refresh session list
-      const list = await listSessions();
-      setSessionList(list);
+      setSessionList(await listSessions());
     },
     [subscribeToSession, restoreSessionState]
   );
 
-  // Initialize session on mount
+  /* ── Build Koi State ── */
+  const buildKoiState = useCallback(
+    (sid: string, msgs: UIMessage[], title: string): KoiSessionState => ({
+      sessionId: sid,
+      title,
+      currentModel: currentModelRef.current,
+      auxiliaryModel: auxiliaryModelRef.current,
+      messages: msgs,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }),
+    []
+  );
+
+  /* ── Initialize ── */
   useEffect(() => {
     let mounted = true;
-
     void continueRecentSession(globalTaskManager)
       .then((result) => {
         if (!mounted) {
@@ -496,100 +475,70 @@ export function useKoiAgent(): KoiAgentState {
         setError(err instanceof Error ? err.message : String(err));
         setIsReady(true);
       });
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [setupSession]);
 
-  // Cleanup session on unmount
+  /* ── Cleanup ── */
   useEffect(() => {
     return () => {
       const s = sessionRef.current;
       const sid = currentSessionIdRef.current;
       const msgs = messagesRef.current;
       if (s) {
-        // Save before dispose
         if (sid) {
-          const title = s.sessionName || getSessionTitle();
-          const state: KoiSessionState = {
-            sessionId: sid,
-            title,
-            currentModel: currentModelRef.current,
-            auxiliaryModel: auxiliaryModelRef.current,
-            messages: msgs,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          saveKoiState(sid, state);
+          saveKoiState(sid, buildKoiState(sid, msgs, s.sessionName || getSessionTitle()));
           globalTaskManager.save(sid);
         }
         s.dispose();
       }
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, []);
+  }, [buildKoiState]);
 
   const saveCurrentState = useCallback(() => {
     if (currentSessionId && session) {
-      const title = session.sessionName || getSessionTitle();
-      const state: KoiSessionState = {
-        sessionId: currentSessionId,
-        title,
-        currentModel: currentModelRef.current,
-        auxiliaryModel: auxiliaryModelRef.current,
-        messages,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      saveKoiState(currentSessionId, state);
+      saveKoiState(currentSessionId, buildKoiState(currentSessionId, messages, session.sessionName || getSessionTitle()));
       globalTaskManager.save(currentSessionId);
     }
-  }, [currentSessionId, session, messages]);
+  }, [currentSessionId, session, messages, buildKoiState]);
 
+  /* ── Reset Session UI ── */
+  const resetSessionUI = useCallback(() => {
+    setError(null);
+    streamingMsgIdRef.current = null;
+    pendingToolsRef.current.clear();
+  }, []);
+
+  /* ── Session Actions ── */
   const switchSession = useCallback(
     async (sessionFile: string) => {
       if (!session) return;
       setIsReady(false);
-
-      // Save current
       saveCurrentState();
       await session.abort();
       session.dispose();
-
-      // Load new
       try {
         const result = await loadSession(sessionFile, globalTaskManager);
-        setError(null);
-        streamingMsgIdRef.current = null;
-        pendingToolsRef.current.clear();
+        resetSessionUI();
         await setupSession(result);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : String(err));
         setIsReady(true);
       }
     },
-    [session, saveCurrentState, setupSession]
+    [session, saveCurrentState, setupSession, resetSessionUI]
   );
 
   const newSession = useCallback(async () => {
     if (!session) return;
     setIsReady(false);
-
-    // Save current
     saveCurrentState();
     await session.abort();
     session.dispose();
-
-    // Create new
     try {
       const result = await createNewSession(globalTaskManager);
-      setError(null);
+      resetSessionUI();
       setMessages([]);
-      streamingMsgIdRef.current = null;
-      pendingToolsRef.current.clear();
       setSessionTitleState("New Session");
       setSessionTitle("New Session");
       currentModelRef.current = getCurrentModel();
@@ -599,154 +548,123 @@ export function useKoiAgent(): KoiAgentState {
       setError(err instanceof Error ? err.message : String(err));
       setIsReady(true);
     }
-  }, [session, saveCurrentState, setupSession]);
+  }, [session, saveCurrentState, setupSession, resetSessionUI]);
+
+  /* ── Fork Logic ── */
+  const computeForwardPath = useCallback(
+    (session: AgentSession, entryId: string) => {
+      const branchPath = session.sessionManager.getBranch();
+      const selectedIndex = branchPath.findIndex((e) => e.id === entryId);
+
+      if (selectedIndex >= 0) {
+        return branchPath.slice(selectedIndex);
+      }
+
+      const tree = session.sessionManager.getTree();
+      const selectedNode = findNodeInTree(tree, entryId);
+      if (!selectedNode) return [];
+
+      const path = [selectedNode.entry];
+      let current = selectedNode;
+      while (current.children.length > 0) {
+        const next = current.children[current.children.length - 1];
+        if (!next) break;
+        current = next;
+        path.push(current.entry);
+      }
+      return path;
+    },
+    []
+  );
+
+  const findBranchPoint = useCallback((forwardPath: ReturnType<SessionManagerType["getBranch"]>, entryId: string) => {
+    if (forwardPath.length === 0) return entryId;
+
+    let nextUserIndex = -1;
+    for (let i = 1; i < forwardPath.length; i++) {
+      const entry = forwardPath[i];
+      if (entry?.type === "message" && entry.message.role === "user") {
+        nextUserIndex = i;
+        break;
+      }
+    }
+
+    if (nextUserIndex >= 1) {
+      return forwardPath[nextUserIndex - 1]?.id ?? entryId;
+    }
+    if (nextUserIndex === -1) {
+      return forwardPath[forwardPath.length - 1]?.id ?? entryId;
+    }
+    return entryId;
+  }, []);
 
   const forkSession = useCallback(
     async (entryId: string) => {
       if (!session) return;
+      const forwardPath = computeForwardPath(session, entryId);
+      const branchFromId = findBranchPoint(forwardPath, entryId);
 
-      // Get the current active branch path (root -> leaf)
-      const branchPath = session.sessionManager.getBranch();
-      const selectedIndex = branchPath.findIndex((e) => e.id === entryId);
-
-      // Build the forward path from the selected entry:
-      // - If the selected entry is on the current branch, use the branch
-      //   path from the selected entry to the leaf.
-      // - If the selected entry is NOT on the current branch (e.g. the user
-      //   selected a node on a different branch in the tree view), walk down
-      //   the selected node's subtree to the deepest leaf.
-      let forwardPath: typeof branchPath;
-      if (selectedIndex >= 0) {
-        forwardPath = branchPath.slice(selectedIndex);
-      } else {
-        const tree = session.sessionManager.getTree();
-        const selectedNode = findNodeInTree(tree, entryId);
-        if (selectedNode) {
-          forwardPath = [selectedNode.entry];
-          let current = selectedNode;
-          while (current.children.length > 0) {
-            const next = current.children[current.children.length - 1];
-            if (!next) break;
-            current = next;
-            forwardPath.push(current.entry);
-          }
-        } else {
-          forwardPath = [];
-        }
-      }
-
-      // Determine the actual branch point:
-      // Walk forward from the selected entry to find the next user message.
-      // Branch from the entry right before that next user message so the
-      // entire conversation turn (user + all assistant/tool responses)
-      // is preserved. If there is no next user message, branch from the
-      // last entry in the forward path to preserve everything to the end.
-      let branchFromId = entryId;
-      if (forwardPath.length > 0) {
-        let nextUserIndex = -1;
-        for (let i = 1; i < forwardPath.length; i++) {
-          const entry = forwardPath[i];
-          if (!entry) continue;
-          if (
-            entry.type === 'message' &&
-            entry.message.role === 'user'
-          ) {
-            nextUserIndex = i;
-            break;
-          }
-        }
-
-        if (nextUserIndex >= 1) {
-          const predecessor = forwardPath[nextUserIndex - 1];
-          if (predecessor) {
-            branchFromId = predecessor.id;
-          }
-        } else if (nextUserIndex === -1) {
-          // No next user message — branch from the last entry to keep
-          // the entire remainder of the path.
-          const leaf = forwardPath[forwardPath.length - 1];
-          if (leaf) {
-            branchFromId = leaf.id;
-          }
-        }
-      }
-
-      // 1. Move the leaf pointer so subsequent appends create
-      //    children of the branch point (a new branch).
       session.sessionManager.branch(branchFromId);
-
-      // 2. Sync the agent's in-memory message list with the new branch
-      //    so the LLM sees the correct context on the next turn.
       const context = session.sessionManager.buildSessionContext();
       session.state.messages = context.messages;
-
-      // 3. Rebuild UI messages from the new branch context
-      const rebuilt = buildUIMessagesFromAgentSession(session);
-      setMessages(rebuilt);
+      setMessages(buildUIMessagesFromAgentSession(session));
       streamingMsgIdRef.current = null;
       pendingToolsRef.current.clear();
-
-      // 4. Save state
       saveCurrentState();
     },
-    [session, saveCurrentState]
+    [session, computeForwardPath, findBranchPoint, saveCurrentState]
   );
 
-  const setSessionTitleWrapper = useCallback((title: string) => {
-    setSessionTitleState(title);
-    setSessionTitle(title);
-    if (session) {
-      session.setSessionName(title);
-    }
-  }, [session]);
+  const setSessionTitleWrapper = useCallback(
+    (title: string) => {
+      setSessionTitleState(title);
+      setSessionTitle(title);
+      session?.setSessionName(title);
+    },
+    [session]
+  );
 
   const refreshSessionList = useCallback(async () => {
-    const list = await listSessions();
-    setSessionList(list);
+    setSessionList(await listSessions());
   }, []);
 
-  const deleteSession = useCallback(async (sessionId: string) => {
-    const isCurrent = sessionId === currentSessionId;
-    const meta = sessionList.find((s) => s.id === sessionId);
-    if (!meta) return;
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      const isCurrent = sessionId === currentSessionId;
+      const meta = sessionList.find((s) => s.id === sessionId);
+      if (!meta) return;
 
-    if (isCurrent && session) {
-      saveCurrentState();
-      await session.abort();
-      session.dispose();
-
-      await deleteSessionStore(meta);
-
-      try {
-        const result = await createNewSession(globalTaskManager);
-        setError(null);
-        setMessages([]);
-        streamingMsgIdRef.current = null;
-        pendingToolsRef.current.clear();
-        setSessionTitleState("New Session");
-        setSessionTitle("New Session");
-        currentModelRef.current = getCurrentModel();
-        auxiliaryModelRef.current = getAuxiliaryModel();
-        await setupSession(result);
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : String(err));
-        setIsReady(true);
+      if (isCurrent && session) {
+        saveCurrentState();
+        await session.abort();
+        session.dispose();
+        await deleteSessionStore(meta);
+        try {
+          const result = await createNewSession(globalTaskManager);
+          resetSessionUI();
+          setMessages([]);
+          setSessionTitleState("New Session");
+          setSessionTitle("New Session");
+          currentModelRef.current = getCurrentModel();
+          auxiliaryModelRef.current = getAuxiliaryModel();
+          await setupSession(result);
+        } catch (err: unknown) {
+          setError(err instanceof Error ? err.message : String(err));
+          setIsReady(true);
+        }
+      } else {
+        await deleteSessionStore(meta);
+        setSessionList((prev) => prev.filter((s) => s.id !== sessionId));
       }
-    } else {
-      await deleteSessionStore(meta);
-      setSessionList((prev) => prev.filter((s) => s.id !== sessionId));
-    }
-  }, [session, currentSessionId, sessionList, saveCurrentState, setupSession]);
+    },
+    [session, currentSessionId, sessionList, saveCurrentState, setupSession, resetSessionUI]
+  );
 
   const prompt = useCallback(
     async (text: string) => {
       if (!session) return;
       setMessages((prev) =>
-        prev.concat({
-          id: generateId("user"),
-          type: "user",
-          content: text,
-        })
+        prev.concat({ id: generateId("user"), type: "user", content: text })
       );
       await session.prompt(text);
     },
@@ -754,53 +672,32 @@ export function useKoiAgent(): KoiAgentState {
   );
 
   const abort = useCallback(async () => {
-    if (!session) return;
-    await session.abort();
+    await session?.abort();
   }, [session]);
 
   const toggleCollapse = useCallback((id: string) => {
     setMessages((prev) =>
       prev.map((m) => {
-        if (m.id === id && m.type === "tool_call") {
-          return { ...m, collapsed: !m.collapsed };
-        }
-        if (m.id === id && m.type === "agent" && m.thinking) {
-          return { ...m, thinkingCollapsed: !m.thinkingCollapsed };
-        }
+        if (m.id === id && m.type === "tool_call") return { ...m, collapsed: !m.collapsed };
+        if (m.id === id && m.type === "agent" && m.thinking) return { ...m, thinkingCollapsed: !m.thinkingCollapsed };
         return m;
       })
     );
   }, []);
 
-  const expandAll = useCallback(() => {
-    allExpandedRef.current = true;
+  const updateAllCollapsed = useCallback((collapsed: boolean) => {
+    allExpandedRef.current = !collapsed;
     setMessages((prev) =>
       prev.map((m) => {
-        if (m.type === "tool_call") {
-          return { ...m, collapsed: false };
-        }
-        if (m.type === "agent" && m.thinking) {
-          return { ...m, thinkingCollapsed: false };
-        }
+        if (m.type === "tool_call") return { ...m, collapsed };
+        if (m.type === "agent" && m.thinking) return { ...m, thinkingCollapsed: collapsed };
         return m;
       })
     );
   }, []);
 
-  const collapseAll = useCallback(() => {
-    allExpandedRef.current = false;
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.type === "tool_call") {
-          return { ...m, collapsed: true };
-        }
-        if (m.type === "agent" && m.thinking) {
-          return { ...m, thinkingCollapsed: true };
-        }
-        return m;
-      })
-    );
-  }, []);
+  const expandAll = useCallback(() => updateAllCollapsed(false), [updateAllCollapsed]);
+  const collapseAll = useCallback(() => updateAllCollapsed(true), [updateAllCollapsed]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);

@@ -3,17 +3,6 @@
  *
  * 抓取目标 URL 的内容，通过 turndown 将 HTML 转为 Markdown，
  * 再调用辅助模型根据用户 prompt 进行摘要/分析。
- *
- * 安全特性：
- *   • 127+ 预批准技术文档域名（免弹窗）
- *   • 域名预检（拦截本地/IP/危险地址）
- *   • 重定向安全策略（同源或 www 前缀变化）
- *   • HTTP → HTTPS 自动升级
- *   • 内容上限 10MB，处理后截断至 100,000 字符
- *
- * 缓存：
- *   • 页面内容：LRU，15 min TTL，50 MB 上限
- *   • 域名预检结果：LRU，5 min TTL，128 条目上限
  */
 
 import { Type } from "typebox";
@@ -40,6 +29,25 @@ export type WebFetchToolInput = {
   prompt: string;
 };
 
+/* ───────── Safe Cache Operations ───────── */
+
+class CacheError extends Error {}
+
+function safeCacheGet<T>(cache: { get(key: string): T | undefined }, key: string): T | undefined {
+  try {
+    return cache.get(key);
+  } catch (err) {
+    throw new CacheError(`Cache get failed for ${key}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function safeCacheSet(cache: { set(key: string, value: unknown): void }, key: string, value: unknown): void {
+  try {
+    cache.set(key, value);
+  } catch (err) {
+    throw new CacheError(`Cache set failed for ${key}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
 /* ───────── LRU 缓存实现 ───────── */
 
@@ -67,7 +75,6 @@ class SizeBoundedLRUCache {
       return undefined;
     }
 
-    // 移到末尾（最近使用）
     this.cache.delete(key);
     this.cache.set(key, entry);
     return entry.value;
@@ -75,9 +82,9 @@ class SizeBoundedLRUCache {
 
   set(key: string, value: string): void {
     const size = Buffer.byteLength(value, "utf8");
+    const now = Date.now();
 
     // 清理过期条目
-    const now = Date.now();
     for (const [k, v] of this.cache) {
       if (now > v.expiresAt) {
         this.currentSize -= v.size;
@@ -85,7 +92,7 @@ class SizeBoundedLRUCache {
       }
     }
 
-    // 淘汰最旧条目直到有足够空间且不超过条目数上限
+    // 淘汰最旧条目
     while (
       (this.currentSize + size > this.maxSizeBytes || this.cache.size >= this.maxEntries) &&
       this.cache.size > 0
@@ -96,18 +103,13 @@ class SizeBoundedLRUCache {
       this.cache.delete(firstKey);
     }
 
-    // 覆盖已有 key
     const existing = this.cache.get(key);
     if (existing) {
       this.currentSize -= existing.size;
       this.cache.delete(key);
     }
 
-    this.cache.set(key, {
-      value,
-      size,
-      expiresAt: Date.now() + this.ttlMs,
-    });
+    this.cache.set(key, { value, size, expiresAt: now + this.ttlMs });
     this.currentSize += size;
   }
 }
@@ -116,10 +118,7 @@ class SizeBoundedLRUCache {
 class SimpleLRUCache<K, V> {
   private cache = new Map<K, { value: V; expiresAt: number }>();
 
-  constructor(
-    private maxSize: number,
-    private ttlMs: number
-  ) {}
+  constructor(private maxSize: number, private ttlMs: number) {}
 
   get(key: K): V | undefined {
     const entry = this.cache.get(key);
@@ -149,11 +148,16 @@ const pageCache = new SizeBoundedLRUCache(50 * 1024 * 1024, 15 * 60 * 1000, 256)
 /* 域名预检缓存：5 min TTL，128 条目 */
 const domainCheckCache = new SimpleLRUCache<string, boolean>(128, 5 * 60 * 1000);
 
+/* ───────── Domain Safety ───────── */
 
 function checkDomainSafety(url: string): { safe: boolean; reason?: string } {
-  const cached = domainCheckCache.get(url);
-  if (cached !== undefined) {
-    return cached ? { safe: true } : { safe: false, reason: "域名被标记为危险（缓存）" };
+  try {
+    const cached = safeCacheGet(domainCheckCache, url);
+    if (cached !== undefined) {
+      return cached ? { safe: true } : { safe: false, reason: "域名被标记为危险（缓存）" };
+    }
+  } catch {
+    // 缓存读取失败继续执行
   }
 
   try {
@@ -161,14 +165,14 @@ function checkDomainSafety(url: string): { safe: boolean; reason?: string } {
     const hostname = parsed.hostname.toLowerCase();
 
     if (isDangerousHost(hostname)) {
-      domainCheckCache.set(url, false);
+      safeCacheSet(domainCheckCache, url, false);
       return { safe: false, reason: "本地/IP/内网地址被禁止访问" };
     }
 
-    domainCheckCache.set(url, true);
+    safeCacheSet(domainCheckCache, url, true);
     return { safe: true };
   } catch {
-    domainCheckCache.set(url, false);
+    safeCacheSet(domainCheckCache, url, false);
     return { safe: false, reason: "无效 URL" };
   }
 }
@@ -180,18 +184,18 @@ function isSafeRedirect(currentUrl: URL, redirectUrl: URL): boolean {
   if (currentUrl.protocol === "https:" && redirectUrl.protocol === "http:") {
     return false;
   }
-  if (currentUrl.protocol === "http:" && redirectUrl.protocol === "https:") {
-    // 允许升级
-  } else if (currentUrl.protocol !== redirectUrl.protocol) {
+  if (
+    currentUrl.protocol !== redirectUrl.protocol &&
+    !(currentUrl.protocol === "http:" && redirectUrl.protocol === "https:")
+  ) {
     return false;
   }
 
   // 端口必须一致
-  const currentPort =
-    currentUrl.port || (currentUrl.protocol === "https:" ? "443" : "80");
-  const redirectPort =
-    redirectUrl.port || (redirectUrl.protocol === "https:" ? "443" : "80");
-  if (currentPort !== redirectPort) return false;
+  const defaultPort = (protocol: string) => (protocol === "https:" ? "443" : "80");
+  if ((currentUrl.port || defaultPort(currentUrl.protocol)) !== (redirectUrl.port || defaultPort(redirectUrl.protocol))) {
+    return false;
+  }
 
   // 禁止 URL 中包含 username/password
   if (redirectUrl.username || redirectUrl.password) return false;
@@ -200,11 +204,7 @@ function isSafeRedirect(currentUrl: URL, redirectUrl: URL): boolean {
   const currentHost = currentUrl.hostname.toLowerCase();
   const redirectHost = redirectUrl.hostname.toLowerCase();
   if (currentHost === redirectHost) return true;
-  if (
-    currentHost === `www.${redirectHost}` ||
-    redirectHost === `www.${currentHost}`
-  )
-    return true;
+  if (currentHost === `www.${redirectHost}` || redirectHost === `www.${currentHost}`) return true;
 
   return false;
 }
@@ -215,12 +215,9 @@ async function fetchWithRedirects(
   initialUrl: string,
   maxRedirects = 10
 ): Promise<AxiosResponse<string>> {
-  let currentUrl = initialUrl;
-
-  // HTTP → HTTPS 自动升级
-  if (currentUrl.startsWith("http://")) {
-    currentUrl = currentUrl.replace("http://", "https://");
-  }
+  let currentUrl = initialUrl.startsWith("http://")
+    ? initialUrl.replace("http://", "https://")
+    : initialUrl;
 
   let redirects = 0;
   while (redirects <= maxRedirects) {
@@ -229,12 +226,9 @@ async function fetchWithRedirects(
       maxContentLength: 10 * 1024 * 1024,
       responseType: "text",
       maxRedirects: 0,
-      validateStatus: (status) =>
-        status < 400 || (status >= 300 && status < 400),
-      // 设置一个友好的 User-Agent
+      validateStatus: (status) => status < 400 || (status >= 300 && status < 400),
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; KoiBot/1.0; +https://koi.dev)",
+        "User-Agent": "Mozilla/5.0 (compatible; KoiBot/1.0; +https://koi.dev)",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
     });
@@ -250,11 +244,8 @@ async function fetchWithRedirects(
       }
 
       const nextUrl = new URL(location, currentUrl);
-
       if (!isSafeRedirect(new URL(currentUrl), nextUrl)) {
-        throw new Error(
-          `不安全的重定向被阻止: ${currentUrl} → ${nextUrl.href}`
-        );
+        throw new Error(`不安全的重定向被阻止: ${currentUrl} → ${nextUrl.href}`);
       }
 
       currentUrl = nextUrl.href;
@@ -275,60 +266,35 @@ const turndownService = new TurndownService({
   codeBlockStyle: "fenced",
 });
 
-/* ───────── 核心执行函数 ───────── */
+/* ───────── 内容获取 ───────── */
 
-export async function executeWebFetch(params: WebFetchToolInput): Promise<{
-  content: TextContent[];
-  details: {
-    url: string;
-    contentType: string;
-    charCount: number;
-    truncated: boolean;
-    cached: boolean;
-  };
-}> {
-  const { url, prompt } = params;
-
-  // 1. 域名预检
-  const safety = checkDomainSafety(url);
-  if (!safety.safe) {
-    throw new Error(`域名预检失败: ${safety.reason}`);
-  }
-
-  // 2. 检查缓存
-  let rawContent: string;
-  let contentType: string;
-  let fromCache = false;
-
-  const cached = pageCache.get(url);
-  if (cached !== undefined) {
-    rawContent = cached;
-    contentType = "text/html";
-    fromCache = true;
-  } else {
-    // 3. HTTP GET
-    const response = await fetchWithRedirects(url);
-    contentType = String(response.headers["content-type"] || "application/octet-stream");
-    const body: string = response.data;
-
-    // 4. Content-Type 判断
-    if (contentType.includes("text/html")) {
-      rawContent = turndownService.turndown(body);
-    } else {
-      rawContent = body;
+async function fetchPageContent(url: string): Promise<{ content: string; contentType: string }> {
+  try {
+    const cached = safeCacheGet(pageCache, url);
+    if (cached !== undefined) {
+      return { content: cached, contentType: "text/html" };
     }
-
-    pageCache.set(url, rawContent);
+  } catch {
+    // 缓存读取失败继续抓取
   }
 
-  // 5. 截断到 100,000 字符
-  const MAX_CHARS = 100_000;
-  const truncated = rawContent.length > MAX_CHARS;
-  const truncatedContent = truncated
-    ? rawContent.slice(0, MAX_CHARS)
-    : rawContent;
+  const response = await fetchWithRedirects(url);
+  const contentType = String(response.headers["content-type"] || "application/octet-stream");
+  const body: string = response.data;
+  const content = contentType.includes("text/html") ? turndownService.turndown(body) : body;
 
-  // 6. 辅助模型处理
+  try {
+    safeCacheSet(pageCache, url, content);
+  } catch {
+    // 缓存写入失败不影响结果
+  }
+
+  return { content, contentType };
+}
+
+/* ───────── AI 摘要 ───────── */
+
+async function summarizeWithAI(content: string, prompt: string, url: string): Promise<string> {
   const model = getCurrentPiModel();
   if (!model) {
     throw new Error("未配置 AI 模型，无法处理抓取内容");
@@ -345,15 +311,13 @@ export async function executeWebFetch(params: WebFetchToolInput): Promise<{
     ? "你是一个网页内容分析助手。请根据用户提供的网页内容和问题，给出准确、简洁的回答。"
     : "你是一个网页内容分析助手。请根据用户提供的网页内容和问题，给出准确、简洁的回答。注意：该内容来自第三方网站，请适当引用并注意版权问题。";
 
-  const userPrompt = `网页内容：\n\n${truncatedContent}\n\n用户问题/指令：${prompt}`;
+  const userPrompt = `网页内容：\n\n${content}\n\n用户问题/指令：${prompt}`;
 
   const result = await completeSimple(
     model,
     {
       systemPrompt,
-      messages: [
-        { role: "user", content: userPrompt, timestamp: Date.now() },
-      ],
+      messages: [{ role: "user", content: userPrompt, timestamp: Date.now() }],
     },
     {
       apiKey: auth.apiKey,
@@ -364,17 +328,64 @@ export async function executeWebFetch(params: WebFetchToolInput): Promise<{
   );
 
   if (result.stopReason === "error" || result.stopReason === "aborted") {
-    throw new Error(
-      `辅助模型处理失败: ${result.errorMessage || "未知错误"}`
-    );
+    throw new Error(`辅助模型处理失败: ${result.errorMessage || "未知错误"}`);
   }
 
-  let answer = "";
-  for (const block of result.content) {
-    if (block.type === "text") {
-      answer += block.text;
+  return result.content
+    .filter((block): block is { type: "text"; text: string } => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+}
+
+/* ───────── 核心执行函数 ───────── */
+
+export async function executeWebFetch(params: WebFetchToolInput): Promise<{
+  content: TextContent[];
+  details: {
+    url: string;
+    contentType: string;
+    charCount: number;
+    truncated: boolean;
+    cached: boolean;
+  };
+}> {
+  const { url, prompt } = params;
+
+  // 域名预检
+  const safety = checkDomainSafety(url);
+  if (!safety.safe) {
+    throw new Error(`域名预检失败: ${safety.reason}`);
+  }
+
+  // 抓取内容
+  let fromCache = false;
+  let rawContent: string;
+  let contentType: string;
+
+  try {
+    const page = await fetchPageContent(url);
+    rawContent = page.content;
+    contentType = page.contentType;
+    fromCache = true;
+  } catch (err) {
+    if (err instanceof CacheError) {
+      // 缓存出错，重新抓取
+      const page = await fetchPageContent(url);
+      rawContent = page.content;
+      contentType = page.contentType;
+      fromCache = false;
+    } else {
+      throw err;
     }
   }
+
+  // 截断
+  const MAX_CHARS = 100_000;
+  const truncated = rawContent.length > MAX_CHARS;
+  const truncatedContent = truncated ? rawContent.slice(0, MAX_CHARS) : rawContent;
+
+  // AI 处理
+  const answer = await summarizeWithAI(truncatedContent, prompt, url);
 
   return {
     content: [{ type: "text", text: answer }],
@@ -385,6 +396,36 @@ export async function executeWebFetch(params: WebFetchToolInput): Promise<{
       truncated,
       cached: fromCache,
     },
+  };
+}
+
+/* ───────── Permission Helpers ───────── */
+
+function buildDeniedResult(params: WebFetchToolInput, reason: string): ToolResultWithError<{
+  url: string;
+  contentType: string;
+  charCount: number;
+  truncated: boolean;
+  cached: boolean;
+}> {
+  return {
+    content: [{ type: "text", text: `Permission denied: ${reason}` }],
+    details: { url: params.url, contentType: "", charCount: 0, truncated: false, cached: false },
+    isError: true,
+  };
+}
+
+function buildUserDeniedResult(params: WebFetchToolInput): ToolResultWithError<{
+  url: string;
+  contentType: string;
+  charCount: number;
+  truncated: boolean;
+  cached: boolean;
+}> {
+  return {
+    content: [{ type: "text", text: "User denied permission to fetch the URL." }],
+    details: { url: params.url, contentType: "", charCount: 0, truncated: false, cached: false },
+    isError: true,
   };
 }
 
@@ -421,23 +462,7 @@ export function createWebFetchToolDefinition(
     async execute(_toolCallId, params, _signal, _onUpdate) {
       const perm = checkPermission("webfetch", params);
       if (perm.decision === "deny") {
-        const result: ToolResultWithError<{ url: string; contentType: string; charCount: number; truncated: boolean; cached: boolean }> = {
-          content: [
-            {
-              type: "text",
-              text: `Permission denied: ${perm.reason ?? "webfetch operation blocked"}`,
-            },
-          ],
-          details: {
-            url: params.url,
-            contentType: "",
-            charCount: 0,
-            truncated: false,
-            cached: false,
-          },
-          isError: true,
-        };
-        return result;
+        return buildDeniedResult(params, perm.reason ?? "webfetch operation blocked");
       }
       if (perm.decision === "ask") {
         const allowed = await requestPermission({
@@ -446,23 +471,7 @@ export function createWebFetchToolDefinition(
           reason: perm.reason ?? "Confirm web fetch",
         });
         if (!allowed) {
-          const result: ToolResultWithError<{ url: string; contentType: string; charCount: number; truncated: boolean; cached: boolean }> = {
-            content: [
-              {
-                type: "text",
-                text: "User denied permission to fetch the URL.",
-              },
-            ],
-            details: {
-              url: params.url,
-              contentType: "",
-              charCount: 0,
-              truncated: false,
-              cached: false,
-            },
-            isError: true,
-          };
-          return result;
+          return buildUserDeniedResult(params);
         }
       }
       return await executeWebFetch(params);

@@ -40,6 +40,8 @@ interface MessageEntry {
   };
 }
 
+/* ───────── Type Guards ───────── */
+
 function isMessageEntry(entry: unknown): entry is MessageEntry {
   return (
     typeof entry === "object" &&
@@ -55,45 +57,48 @@ function isMessageEntry(entry: unknown): entry is MessageEntry {
 function isVisibleNode(node: SessionTreeNode): boolean {
   const entry = node.entry;
   if (!isMessageEntry(entry)) return false;
-  return (
-    entry.message.role === "user" || entry.message.role === "assistant"
-  );
+  return entry.message.role === "user" || entry.message.role === "assistant";
+}
+
+function isUserMessageEntry(entry: unknown): boolean {
+  return isMessageEntry(entry) && entry.message.role === "user";
+}
+
+/* ───────── Text Extraction ───────── */
+
+function extractTextFromBlocks(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .filter((block): block is { type: string; text?: string } =>
+      typeof block === "object" && block !== null && "type" in block
+    )
+    .filter((block) => block.type === "text")
+    .map((block) => block.text ?? "")
+    .join("");
 }
 
 function extractUserText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter((c: unknown): c is { type: "text"; text: string } =>
-        typeof c === "object" && c !== null && "type" in c && (c as Record<string, unknown>)["type"] === "text"
-      )
-      .map((c) => c.text)
-      .join("");
-  }
-  return "";
+  return extractTextFromBlocks(content) || "(empty)";
+}
+
+function extractAssistantText(msg: { content: unknown }): string {
+  const text = extractTextFromBlocks(msg.content);
+  return text.slice(0, 50) || "(assistant)";
 }
 
 function formatEntry(node: SessionTreeNode): string {
   const entry = node.entry;
   if (!isMessageEntry(entry)) return "";
+
   const msg = entry.message;
-  if (msg.role === "user") {
-    const text = extractUserText(msg.content);
-    return text || "(empty)";
-  }
-  if (msg.role === "assistant") {
-    let text = "";
-    if (Array.isArray(msg.content)) {
-      for (const block of msg.content) {
-        if (block && typeof block === "object" && "type" in block && (block as unknown as Record<string, unknown>)["type"] === "text") {
-          text += String((block as unknown as Record<string, unknown>)["text"] ?? "");
-        }
-      }
-    }
-    return text.slice(0, 50) || "(assistant)";
-  }
+  if (msg.role === "user") return extractUserText(msg.content);
+  if (msg.role === "assistant") return extractAssistantText(msg as { content: unknown });
   return "";
 }
+
+/* ───────── Tree Flattening ───────── */
 
 function flattenTree(
   nodes: SessionTreeNode[],
@@ -101,22 +106,19 @@ function flattenTree(
   parentIsLast: boolean[] = [],
   result: TreeRow[] = []
 ): TreeRow[] {
-  // Count visible siblings so we can compute isLast correctly
   const visibleNodes = nodes.filter(isVisibleNode);
-
   let visibleIndex = 0;
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i]!;
+
+  for (const node of nodes) {
     const isVisible = isVisibleNode(node);
 
     if (isVisible) {
       const isLast = visibleIndex === visibleNodes.length - 1;
-      const isUserMessage = isMessageEntry(node.entry) && node.entry.message.role === "user";
       result.push({
         node,
         depth,
         index: result.length,
-        isUserMessage,
+        isUserMessage: isUserMessageEntry(node.entry),
         displayText: formatEntry(node),
         isLast,
         parentIsLast: [...parentIsLast],
@@ -126,17 +128,16 @@ function flattenTree(
         flattenTree(node.children, depth + 1, [...parentIsLast, isLast], result);
       }
       visibleIndex++;
-    } else {
-      // Hidden node (toolResult, model_change, compaction, etc.):
-      // pass its children through at the same depth so the conversation
-      // flow stays continuous.
-      if (node.children.length > 0) {
-        flattenTree(node.children, depth, [...parentIsLast], result);
-      }
+    } else if (node.children.length > 0) {
+      // Hidden nodes pass children through at same depth
+      flattenTree(node.children, depth, [...parentIsLast], result);
     }
   }
+
   return result;
 }
+
+/* ───────── Tree Prefix ───────── */
 
 function treePrefix(depth: number, parentIsLast: boolean[], isLast: boolean): string {
   let prefix = "";
@@ -149,20 +150,36 @@ function treePrefix(depth: number, parentIsLast: boolean[], isLast: boolean): st
 
 function getVisiblePrefix(row: TreeRow, contentWidth: number): string {
   const prefix = treePrefix(row.depth, row.parentIsLast, row.isLast);
-  if (prefix.length <= contentWidth) {
-    return prefix;
-  }
-  // Emergency fallback for impossibly deep trees: keep the rightmost part
-  // so local branch structure is still visible.
+  if (prefix.length <= contentWidth) return prefix;
   return "…" + prefix.slice(-(contentWidth - 2));
 }
 
-export function ForkModal({
-  isActive,
-  onClose,
-  session,
-  onFork,
-}: ForkModalProps) {
+/* ───────── Default Selection ───────── */
+
+function findDefaultIndex(rows: TreeRow[], session: AgentSession): number {
+  const selectable = rows.filter((r) => r.isUserMessage);
+  if (selectable.length === 0) return 0;
+
+  try {
+    const branch = session.sessionManager.getBranch();
+    const lastUserEntry = [...branch]
+      .reverse()
+      .find((e) => isUserMessageEntry(e));
+
+    if (lastUserEntry) {
+      const idx = selectable.findIndex((r) => r.node.entry.id === lastUserEntry.id);
+      if (idx >= 0) return idx;
+    }
+  } catch {
+    // ignore
+  }
+
+  return selectable.length - 1;
+}
+
+/* ───────── ForkModal Component ───────── */
+
+export function ForkModal({ isActive, onClose, session, onFork }: ForkModalProps) {
   const { width, height } = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -172,7 +189,7 @@ export function ForkModal({
   const listHeight = Math.min(16, Math.floor(height * 0.55));
   const contentWidth = Math.max(1, panelWidth - 4);
 
-  // Recompute tree rows every time the modal opens so new messages are visible
+  // Recompute tree rows when modal opens
   useEffect(() => {
     if (!isActive || !session) {
       setRows([]);
@@ -182,33 +199,15 @@ export function ForkModal({
       const tree = session.sessionManager.getTree();
       const newRows = flattenTree(tree);
       setRows(newRows);
-
-      // Default to the last user message on the current active branch
-      const branch = session.sessionManager.getBranch();
-      const lastUserEntry = [...branch]
-        .reverse()
-        .find((e) => isMessageEntry(e) && e.message.role === "user");
-
-      const selectable = newRows.filter((r) => r.isUserMessage);
-      let defaultIndex = 0;
-      if (lastUserEntry) {
-        const idx = selectable.findIndex((r) => r.node.entry.id === lastUserEntry.id);
-        if (idx >= 0) defaultIndex = idx;
-      } else if (selectable.length > 0) {
-        defaultIndex = selectable.length - 1;
-      }
-      setSelectedIndex(defaultIndex);
+      setSelectedIndex(findDefaultIndex(newRows, session));
     } catch {
       setRows([]);
       setSelectedIndex(0);
     }
   }, [isActive, session]);
 
-  const selectableRows = useMemo(() => {
-    return rows.filter((r) => r.isUserMessage);
-  }, [rows]);
+  const selectableRows = useMemo(() => rows.filter((r) => r.isUserMessage), [rows]);
 
-  // Ensure selected index is valid (only among selectable rows)
   const safeIndex = useMemo(() => {
     if (selectableRows.length === 0) return -1;
     return Math.max(0, Math.min(selectedIndex, selectableRows.length - 1));
@@ -216,7 +215,7 @@ export function ForkModal({
 
   const selectedRow = safeIndex >= 0 ? selectableRows[safeIndex] : null;
 
-  // Always keep the selected row near the 5th visible line (top-biased)
+  // Keep selected row near the 5th visible line
   useEffect(() => {
     if (!selectedRow) {
       setScrollOffset(0);
@@ -224,8 +223,7 @@ export function ForkModal({
     }
     const flatIndex = selectedRow.index;
     const maxOffset = Math.max(0, rows.length - listHeight);
-    const targetOffset = Math.max(0, Math.min(flatIndex - 4, maxOffset));
-    setScrollOffset(targetOffset);
+    setScrollOffset(Math.max(0, Math.min(flatIndex - 4, maxOffset)));
   }, [selectedRow, listHeight, rows.length]);
 
   useKeyboard((key) => {
@@ -245,9 +243,7 @@ export function ForkModal({
     }
     if (key.name === "return") {
       const row = selectableRows[safeIndex];
-      if (row) {
-        onFork(row.node.entry.id);
-      }
+      if (row) onFork(row.node.entry.id);
       return;
     }
   });
@@ -285,12 +281,7 @@ export function ForkModal({
         </text>
 
         {/* Tree list */}
-        <box
-          height={listHeight}
-          flexDirection="column"
-          overflow="hidden"
-          marginTop={1}
-        >
+        <box height={listHeight} flexDirection="column" overflow="hidden" marginTop={1}>
           {rows.length === 0 && (
             <box height={1}>
               <text fg="#6c6c7c">No messages available.</text>
@@ -306,9 +297,7 @@ export function ForkModal({
                 : row.displayText;
 
             const fgColor = row.isUserMessage
-              ? isSelected
-                ? "#ff79c6"
-                : "#f8f8f2"
+              ? isSelected ? "#ff79c6" : "#f8f8f2"
               : "#6c6c7c";
 
             return (
@@ -319,9 +308,7 @@ export function ForkModal({
                 flexDirection="row"
                 onMouseUp={(e: MouseEvent) => {
                   e.stopPropagation();
-                  if (row.isUserMessage) {
-                    onFork(row.node.entry.id);
-                  }
+                  if (row.isUserMessage) onFork(row.node.entry.id);
                 }}
               >
                 <text fg={fgColor} attributes={createTextAttributes({ dim: !row.isUserMessage })}>

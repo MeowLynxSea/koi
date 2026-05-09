@@ -10,7 +10,13 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import { useDialog } from "@opentui-ui/dialog/react";
-import { ChatPanel, type ChatPanelHandle, wrapText } from "./components/chat-panel.js";
+
+/* ───────── Components ───────── */
+import {
+  ChatPanel,
+  type ChatPanelHandle,
+  wrapText,
+} from "./components/chat-panel.js";
 import { InputBox } from "./components/input-box.js";
 import { InfoBar } from "./components/info-bar.js";
 import { SideBar } from "./components/side-bar.js";
@@ -22,17 +28,50 @@ import { ModelModal } from "./components/model-modal.js";
 import { SessionModal } from "./components/session-modal.js";
 import { ConfirmModal } from "./components/confirm-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
-import { getCurrentModel, setCurrentModel, getAuxiliaryModel, setAuxiliaryModel, resolvePiModel } from "../config/settings.js";
+
+/* ───────── Agent & Config ───────── */
+import {
+  getCurrentModel,
+  setCurrentModel,
+  getAuxiliaryModel,
+  setAuxiliaryModel,
+  resolvePiModel,
+} from "../config/settings.js";
 import { useKoiAgent } from "../agent/hooks.js";
 import type { SessionMeta } from "../agent/session-store.js";
 import { globalTaskManager, type Task } from "../agent/session-tasks.js";
-import { subscribePermissions, getPermissionQueue, resolvePermission } from "../agent/permission-ui.js";
+import {
+  subscribePermissions,
+  getPermissionQueue,
+  resolvePermission,
+} from "../agent/permission-ui.js";
 
 const SIDEBAR_WIDTH = 28;
 
 interface AppProps {
   onExit: () => void;
 }
+
+/* ───────── Permission Formatting ───────── */
+
+const PERMISSION_FORMATTERS: Record<string, (args: Record<string, unknown>) => string> = {
+  bash: (a) => `Command: ${String(a["command"] ?? "?")}`,
+  webfetch: (a) => `URL: ${String(a["url"] ?? "?")}`,
+  read: (a) => `Path: ${String(a["path"] ?? a["file"] ?? "?")}`,
+  write: (a) => `Path: ${String(a["path"] ?? a["file"] ?? "?")}`,
+  edit: (a) => `Path: ${String(a["path"] ?? a["file"] ?? "?")}`,
+  grep: (a) => `Pattern: ${String(a["pattern"] ?? "?")}`,
+  find: (a) => `Path: ${String(a["path"] ?? ".")}`,
+  ls: (a) => `Path: ${String(a["path"] ?? ".")}`,
+};
+
+function formatPermissionArgs(toolName: string, args: unknown): string {
+  if (!args || typeof args !== "object") return JSON.stringify(args);
+  const formatter = PERMISSION_FORMATTERS[toolName];
+  return formatter ? formatter(args as Record<string, unknown>) : JSON.stringify(args, null, 2);
+}
+
+/* ───────── App Component ───────── */
 
 export function App({ onExit }: AppProps) {
   const { width, height } = useTerminalDimensions();
@@ -78,7 +117,7 @@ export function App({ onExit }: AppProps) {
     deleteSession,
   } = useKoiAgent();
 
-  // Sidebar stats polling: context usage, token cost, tasks
+  /* ── Sidebar Stats ── */
   useEffect(() => {
     const update = () => {
       if (!session) {
@@ -93,24 +132,18 @@ export function App({ onExit }: AppProps) {
       const stats = session.getSessionStats();
       const model = session.model;
 
-      let costInput = 0,
-        costOutput = 0,
-        costCacheRead = 0,
-        costCacheWrite = 0;
+      let totalCost = 0;
       if (model && stats) {
-        costInput = (stats.tokens.input * model.cost.input) / 1_000_000;
-        costOutput = (stats.tokens.output * model.cost.output) / 1_000_000;
-        costCacheRead = (stats.tokens.cacheRead * model.cost.cacheRead) / 1_000_000;
-        costCacheWrite = (stats.tokens.cacheWrite * model.cost.cacheWrite) / 1_000_000;
+        const costInput = (stats.tokens.input * model.cost.input) / 1_000_000;
+        const costOutput = (stats.tokens.output * model.cost.output) / 1_000_000;
+        const costCacheRead = (stats.tokens.cacheRead * model.cost.cacheRead) / 1_000_000;
+        const costCacheWrite = (stats.tokens.cacheWrite * model.cost.cacheWrite) / 1_000_000;
+        totalCost = costInput + costOutput + costCacheRead + costCacheWrite;
       }
-      const totalCost = costInput + costOutput + costCacheRead + costCacheWrite;
 
       const tokens = usage?.tokens ?? 0;
-      const tokenStr = tokens >= 1000
-        ? `(${(tokens / 1000).toFixed(1)}K)`
-        : tokens > 0
-        ? `(${tokens})`
-        : "(0)";
+      const tokenStr =
+        tokens >= 1000 ? `(${(tokens / 1000).toFixed(1)}K)` : tokens > 0 ? `(${tokens})` : "(0)";
       const percentStr = usage?.percent != null ? `${Math.round(usage.percent)}%` : "0%";
       const costStr = totalCost > 0 ? `$${totalCost.toFixed(2)}` : "$0.00";
 
@@ -125,35 +158,10 @@ export function App({ onExit }: AppProps) {
     return () => clearInterval(interval);
   }, [session]);
 
-  // Permission modal handling
+  /* ── Permission Modal ── */
   const processingPermissionRef = useRef(false);
   const permissionResolveRef = useRef<((value: boolean) => void) | null>(null);
   const [permissionModalOpen, setPermissionModalOpen] = useState(false);
-
-  const formatPermissionArgs = (toolName: string, args: unknown): string => {
-    if (!args || typeof args !== "object") return JSON.stringify(args);
-    const a = args as Record<string, unknown>;
-    switch (toolName) {
-      case "bash":
-        return `Command: ${String(a["command"] ?? "?")}`;
-      case "webfetch":
-        return `URL: ${String(a["url"] ?? "?")}`;
-      case "read":
-        return `Path: ${String(a["path"] ?? a["file"] ?? "?")}`;
-      case "write":
-        return `Path: ${String(a["path"] ?? a["file"] ?? "?")}`;
-      case "edit":
-        return `Path: ${String(a["path"] ?? a["file"] ?? "?")}`;
-      case "grep":
-        return `Pattern: ${String(a["pattern"] ?? "?")}`;
-      case "find":
-        return `Path: ${String(a["path"] ?? ".")}`;
-      case "ls":
-        return `Path: ${String(a["path"] ?? ".")}`;
-      default:
-        return JSON.stringify(args, null, 2);
-    }
-  };
 
   useEffect(() => {
     const unsubscribe = subscribePermissions(async () => {
@@ -177,7 +185,6 @@ export function App({ onExit }: AppProps) {
         content: ({ resolve }) => {
           permissionResolveRef.current = resolve;
           const contentWidth = Math.min(70, Math.max(20, width - 8));
-          // Account for paddingX={2} and border (1 each side) = 6 total
           const textWidth = Math.max(1, contentWidth - 6);
           const toolLines = wrapText(`Tool: ${request.toolName}`, textWidth, 0);
           const argsLines = wrapText(formatPermissionArgs(request.toolName, request.args), textWidth, 0);
@@ -215,18 +222,10 @@ export function App({ onExit }: AppProps) {
                 </box>
               </box>
               <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
-                <box
-                  paddingX={2}
-                  backgroundColor="#2dd4bf"
-                  onMouseUp={() => resolve(true)}
-                >
+                <box paddingX={2} backgroundColor="#2dd4bf" onMouseUp={() => resolve(true)}>
                   <text fg="white" attributes={createTextAttributes({ bold: true })}>Yes</text>
                 </box>
-                <box
-                  paddingX={2}
-                  backgroundColor="#f43f5e"
-                  onMouseUp={() => resolve(false)}
-                >
+                <box paddingX={2} backgroundColor="#f43f5e" onMouseUp={() => resolve(false)}>
                   <text fg="white" attributes={createTextAttributes({ bold: true })}>No!</text>
                 </box>
               </box>
@@ -242,15 +241,18 @@ export function App({ onExit }: AppProps) {
     });
 
     return unsubscribe;
-  }, [dialog]);
+  }, [dialog, width, height]);
 
+  /* ── Layout ── */
   const leftWidth = Math.max(1, width - SIDEBAR_WIDTH - 2);
   const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const anyModalOpen =
-    showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm;
+    showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm;
 
+  /* ── Handlers ── */
   const handleSubmit = useCallback(
     (text: string) => {
       if (text.trim() && isReady && !isStreaming) {
@@ -267,14 +269,10 @@ export function App({ onExit }: AppProps) {
   }, [setSessionTitle]);
 
   const modelInfo = useMemo(() => {
-    const model = currentModel;
-    if (!model) {
+    if (!currentModel) {
       return { modelName: "Not configured", provider: "Use /model to select" };
     }
-    return {
-      modelName: model.modelId,
-      provider: `via ${model.provider}`,
-    };
+    return { modelName: currentModel.modelId, provider: `via ${currentModel.provider}` };
   }, [currentModel]);
 
   const handleNewSession = useCallback(async () => {
@@ -312,68 +310,23 @@ export function App({ onExit }: AppProps) {
     setSessionToDelete(null);
   }, []);
 
+  /* ── Commands ── */
   const commands = useMemo<CommandDef[]>(
     () => [
-      {
-        id: "/new",
-        label: "Start a new session",
-        section: "Session",
-        action: () => {
-          void handleNewSession();
-        },
-      },
-      {
-        id: "/fork",
-        label: "Fork current session",
-        section: "Session",
-        action: () => {
-          setShowForkModal(true);
-        },
-      },
-      {
-        id: "/sessions",
-        label: "Browse sessions",
-        section: "Session",
-        action: async () => {
-          await refreshSessionList();
-          setShowSessionModal(true);
-        },
-      },
-      {
-        id: "/compact",
-        label: "Compact current session",
-        section: "Session",
-        action: () => {
-          session?.compact().catch(() => {});
-        },
-      },
-      {
-        id: "/rename",
-        label: "Rename session",
-        section: "Session",
-        action: () => setShowRenameModal(true),
-      },
-      {
-        id: "/connect",
-        label: "Connect to a provider",
-        section: "Model",
-        action: () => setShowConnectModal(true),
-      },
-      {
-        id: "/model",
-        label: "Select a model",
-        section: "Model",
-        action: () => setShowModelModal(true),
-      },
+      { id: "/new", label: "Start a new session", section: "Session", action: () => void handleNewSession() },
+      { id: "/fork", label: "Fork current session", section: "Session", action: () => setShowForkModal(true) },
+      { id: "/sessions", label: "Browse sessions", section: "Session", action: async () => { await refreshSessionList(); setShowSessionModal(true); } },
+      { id: "/compact", label: "Compact current session", section: "Session", action: () => { session?.compact().catch(() => {}); } },
+      { id: "/rename", label: "Rename session", section: "Session", action: () => setShowRenameModal(true) },
+      { id: "/connect", label: "Connect to a provider", section: "Model", action: () => setShowConnectModal(true) },
+      { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true) },
     ],
     [session, handleNewSession, refreshSessionList]
   );
 
-  // Global keyboard shortcuts
+  /* ── Keyboard ── */
   useKeyboard((key) => {
-    if (showExitModal || showCommandPanel || showRenameModal || showConnectModal || showModelModal || showSessionModal || showForkModal || showDeleteConfirm) {
-      return;
-    }
+    if (anyModalOpen && !permissionModalOpen) return;
 
     if (permissionModalOpen && permissionResolveRef.current) {
       if (key.name === "y" || key.name === "Y") {
@@ -402,10 +355,7 @@ export function App({ onExit }: AppProps) {
     }
 
     if (key.ctrl && key.name === "s") {
-      void (async () => {
-        await refreshSessionList();
-        setShowSessionModal(true);
-      })();
+      void (async () => { await refreshSessionList(); setShowSessionModal(true); })();
       return;
     }
 
@@ -415,7 +365,6 @@ export function App({ onExit }: AppProps) {
     }
 
     if (key.ctrl && key.name === "o") {
-      // Toggle all collapsible blocks: if any expanded, collapse all; else expand all
       const hasExpanded = messages.some(
         (m) =>
           (m.type === "agent" && m.thinking && !m.thinkingCollapsed) ||
@@ -449,12 +398,9 @@ export function App({ onExit }: AppProps) {
       setCurrentModelState(model);
       setCurrentModel(model);
       setShowModelModal(false);
-      // Update AgentSession model if session is ready
       if (session) {
         const piModel = resolvePiModel(model);
-        if (piModel) {
-          session.setModel(piModel).catch(() => {});
-        }
+        if (piModel) session.setModel(piModel).catch(() => {});
       }
     },
     [session]
@@ -469,13 +415,11 @@ export function App({ onExit }: AppProps) {
     []
   );
 
-  // userMessagesForForking removed; ForkModal now receives session directly
-
+  /* ── Render ── */
   return (
     <box width={width} height={height} flexDirection="column">
-      {/* Main content layer */}
       <box width={width} height={height} flexDirection="row">
-        {/* Left column: chat + input + info bar */}
+        {/* Left column */}
         <box width={leftWidth} flexDirection="column">
           {error && (
             <box height={1}>
@@ -497,13 +441,7 @@ export function App({ onExit }: AppProps) {
 
         {/* Divider + Sidebar */}
         <box width={SIDEBAR_WIDTH + 2} flexDirection="row">
-          <box
-            width={1}
-            height={height}
-            border={["left"]}
-            borderStyle="single"
-            borderColor="gray"
-          />
+          <box width={1} height={height} border={["left"]} borderStyle="single" borderColor="gray" />
           <box width={1} />
           <SideBar
             width={SIDEBAR_WIDTH}
@@ -519,43 +457,19 @@ export function App({ onExit }: AppProps) {
         </box>
       </box>
 
-      {/* Modal overlay layer */}
+      {/* Modals */}
       {showExitModal && (
         <ExitModal
           isActive={showExitModal}
-          onConfirm={() => {
-            saveCurrentState();
-            onExit();
-          }}
+          onConfirm={() => { saveCurrentState(); onExit(); }}
           onCancel={() => setShowExitModal(false)}
         />
       )}
 
-      <CommandPanel
-        isActive={showCommandPanel}
-        onClose={() => setShowCommandPanel(false)}
-        commands={commands}
-      />
-
-      <RenameModal
-        isActive={showRenameModal}
-        currentTitle={sessionTitle}
-        onConfirm={handleRename}
-        onCancel={() => setShowRenameModal(false)}
-      />
-
-      <ConnectModal
-        isActive={showConnectModal}
-        onClose={() => setShowConnectModal(false)}
-      />
-
-      <ModelModal
-        isActive={showModelModal}
-        onClose={() => setShowModelModal(false)}
-        onSelectPrimary={handleSelectPrimary}
-        onSelectAuxiliary={handleSelectAuxiliary}
-      />
-
+      <CommandPanel isActive={showCommandPanel} onClose={() => setShowCommandPanel(false)} commands={commands} />
+      <RenameModal isActive={showRenameModal} currentTitle={sessionTitle} onConfirm={handleRename} onCancel={() => setShowRenameModal(false)} />
+      <ConnectModal isActive={showConnectModal} onClose={() => setShowConnectModal(false)} />
+      <ModelModal isActive={showModelModal} onClose={() => setShowModelModal(false)} onSelectPrimary={handleSelectPrimary} onSelectAuxiliary={handleSelectAuxiliary} />
       <SessionModal
         isActive={showSessionModal}
         keyboardDisabled={showDeleteConfirm}
@@ -566,7 +480,6 @@ export function App({ onExit }: AppProps) {
         onNewSession={handleNewSession}
         onDelete={handleDeleteRequest}
       />
-
       {showDeleteConfirm && sessionToDelete && (
         <ConfirmModal
           isActive={showDeleteConfirm}
@@ -578,13 +491,7 @@ export function App({ onExit }: AppProps) {
           onCancel={handleCancelDelete}
         />
       )}
-
-      <ForkModal
-        isActive={showForkModal}
-        onClose={() => setShowForkModal(false)}
-        session={session}
-        onFork={handleFork}
-      />
+      <ForkModal isActive={showForkModal} onClose={() => setShowForkModal(false)} session={session} onFork={handleFork} />
     </box>
   );
 }

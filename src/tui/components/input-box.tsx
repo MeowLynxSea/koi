@@ -22,28 +22,25 @@ interface InputBoxProps {
   width?: number;
 }
 
-export function InputBox({
-  value,
-  onChange,
-  onSubmit,
-  onSlashEmpty,
-  focused = true,
-  disabled = false,
-  width,
-}: InputBoxProps) {
-  const textareaRef = useRef<TextareaRenderable>(null);
+function useInputActions(
+  textareaRef: React.RefObject<TextareaRenderable | null>,
+  disabled: boolean,
+  value: string,
+  onChange: (value: string) => void,
+  onSubmit: (value: string) => void,
+  onSlashEmpty?: () => void
+) {
+  const getText = () => textareaRef.current?.editBuffer.getText() ?? "";
 
   const handleContentChange = () => {
     if (disabled) return;
-    const text = textareaRef.current?.editBuffer.getText() ?? "";
-    if (text !== value) {
-      onChange(text);
-    }
+    const text = getText();
+    if (text !== value) onChange(text);
   };
 
   const handleSubmit = () => {
     if (disabled) return;
-    const text = textareaRef.current?.editBuffer.getText() ?? "";
+    const text = getText();
     if (text.trim()) {
       onSubmit(text);
       textareaRef.current?.editBuffer.replaceText("");
@@ -58,6 +55,28 @@ export function InputBox({
       onSlashEmpty();
     }
   };
+
+  return { handleContentChange, handleSubmit, handleKeyDown };
+}
+
+export function InputBox({
+  value,
+  onChange,
+  onSubmit,
+  onSlashEmpty,
+  focused = true,
+  disabled = false,
+  width,
+}: InputBoxProps) {
+  const textareaRef = useRef<TextareaRenderable>(null);
+  const { handleContentChange, handleSubmit, handleKeyDown } = useInputActions(
+    textareaRef,
+    disabled,
+    value,
+    onChange,
+    onSubmit,
+    onSlashEmpty
+  );
 
   const keyBindings = useMemo<KeyBinding[]>(
     () => [
