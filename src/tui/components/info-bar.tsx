@@ -7,19 +7,27 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createTextAttributes } from "@opentui/core";
+import type { MouseEvent } from "@opentui/core";
 
 const HINT_TEXT =
   "Enter Send  Shift+Enter Newline  Ctrl+P Command Panel  Ctrl+O Expand/Collapse  Ctrl+C Exit  Esc Cancel";
 const EXIT_TEXT = "Confirm exit in dialog";
 const SCROLL_INTERVAL_MS = 300;
 const MAX_HINT_WIDTH_RATIO = 0.6; // max 60% of width for hints
+const YOLO_BUTTON_WIDTH = 6; // " YOLO " = 6 chars with padding
+
+// Gray for disabled, rose red for enabled
+const DISABLED_COLOR = "#4a4a5a";
+const ENABLED_COLOR = "#ff6b9d";
 
 interface InfoBarProps {
   width?: number;
   exitMode?: boolean;
+  yoloMode?: boolean;
+  onToggleYolo?: () => void;
 }
 
-export function InfoBar({ width = 80, exitMode = false }: InfoBarProps) {
+export function InfoBar({ width = 80, exitMode = false, yoloMode = false, onToggleYolo }: InfoBarProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
   const [scrollDirection, setScrollDirection] = useState(1);
   const lastWidthRef = useRef(width);
@@ -66,9 +74,30 @@ export function InfoBar({ width = 80, exitMode = false }: InfoBarProps) {
     }
   }
 
+  const yoloBg = yoloMode ? ENABLED_COLOR : DISABLED_COLOR;
+  const yoloFg = yoloMode ? "#ffffff" : "#a0a0b0";
+
   return (
-    <box width={width} height={1}>
-      <text attributes={createTextAttributes({ dim: true })}>{displayText}</text>
+    <box width={width} height={1} flexDirection="row" alignItems="center">
+      <box width={Math.max(1, width - YOLO_BUTTON_WIDTH - 1)}>
+        <text attributes={createTextAttributes({ dim: true })}>{displayText}</text>
+      </box>
+      <box
+        width={YOLO_BUTTON_WIDTH}
+        backgroundColor={yoloBg}
+        justifyContent="center"
+        onMouseUp={(e: MouseEvent) => {
+          e.stopPropagation();
+          onToggleYolo?.();
+        }}
+      >
+        <text
+          fg={yoloFg}
+          attributes={createTextAttributes({ bold: true })}
+        >
+          {" YOLO "}
+        </text>
+      </box>
     </box>
   );
 }

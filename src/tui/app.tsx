@@ -49,6 +49,8 @@ import {
   subscribePermissions,
   getPermissionQueue,
   resolvePermission,
+  isYoloMode,
+  setYoloMode as setYoloModeGlobal,
 } from "../agent/permission-ui.js";
 
 const SIDEBAR_WIDTH = 28;
@@ -113,6 +115,12 @@ export function App({ onExit }: AppProps) {
   const [sidebarTokenCount, setSidebarTokenCount] = useState("(0)");
   const [sidebarCost, setSidebarCost] = useState("$0.00");
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [yoloMode, setYoloMode] = useState(false);
+
+  // Sync yoloMode to global permission-ui state
+  useEffect(() => {
+    setYoloModeGlobal(yoloMode);
+  }, [yoloMode]);
 
   const dialog = useDialog();
 
@@ -203,6 +211,13 @@ export function App({ onExit }: AppProps) {
         processingPermissionRef.current = false;
         return;
       }
+
+      // In YOLO mode, auto-approve all permissions
+      if (isYoloMode()) {
+        resolvePermission(request.id, true);
+        return;
+      }
+
       processingPermissionRef.current = true;
       setPermissionModalOpen(true);
 
@@ -401,6 +416,7 @@ export function App({ onExit }: AppProps) {
       { id: "/sessions", label: "Browse sessions", section: "Session", action: async () => { await refreshSessionList(); setShowSessionModal(true); } },
       { id: "/compact", label: "Compact current session", section: "Session", action: () => { session?.compact().catch(() => {}); } },
       { id: "/rename", label: "Rename session", section: "Session", action: () => setShowRenameModal(true) },
+      { id: "/yolo", label: "Toggle YOLO mode (auto-approve all permissions)", section: "Mode", action: () => setYoloMode((prev) => !prev) },
       { id: "/connect", label: "Connect to a provider", section: "Model", action: () => setShowConnectModal(true) },
       { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true) },
     ],
@@ -529,7 +545,7 @@ export function App({ onExit }: AppProps) {
             disabled={!isReady}
             width={leftWidth}
           />
-          <InfoBar width={leftWidth} exitMode={showExitModal} />
+          <InfoBar width={leftWidth} exitMode={showExitModal} yoloMode={yoloMode} onToggleYolo={() => setYoloMode((prev) => !prev)} />
         </box>
 
         {/* Divider + Sidebar */}

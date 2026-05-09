@@ -19,6 +19,15 @@ export interface PermissionRequest {
 
 let queue: PermissionRequest[] = [];
 let listeners: (() => void)[] = [];
+let yoloMode = false;
+
+export function isYoloMode(): boolean {
+  return yoloMode;
+}
+
+export function setYoloMode(enabled: boolean): void {
+  yoloMode = enabled;
+}
 
 function emit() {
   for (const listener of listeners) {
