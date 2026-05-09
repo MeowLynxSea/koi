@@ -13,7 +13,8 @@ import type {
 
 type SessionManagerType = AgentSession["sessionManager"];
 type SessionTreeNode = ReturnType<SessionManagerType["getTree"]>[number];
-import type { AssistantMessage, UserMessage, AgentMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, UserMessage } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { UIMessage } from "../tui/components/chat-panel.js";
 import { isToolExpandable, isToolForceExpanded, getToolDefaultCollapsed } from "../tui/components/chat-panel.js";
 import type { ModelRef } from "../config/settings.js";
@@ -240,7 +241,7 @@ function rebuildMessagesFromHistory(
       );
       if (idx >= 0) {
         usedIndices.add(idx);
-        reordered.push(currentMessages[idx]);
+        reordered.push(currentMessages[idx]!);
       } else {
         reordered.push({ id: generateId("user"), type: "user", content });
       }
@@ -263,14 +264,15 @@ function rebuildMessagesFromHistory(
       );
       if (idx >= 0) {
         usedIndices.add(idx);
-        reordered.push(currentMessages[idx]);
+        reordered.push(currentMessages[idx]!);
 
         // Pull any trailing tool_call / tool_result messages that immediately
         // followed this agent message in the old UI order so they stay together.
         for (let i = idx + 1; i < currentMessages.length; i++) {
           if (usedIndices.has(i)) break;
           const m = currentMessages[i];
-          if (m.type === "tool_call" || m.type === "tool_result") {
+          if (!m) break;
+          if (m.type === "tool_call") {
             usedIndices.add(i);
             reordered.push(m);
           } else {
@@ -289,10 +291,10 @@ function rebuildMessagesFromHistory(
     }
   }
 
-  // Append any unmatched current messages (tool_call, tool_result, etc.)
+  // Append any unmatched current messages (tool_call, etc.)
   for (let i = 0; i < currentMessages.length; i++) {
     if (!usedIndices.has(i)) {
-      reordered.push(currentMessages[i]);
+      reordered.push(currentMessages[i]!);
     }
   }
 
@@ -325,7 +327,7 @@ function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>
   const pendingMsgId = ctx.streamingMsgIdRef.current;
 
   ctx.setMessages((prev) => {
-    let next = prev.filter((m) => m.type !== "status");
+    let next: UIMessage[] = prev.filter((m) => m.type !== "status");
 
     // Check whether Pi's session history already contains user messages
     // that are not yet in our UI (e.g. queued/followUp messages delivered
