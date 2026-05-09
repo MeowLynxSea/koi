@@ -77,8 +77,8 @@ export function createExitPlanModeToolDefinition(): ToolDefinition {
         };
       }
 
-      const approved = await submitPlanForApproval({ plan: input.plan });
-      if (approved) {
+      const result = await submitPlanForApproval({ plan: input.plan });
+      if (result.approved) {
         setAgentMode("build");
         return {
           content: [
@@ -90,16 +90,17 @@ export function createExitPlanModeToolDefinition(): ToolDefinition {
           details: { approved: true },
         };
       } else {
+        const commentText = result.comment ? ` Comment: ${result.comment}` : "";
         return {
           content: [
             {
               type: "text",
               text:
-                "Plan was rejected by the user. You are still in Plan Mode. " +
+                `Plan was rejected by the user.${commentText} You are still in Plan Mode. ` +
                 "Please revise the plan based on user feedback and try exitPlanMode again.",
             },
           ],
-          details: { approved: false },
+          details: { approved: false, comment: result.comment },
           isError: true,
         };
       }

@@ -7,10 +7,15 @@
  * Pattern mirrors permission-ui.ts.
  */
 
+export interface PlanApprovalResult {
+  approved: boolean;
+  comment?: string;
+}
+
 export interface PlanApprovalRequest {
   id: string;
   plan: string;
-  resolve: (approved: boolean) => void;
+  resolve: (result: PlanApprovalResult) => void;
 }
 
 let queue: PlanApprovalRequest[] = [];
@@ -42,12 +47,12 @@ export function getCurrentPlanText(): string {
   return currentPlanText;
 }
 
-export function resolvePlanApproval(id: string, approved: boolean): void {
+export function resolvePlanApproval(id: string, result: PlanApprovalResult): void {
   const request = queue.find((r) => r.id === id);
   if (!request) return;
   queue = queue.filter((r) => r.id !== id);
-  request.resolve(approved);
-  if (!approved) {
+  request.resolve(result);
+  if (!result.approved) {
     currentPlanText = "";
   }
   emit();
@@ -55,7 +60,7 @@ export function resolvePlanApproval(id: string, approved: boolean): void {
 
 export function submitPlanForApproval(params: {
   plan: string;
-}): Promise<boolean> {
+}): Promise<PlanApprovalResult> {
   return new Promise((resolve) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     currentPlanText = params.plan;

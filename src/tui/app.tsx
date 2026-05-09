@@ -8,7 +8,7 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
+import { SyntaxStyle, createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
 import { useDialog } from "@opentui-ui/dialog/react";
 
 /* ───────── Components ───────── */
@@ -69,6 +69,7 @@ import {
   subscribePlanApprovals,
   getPlanApprovalQueue,
   resolvePlanApproval,
+  type PlanApprovalResult,
 } from "../agent/plan-ui.js";
 
 const SIDEBAR_WIDTH = 28;
@@ -197,8 +198,6 @@ export function App({ onExit }: AppProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [yoloMode, setYoloMode] = useState(false);
   const [agentMode, setAgentMode] = useState<AgentMode>(getAgentMode());
-  const [planApprovalOpen, setPlanApprovalOpen] = useState(false);
-  const planApprovalResolveRef = useRef<((value: boolean) => void) | null>(null);
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -262,7 +261,7 @@ export function App({ onExit }: AppProps) {
     if (!session) return;
     const modeNotice =
       currentMode === "plan"
-        ? "\n\n[AGENT MODE: Plan Mode. You are in a planning/research phase. Write/edit/bash tools are DISABLED. Only use read-only tools and planning tools (askUserQuestion, enterPlanMode, exitPlanMode). Do not execute any file modifications.]"
+        ? "\n\n[AGENT MODE: Plan Mode. Write/edit/bash tools are DISABLED. You must NOT modify any files. Your task is to research, analyze, and formulate a detailed step-by-step plan. Use read-only tools to gather information. Once your plan is ready, you MUST call exitPlanMode with the complete plan to return to Build Mode.]"
         : currentMode === "ask"
           ? "\n\n[AGENT MODE: Ask Mode. Only read-only tools are available. You cannot modify files or execute commands.]"
           : "\n\n[AGENT MODE: Build Mode. All tools are available.]";
@@ -434,80 +433,87 @@ export function App({ onExit }: AppProps) {
 
       processingQuestionRef.current = true;
       const allOptions = [...request.options, "__other__"];
-
-      const result = await dialog.choice<string>({
-        backdropColor: "#000000",
-        backdropOpacity: "50%",
-        closeOnEscape: true,
-        unstyled: true,
-        content: ({ resolve, dismiss: _dismiss }) => {
-          const contentWidth = Math.min(70, Math.max(20, width - 8));
-          const questionLines = wrapText(request.question, contentWidth - 4, 0);
-          return (
-            <box
-              flexDirection="column"
-              alignSelf="center"
-              borderStyle="rounded"
-              borderColor="#4a4a5a"
-              backgroundColor="#1a1a2e"
-              paddingX={2}
-              paddingY={1}
-              width={contentWidth}
-              maxHeight={Math.max(10, height - 6)}
-            >
-              <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#60a5fa">
-                Question
-              </text>
-              <box flexDirection="column" gap={1}>
-                {questionLines.map((line, i) => (
-                  <text key={`q-${i}`} wrapMode="none" fg="#f8f8f2">{line}</text>
-                ))}
-              </box>
-              <box flexDirection="column" gap={1} marginTop={1}>
-                {allOptions.map((opt) => {
-                  const label = opt === "__other__" ? "Other (custom)" : opt;
-                  return (
-                    <box
-                      key={opt}
-                      paddingX={1}
-                      paddingY={1}
-                      backgroundColor="#2d2d44"
-                      onMouseUp={() => resolve(opt)}
-                    >
-                      <text fg="#f8f8f2">{label}</text>
-                    </box>
-                  );
-                })}
-              </box>
-              <box alignSelf="center" marginTop={1}>
-                <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-                  Esc to cancel
-                </text>
-              </box>
-            </box>
-          );
-        },
-      });
-
       let answer = "";
-      if (result === "__other__") {
-        const custom = await dialog.prompt<string>({
+
+      while (true) {
+        const choiceResult = await dialog.choice<string>({
           backdropColor: "#000000",
           backdropOpacity: "50%",
           closeOnEscape: true,
           unstyled: true,
-          content: ({ resolve }) => (
-            <CustomPromptContent
-              resolve={resolve}
-              question={request.question}
-              width={width}
-              height={height}
-            />
-          ),
+          content: ({ resolve, dismiss: _dismiss }) => {
+            const contentWidth = Math.min(70, Math.max(20, width - 8));
+            const questionLines = wrapText(request.question, contentWidth - 4, 0);
+            return (
+              <box
+                flexDirection="column"
+                alignSelf="center"
+                borderStyle="rounded"
+                borderColor="#4a4a5a"
+                backgroundColor="#1a1a2e"
+                paddingX={2}
+                paddingY={1}
+                width={contentWidth}
+                maxHeight={Math.max(10, height - 6)}
+              >
+                <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#60a5fa">
+                  Question
+                </text>
+                <box flexDirection="column" gap={1}>
+                  {questionLines.map((line, i) => (
+                    <text key={`q-${i}`} wrapMode="none" fg="#f8f8f2">{line}</text>
+                  ))}
+                </box>
+                <box flexDirection="column" gap={1} marginTop={1}>
+                  {allOptions.map((opt) => {
+                    const label = opt === "__other__" ? "Other (custom)" : opt;
+                    return (
+                      <box
+                        key={opt}
+                        paddingX={1}
+                        paddingY={1}
+                        backgroundColor="#2d2d44"
+                        onMouseUp={() => resolve(opt)}
+                      >
+                        <text fg="#f8f8f2">{label}</text>
+                      </box>
+                    );
+                  })}
+                </box>
+                <box alignSelf="center" marginTop={1}>
+                  <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+                    Esc to cancel
+                  </text>
+                </box>
+              </box>
+            );
+          },
         });
-        answer = custom ?? "";
-      } else {
-        answer = result ?? "";
+
+        if (choiceResult === "__other__") {
+          const custom = await dialog.prompt<string>({
+            backdropColor: "#000000",
+            backdropOpacity: "50%",
+            closeOnEscape: true,
+            unstyled: true,
+            content: ({ resolve }) => (
+              <CustomPromptContent
+                resolve={resolve}
+                question={request.question}
+                width={width}
+                height={height}
+              />
+            ),
+          });
+          if (custom !== undefined) {
+            answer = custom;
+            break;
+          }
+          // custom === undefined means user cancelled; loop back to choice dialog
+        } else {
+          answer = choiceResult ?? "";
+          break;
+        }
       }
 
       resolveQuestion(request.id, answer);
@@ -523,11 +529,7 @@ export function App({ onExit }: AppProps) {
     const unsubscribe = subscribePlanApprovals(async () => {
       if (processingPlanApprovalRef.current) return;
       const queue = getPlanApprovalQueue();
-      if (queue.length === 0) {
-        setPlanApprovalOpen(false);
-        planApprovalResolveRef.current = null;
-        return;
-      }
+      if (queue.length === 0) return;
       const request = queue[0];
       if (!request) {
         processingPlanApprovalRef.current = false;
@@ -535,28 +537,103 @@ export function App({ onExit }: AppProps) {
       }
 
       processingPlanApprovalRef.current = true;
-      setPlanApprovalOpen(true);
-      planApprovalResolveRef.current = (approved: boolean) => {
-        resolvePlanApproval(request.id, approved);
-        if (approved) {
-          addPlanMessage(request.plan);
-          applyAgentMode("build");
-        }
-        setPlanApprovalOpen(false);
-        planApprovalResolveRef.current = null;
-        processingPlanApprovalRef.current = false;
-      };
+      const modalWidth = Math.min(80, Math.max(40, width - 10));
+      const planHeight = Math.max(8, height - 14);
+
+      const result = await dialog.choice<string>({
+        backdropColor: "#000000",
+        backdropOpacity: "50%",
+        closeOnEscape: true,
+        unstyled: true,
+        content: ({ resolve, dismiss: _dismiss }) => {
+          const syntaxStyle = SyntaxStyle.create();
+          syntaxStyle.registerStyle("markup.heading", { fg: "#60a5fa", bold: true });
+          syntaxStyle.registerStyle("markup.strong", { bold: true });
+          syntaxStyle.registerStyle("markup.italic", { fg: "#bd93f9", italic: true });
+          syntaxStyle.registerStyle("markup.link", { fg: "#8be9fd", underline: true });
+          syntaxStyle.registerStyle("markup.raw", { fg: "#a5b4fc" });
+          syntaxStyle.registerStyle("markup.raw.block", { fg: "#f8f8f2", bg: "#44475a" });
+          syntaxStyle.registerStyle("markup.list", { fg: "#ff79c6" });
+          return (
+            <box
+              flexDirection="column"
+              alignSelf="center"
+              borderStyle="rounded"
+              borderColor="#4a4a5a"
+              backgroundColor="#1a1a2e"
+              paddingX={2}
+              paddingY={1}
+              width={modalWidth}
+              maxHeight={height - 4}
+            >
+              <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#60a5fa">
+                Review Plan
+              </text>
+              <box marginTop={1} height={planHeight} flexDirection="column">
+                <scrollbox scrollY={true} scrollX={false} height={planHeight} flexDirection="column">
+                  <markdown
+                    content={request.plan}
+                    syntaxStyle={syntaxStyle}
+                    width={modalWidth - 6}
+                    streaming={false}
+                    conceal={true}
+                  />
+                  <text />
+                </scrollbox>
+              </box>
+              <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
+                <box paddingX={2} backgroundColor="#2dd4bf" onMouseUp={() => resolve("yes")}>
+                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Yes</text>
+                </box>
+                <box paddingX={2} backgroundColor="#f43f5e" onMouseUp={() => resolve("no")}>
+                  <text fg="white" attributes={createTextAttributes({ bold: true })}>No</text>
+                </box>
+                <box paddingX={2} backgroundColor="#fbbf24" onMouseUp={() => resolve("comment")}>
+                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Comment</text>
+                </box>
+              </box>
+            </box>
+          );
+        },
+      });
+
+      let approvalResult: PlanApprovalResult = { approved: false };
+      if (result === "yes") {
+        approvalResult = { approved: true };
+      } else if (result === "comment") {
+        const comment = await dialog.prompt<string>({
+          backdropColor: "#000000",
+          backdropOpacity: "50%",
+          closeOnEscape: true,
+          unstyled: true,
+          content: ({ resolve }) => (
+            <CustomPromptContent
+              resolve={resolve}
+              question="Enter your feedback on the plan:"
+              width={width}
+              height={height}
+            />
+          ),
+        });
+        approvalResult = { approved: false, comment: comment ?? undefined };
+      }
+
+      resolvePlanApproval(request.id, approvalResult);
+      if (approvalResult.approved) {
+        addPlanMessage(request.plan);
+        applyAgentMode("build");
+      }
+      processingPlanApprovalRef.current = false;
     });
 
     return unsubscribe;
-  }, [addPlanMessage, applyAgentMode]);
+  }, [addPlanMessage, applyAgentMode, dialog, width, height]);
 
   // Responsive layout: left column fills remaining width; sidebar is fixed at SIDEBAR_WIDTH.
   const leftWidth = Math.max(1, width - SIDEBAR_WIDTH - 2);
   const pendingCount = steeringMessages.length + followUpMessages.length;
   const pendingHeight = pendingCount > 0 ? Math.min(pendingCount, 3) + (pendingCount > 3 ? 1 : 0) : 0;
-  const planApprovalHeight = planApprovalOpen ? 3 : 0;
-  const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1 - pendingHeight - planApprovalHeight);
+  const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1 - pendingHeight);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const anyModalOpen =
@@ -693,17 +770,6 @@ export function App({ onExit }: AppProps) {
   useKeyboard((key) => {
     if (anyModalOpen && !permissionModalOpen) return;
 
-    if (planApprovalOpen && planApprovalResolveRef.current) {
-      if (key.name === "y" || key.name === "Y") {
-        planApprovalResolveRef.current(true);
-        return;
-      }
-      if (key.name === "n" || key.name === "N") {
-        planApprovalResolveRef.current(false);
-        return;
-      }
-    }
-
     if (permissionModalOpen && permissionResolveRef.current) {
       if (key.name === "y" || key.name === "Y") {
         permissionResolveRef.current(true);
@@ -829,42 +895,6 @@ export function App({ onExit }: AppProps) {
             mode={agentMode}
             onModeSwitch={handleModeSwitch}
           />
-          {planApprovalOpen && (
-            <box
-              width={leftWidth}
-              height={3}
-              flexDirection="column"
-              border={["top"]}
-              borderStyle="single"
-              borderColor="#60a5fa"
-              backgroundColor="#1e3a5f"
-              paddingX={1}
-              paddingY={1}
-            >
-              <box flexDirection="row" alignItems="center" gap={1}>
-                <text fg="#60a5fa" attributes={createTextAttributes({ bold: true })}>
-                  Approve plan to exit Plan Mode?
-                </text>
-                <box
-                  paddingX={2}
-                  backgroundColor="#2dd4bf"
-                  onMouseUp={() => planApprovalResolveRef.current?.(true)}
-                >
-                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Yes</text>
-                </box>
-                <box
-                  paddingX={2}
-                  backgroundColor="#f43f5e"
-                  onMouseUp={() => planApprovalResolveRef.current?.(false)}
-                >
-                  <text fg="white" attributes={createTextAttributes({ bold: true })}>No</text>
-                </box>
-              </box>
-              <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-                Press Y to approve, N to reject
-              </text>
-            </box>
-          )}
           <InfoBar width={leftWidth} exitMode={showExitModal} yoloMode={yoloMode} onToggleYolo={() => setYoloMode((prev) => !prev)} />
         </box>
 
