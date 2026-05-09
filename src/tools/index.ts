@@ -14,6 +14,11 @@ import { createBashToolDefinition } from "./bash.js";
 import { createEditToolDefinition } from "./edit.js";
 import { createWriteToolDefinition } from "./write.js";
 import { createWebFetchToolDefinition } from "./webfetch.js";
+import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
+import {
+  createEnterPlanModeToolDefinition,
+  createExitPlanModeToolDefinition,
+} from "./plan-mode.js";
 import {
   createTaskCreateToolDefinition,
   createTaskGetToolDefinition,
@@ -35,6 +40,9 @@ export function createCodingToolDefinitions(
     createEditToolDefinition(_cwd),
     createWriteToolDefinition(_cwd),
     createWebFetchToolDefinition(_cwd),
+    createAskUserQuestionToolDefinition(),
+    createEnterPlanModeToolDefinition(),
+    createExitPlanModeToolDefinition(),
     createTaskCreateToolDefinition(_cwd, taskManager),
     createTaskGetToolDefinition(_cwd, taskManager),
     createTaskListToolDefinition(_cwd, taskManager),

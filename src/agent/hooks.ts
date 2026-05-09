@@ -61,6 +61,7 @@ export interface KoiAgentState {
   currentSessionId: string | null;
   saveCurrentState: () => void;
   deleteSession: (sessionId: string) => Promise<void>;
+  addPlanMessage: (content: string) => void;
 }
 
 /**
@@ -1041,6 +1042,16 @@ export function useKoiAgent(): KoiAgentState {
     return retractedText;
   }, []);
 
+  const addPlanMessage = useCallback((content: string) => {
+    setMessages((prev) =>
+      prev.concat({
+        id: generateId("plan"),
+        type: "plan",
+        content,
+      })
+    );
+  }, []);
+
   return {
     session,
     messages,
@@ -1069,5 +1080,6 @@ export function useKoiAgent(): KoiAgentState {
     sessionTitle,
     setSessionTitle: setSessionTitleWrapper,
     deleteSession,
+    addPlanMessage,
   };
 }

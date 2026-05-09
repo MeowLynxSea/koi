@@ -42,7 +42,8 @@ export type UIMessage =
       attempt: number;
       maxAttempts: number;
       content: string;
-    };
+    }
+  | { id: string; type: "plan"; content: string };
 
 interface ChatPanelProps {
   messages: UIMessage[];
@@ -848,6 +849,42 @@ function SimpleMessage({ msg, marginTop }: { msg: UIMessage & { type: "compactio
   return <text fg="#6c6c7c" marginTop={marginTop}>{msg.content}</text>;
 }
 
+function PlanMessage({
+  msg,
+  contentWidth,
+  marginTop,
+}: {
+  msg: UIMessage & { type: "plan" };
+  contentWidth: number;
+  marginTop: number;
+}) {
+  const syntaxStyle = useMemo(() => buildSyntaxStyle(), []);
+  return (
+    <box
+      flexDirection="column"
+      width={contentWidth}
+      marginTop={marginTop}
+      borderStyle="rounded"
+      borderColor="#60a5fa"
+      backgroundColor="#1e3a5f"
+      paddingX={1}
+      paddingY={1}
+    >
+      <text fg="#60a5fa" attributes={createTextAttributes({ bold: true })}>
+        {"📋 Plan"}
+      </text>
+      <box marginTop={1}>
+        <MarkdownContent
+          content={msg.content}
+          width={contentWidth - 2}
+          streaming={false}
+          syntaxStyle={syntaxStyle}
+        />
+      </box>
+    </box>
+  );
+}
+
 /**
  * Syntax Style
  *
@@ -995,6 +1032,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               case "compaction":
               case "retry":
                 return <SimpleMessage key={msg.id} msg={msg} marginTop={marginTop} />;
+              case "plan":
+                return <PlanMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} />;
             }
           })}
           <text />

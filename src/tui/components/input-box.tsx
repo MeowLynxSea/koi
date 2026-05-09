@@ -8,8 +8,19 @@
 import { useRef, useMemo, useEffect } from "react";
 import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
 import type { KeyEvent } from "@opentui/core";
+import type { AgentMode } from "../../agent/mode.js";
 
-const PREFIX = "Agent > ";
+const MODE_PREFIX: Record<AgentMode, string> = {
+  build: "Build > ",
+  ask: "Ask > ",
+  plan: "Plan > ",
+};
+
+const MODE_COLOR: Record<AgentMode, string> = {
+  build: "#4ade80",
+  ask: "#fbbf24",
+  plan: "#60a5fa",
+};
 
 interface InputBoxProps {
   value: string;
@@ -20,6 +31,8 @@ interface InputBoxProps {
   focused?: boolean;
   disabled?: boolean;
   width?: number;
+  mode?: AgentMode;
+  onModeSwitch?: () => void;
 }
 
 function useInputActions(
@@ -28,7 +41,8 @@ function useInputActions(
   onChange: (value: string) => void,
   onSubmit: (value: string) => void,
   onQueueSubmit?: (value: string) => void,
-  onSlashEmpty?: () => void
+  onSlashEmpty?: () => void,
+  onModeSwitch?: () => void
 ) {
   const getText = () => textareaRef.current?.editBuffer.getText() ?? "";
 
@@ -46,6 +60,12 @@ function useInputActions(
   };
 
   const handleKeyDown = (event: KeyEvent) => {
+    if (event.name === "tab" && event.shift && onModeSwitch) {
+      event.preventDefault();
+      event.stopPropagation();
+      onModeSwitch();
+      return;
+    }
     if (event.name === "/" && value === "" && onSlashEmpty) {
       event.preventDefault();
       event.stopPropagation();
@@ -75,6 +95,8 @@ export function InputBox({
   focused = true,
   disabled = false,
   width,
+  mode = "build",
+  onModeSwitch,
 }: InputBoxProps) {
   const textareaRef = useRef<TextareaRenderable>(null);
   const { handleContentChange, handleSubmit, handleKeyDown } = useInputActions(
@@ -83,7 +105,8 @@ export function InputBox({
     onChange,
     onSubmit,
     onQueueSubmit,
-    onSlashEmpty
+    onSlashEmpty,
+    onModeSwitch
   );
 
   // Sync external value changes into the textarea editBuffer
@@ -118,8 +141,8 @@ export function InputBox({
     >
       <box flexDirection="row" height={3}>
         <box marginRight={1} flexShrink={0}>
-          <text fg="#ff79c6" attributes={createTextAttributes({ bold: true })}>
-            {PREFIX}
+          <text fg={MODE_COLOR[mode]} attributes={createTextAttributes({ bold: true })}>
+            {MODE_PREFIX[mode]}
           </text>
         </box>
         <box flexGrow={1} height={3}>

@@ -8,7 +8,7 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { createTextAttributes } from "@opentui/core";
+import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
 import { useDialog } from "@opentui-ui/dialog/react";
 
 /* ───────── Components ───────── */
@@ -52,6 +52,24 @@ import {
   isYoloMode,
   setYoloMode as setYoloModeGlobal,
 } from "../agent/permission-ui.js";
+import {
+  getAgentMode,
+  setAgentMode as setGlobalAgentMode,
+  cycleAgentMode,
+  getActiveToolNamesForMode,
+  subscribeModeChanges,
+  type AgentMode,
+} from "../agent/mode.js";
+import {
+  subscribeQuestions,
+  getQuestionQueue,
+  resolveQuestion,
+} from "../agent/question-ui.js";
+import {
+  subscribePlanApprovals,
+  getPlanApprovalQueue,
+  resolvePlanApproval,
+} from "../agent/plan-ui.js";
 
 const SIDEBAR_WIDTH = 28;
 
@@ -81,6 +99,68 @@ function formatPermissionArgs(toolName: string, args: unknown): string {
   if (!args || typeof args !== "object") return JSON.stringify(args);
   const formatter = PERMISSION_FORMATTERS[toolName];
   return formatter ? formatter(args as Record<string, unknown>) : JSON.stringify(args, null, 2);
+}
+
+function CustomPromptContent({
+  resolve,
+  question,
+  width,
+  height,
+}: {
+  resolve: (value: string) => void;
+  question: string;
+  width: number;
+  height: number;
+}) {
+  const taRef = useRef<TextareaRenderable>(null);
+  const handleSubmit = () => {
+    resolve(taRef.current?.editBuffer.getText() ?? "");
+  };
+  const contentWidth = Math.min(70, Math.max(20, width - 8));
+  const questionLines = wrapText(question, contentWidth - 4, 0);
+  const keyBindings = useMemo<KeyBinding[]>(() => [{ name: "return", action: "submit" }], []);
+
+  return (
+    <box
+      flexDirection="column"
+      alignSelf="center"
+      borderStyle="rounded"
+      borderColor="#4a4a5a"
+      backgroundColor="#1a1a2e"
+      paddingX={2}
+      paddingY={1}
+      width={contentWidth}
+      maxHeight={Math.max(10, height - 6)}
+    >
+      <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#60a5fa">
+        Custom Answer
+      </text>
+      <box flexDirection="column" gap={1}>
+        {questionLines.map((line, i) => (
+          <text key={`q-${i}`} wrapMode="none" fg="#f8f8f2">{line}</text>
+        ))}
+      </box>
+      <box marginTop={1} height={3}>
+        <textarea
+          ref={taRef}
+          initialValue=""
+          focused={true}
+          showCursor={true}
+          height={3}
+          onSubmit={handleSubmit}
+          keyBindings={keyBindings}
+        />
+      </box>
+      <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
+        <box paddingX={2} backgroundColor="#2dd4bf" onMouseUp={handleSubmit}>
+          <text fg="white" attributes={createTextAttributes({ bold: true })}>Submit</text>
+        </box>
+        <box paddingX={2} backgroundColor="#f43f5e" onMouseUp={() => resolve("")}>
+          <text fg="white" attributes={createTextAttributes({ bold: true })}>Cancel</text>
+        </box>
+      </box>
+    </box>
+  );
 }
 
 /**
@@ -116,6 +196,9 @@ export function App({ onExit }: AppProps) {
   const [sidebarCost, setSidebarCost] = useState("$0.00");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [yoloMode, setYoloMode] = useState(false);
+  const [agentMode, setAgentMode] = useState<AgentMode>(getAgentMode());
+  const [planApprovalOpen, setPlanApprovalOpen] = useState(false);
+  const planApprovalResolveRef = useRef<((value: boolean) => void) | null>(null);
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -150,7 +233,56 @@ export function App({ onExit }: AppProps) {
     sessionTitle,
     setSessionTitle,
     deleteSession,
+    addPlanMessage,
   } = useKoiAgent();
+
+  // Sync agent mode changes to the active session's tool set
+  const applyAgentMode = useCallback(
+    (mode: AgentMode) => {
+      setGlobalAgentMode(mode);
+      setAgentMode(mode);
+    },
+    []
+  );
+
+  const handleModeSwitch = useCallback(() => {
+    const next = cycleAgentMode();
+    applyAgentMode(next);
+  }, [applyAgentMode]);
+
+  // Subscribe to external mode changes (e.g. from tools) so UI stays in sync
+  useEffect(() => {
+    return subscribeModeChanges(() => {
+      const mode = getAgentMode();
+      setAgentMode(mode);
+    });
+  }, []);
+
+  function injectModeIntoSystemPrompt(currentMode: AgentMode) {
+    if (!session) return;
+    const modeNotice =
+      currentMode === "plan"
+        ? "\n\n[AGENT MODE: Plan Mode. You are in a planning/research phase. Write/edit/bash tools are DISABLED. Only use read-only tools and planning tools (askUserQuestion, enterPlanMode, exitPlanMode). Do not execute any file modifications.]"
+        : currentMode === "ask"
+          ? "\n\n[AGENT MODE: Ask Mode. Only read-only tools are available. You cannot modify files or execute commands.]"
+          : "\n\n[AGENT MODE: Build Mode. All tools are available.]";
+
+    // Pi resets systemPrompt from _baseSystemPrompt on every turn start,
+    // so we must patch _baseSystemPrompt directly.
+    const basePrompt = (session as unknown as Record<string, string>)["_baseSystemPrompt"] ?? "";
+    const modePattern = /\n\n\[AGENT MODE:.*?\]/s;
+    const cleanPrompt = basePrompt.replace(modePattern, "");
+    const patchedPrompt = cleanPrompt + modeNotice;
+    (session as unknown as Record<string, string>)["_baseSystemPrompt"] = patchedPrompt;
+    session.state.systemPrompt = patchedPrompt;
+  }
+
+  // Apply tool restrictions and inject mode awareness into system prompt
+  useEffect(() => {
+    if (!session) return;
+    session.setActiveToolsByName(getActiveToolNamesForMode(agentMode));
+    injectModeIntoSystemPrompt(agentMode);
+  }, [agentMode, session]);
 
   // Polls session stats (token count, cost, context usage) every 2s for the sidebar.
   // Falls back to zeroed values when no session is active.
@@ -287,11 +419,144 @@ export function App({ onExit }: AppProps) {
     return unsubscribe;
   }, [dialog, width, height]);
 
+  // Processes the askUserQuestion queue one item at a time.
+  const processingQuestionRef = useRef(false);
+  useEffect(() => {
+    const unsubscribe = subscribeQuestions(async () => {
+      if (processingQuestionRef.current) return;
+      const queue = getQuestionQueue();
+      if (queue.length === 0) return;
+      const request = queue[0];
+      if (!request) {
+        processingQuestionRef.current = false;
+        return;
+      }
+
+      processingQuestionRef.current = true;
+      const allOptions = [...request.options, "__other__"];
+
+      const result = await dialog.choice<string>({
+        backdropColor: "#000000",
+        backdropOpacity: "50%",
+        closeOnEscape: true,
+        unstyled: true,
+        content: ({ resolve, dismiss: _dismiss }) => {
+          const contentWidth = Math.min(70, Math.max(20, width - 8));
+          const questionLines = wrapText(request.question, contentWidth - 4, 0);
+          return (
+            <box
+              flexDirection="column"
+              alignSelf="center"
+              borderStyle="rounded"
+              borderColor="#4a4a5a"
+              backgroundColor="#1a1a2e"
+              paddingX={2}
+              paddingY={1}
+              width={contentWidth}
+              maxHeight={Math.max(10, height - 6)}
+            >
+              <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#60a5fa">
+                Question
+              </text>
+              <box flexDirection="column" gap={1}>
+                {questionLines.map((line, i) => (
+                  <text key={`q-${i}`} wrapMode="none" fg="#f8f8f2">{line}</text>
+                ))}
+              </box>
+              <box flexDirection="column" gap={1} marginTop={1}>
+                {allOptions.map((opt) => {
+                  const label = opt === "__other__" ? "Other (custom)" : opt;
+                  return (
+                    <box
+                      key={opt}
+                      paddingX={1}
+                      paddingY={1}
+                      backgroundColor="#2d2d44"
+                      onMouseUp={() => resolve(opt)}
+                    >
+                      <text fg="#f8f8f2">{label}</text>
+                    </box>
+                  );
+                })}
+              </box>
+              <box alignSelf="center" marginTop={1}>
+                <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+                  Esc to cancel
+                </text>
+              </box>
+            </box>
+          );
+        },
+      });
+
+      let answer = "";
+      if (result === "__other__") {
+        const custom = await dialog.prompt<string>({
+          backdropColor: "#000000",
+          backdropOpacity: "50%",
+          closeOnEscape: true,
+          unstyled: true,
+          content: ({ resolve }) => (
+            <CustomPromptContent
+              resolve={resolve}
+              question={request.question}
+              width={width}
+              height={height}
+            />
+          ),
+        });
+        answer = custom ?? "";
+      } else {
+        answer = result ?? "";
+      }
+
+      resolveQuestion(request.id, answer);
+      processingQuestionRef.current = false;
+    });
+
+    return unsubscribe;
+  }, [dialog, width, height]);
+
+  // Processes the plan-approval queue.
+  const processingPlanApprovalRef = useRef(false);
+  useEffect(() => {
+    const unsubscribe = subscribePlanApprovals(async () => {
+      if (processingPlanApprovalRef.current) return;
+      const queue = getPlanApprovalQueue();
+      if (queue.length === 0) {
+        setPlanApprovalOpen(false);
+        planApprovalResolveRef.current = null;
+        return;
+      }
+      const request = queue[0];
+      if (!request) {
+        processingPlanApprovalRef.current = false;
+        return;
+      }
+
+      processingPlanApprovalRef.current = true;
+      setPlanApprovalOpen(true);
+      planApprovalResolveRef.current = (approved: boolean) => {
+        resolvePlanApproval(request.id, approved);
+        if (approved) {
+          addPlanMessage(request.plan);
+          applyAgentMode("build");
+        }
+        setPlanApprovalOpen(false);
+        planApprovalResolveRef.current = null;
+        processingPlanApprovalRef.current = false;
+      };
+    });
+
+    return unsubscribe;
+  }, [addPlanMessage, applyAgentMode]);
+
   // Responsive layout: left column fills remaining width; sidebar is fixed at SIDEBAR_WIDTH.
   const leftWidth = Math.max(1, width - SIDEBAR_WIDTH - 2);
   const pendingCount = steeringMessages.length + followUpMessages.length;
   const pendingHeight = pendingCount > 0 ? Math.min(pendingCount, 3) + (pendingCount > 3 ? 1 : 0) : 0;
-  const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1 - pendingHeight);
+  const planApprovalHeight = planApprovalOpen ? 3 : 0;
+  const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1 - pendingHeight - planApprovalHeight);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const anyModalOpen =
@@ -417,15 +682,27 @@ export function App({ onExit }: AppProps) {
       { id: "/compact", label: "Compact current session", section: "Session", action: () => { session?.compact().catch(() => {}); } },
       { id: "/rename", label: "Rename session", section: "Session", action: () => setShowRenameModal(true) },
       { id: "/yolo", label: "Toggle YOLO mode (auto-approve all permissions)", section: "Mode", action: () => setYoloMode((prev) => !prev) },
+      { id: "/mode", label: `Cycle agent mode (${agentMode})`, section: "Mode", action: () => handleModeSwitch() },
       { id: "/connect", label: "Connect to a provider", section: "Model", action: () => setShowConnectModal(true) },
       { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true) },
     ],
-    [session, handleNewSession, refreshSessionList]
+    [session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch]
   );
 
   // Global keyboard shortcuts. Guarded by anyModalOpen so typing in a modal doesn't trigger app actions.
   useKeyboard((key) => {
     if (anyModalOpen && !permissionModalOpen) return;
+
+    if (planApprovalOpen && planApprovalResolveRef.current) {
+      if (key.name === "y" || key.name === "Y") {
+        planApprovalResolveRef.current(true);
+        return;
+      }
+      if (key.name === "n" || key.name === "N") {
+        planApprovalResolveRef.current(false);
+        return;
+      }
+    }
 
     if (permissionModalOpen && permissionResolveRef.current) {
       if (key.name === "y" || key.name === "Y") {
@@ -460,6 +737,11 @@ export function App({ onExit }: AppProps) {
 
     if (key.ctrl && key.name === "f") {
       setShowForkModal(true);
+      return;
+    }
+
+    if (key.name === "tab" && key.shift) {
+      handleModeSwitch();
       return;
     }
 
@@ -544,7 +826,45 @@ export function App({ onExit }: AppProps) {
             focused={!anyModalOpen}
             disabled={!isReady}
             width={leftWidth}
+            mode={agentMode}
+            onModeSwitch={handleModeSwitch}
           />
+          {planApprovalOpen && (
+            <box
+              width={leftWidth}
+              height={3}
+              flexDirection="column"
+              border={["top"]}
+              borderStyle="single"
+              borderColor="#60a5fa"
+              backgroundColor="#1e3a5f"
+              paddingX={1}
+              paddingY={1}
+            >
+              <box flexDirection="row" alignItems="center" gap={1}>
+                <text fg="#60a5fa" attributes={createTextAttributes({ bold: true })}>
+                  Approve plan to exit Plan Mode?
+                </text>
+                <box
+                  paddingX={2}
+                  backgroundColor="#2dd4bf"
+                  onMouseUp={() => planApprovalResolveRef.current?.(true)}
+                >
+                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Yes</text>
+                </box>
+                <box
+                  paddingX={2}
+                  backgroundColor="#f43f5e"
+                  onMouseUp={() => planApprovalResolveRef.current?.(false)}
+                >
+                  <text fg="white" attributes={createTextAttributes({ bold: true })}>No</text>
+                </box>
+              </box>
+              <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+                Press Y to approve, N to reject
+              </text>
+            </box>
+          )}
           <InfoBar width={leftWidth} exitMode={showExitModal} yoloMode={yoloMode} onToggleYolo={() => setYoloMode((prev) => !prev)} />
         </box>
 
