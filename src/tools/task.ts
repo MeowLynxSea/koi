@@ -20,7 +20,10 @@ import type { ToolResultWithError } from "./types.js";
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
 export const taskCreateSchema = Type.Object({
-  content: Type.String({ description: "Task description / content" }),
+  content: Type.String({ 
+    description: "Task description / content (max 40 characters)",
+    maxLength: 40,
+  }),
   priority: Type.Optional(
     Type.Union(
       [Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")],
@@ -69,7 +72,10 @@ export type TaskListInput = {
 
 export const taskUpdateSchema = Type.Object({
   taskId: Type.String({ description: "Unique task identifier" }),
-  content: Type.Optional(Type.String({ description: "New task description" })),
+  content: Type.Optional(Type.String({ 
+    description: "New task description (max 40 characters)",
+    maxLength: 40,
+  })),
   status: Type.Optional(
     Type.Union(
       [Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed")],
@@ -130,6 +136,18 @@ export async function executeTaskCreate(
   _toolCallId: string,
   params: TaskCreateInput
 ): Promise<{ content: TextContent[]; details: { task: Task } }> {
+  // Block overly long task content to prevent AI misuse of todo list
+  if (params.content.length > 40) {
+    return {
+      content: [{ 
+        type: "text", 
+        text: `Error: Task content exceeds 40 characters (${params.content.length} chars). Please shorten the description to 40 characters or less. Example: "Fix login bug" instead of "Fix the login bug where users cannot authenticate with SSO"`,
+      }],
+      details: { task: null! },
+      isError: true,
+    } as ToolResultWithError<{ task: Task }>;
+  }
+
   const task = taskManager.createTask(
     params.content,
     params.priority ?? "medium",
@@ -193,6 +211,19 @@ export async function executeTaskUpdate(
   _toolCallId: string,
   params: TaskUpdateInput
 ): Promise<{ content: (TextContent | ImageContent)[]; details: { task: Task | null } }> {
+  // Block overly long task content to prevent AI misuse of todo list
+  if (params.content !== undefined && params.content.length > 40) {
+    const result: ToolResultWithError<{ task: Task | null }> = {
+      content: [{ 
+        type: "text", 
+        text: `Error: Task content exceeds 40 characters (${params.content.length} chars). Please shorten the description to 40 characters or less.`,
+      }],
+      details: { task: null },
+      isError: true,
+    };
+    return result;
+  }
+
   const task = taskManager.updateTask(params.taskId, {
     content: params.content,
     status: params.status,
@@ -237,6 +268,7 @@ export function createTaskCreateToolDefinition(
       "Use TaskCreate VERY frequently to track and plan tasks.",
       "ALWAYS create a todo list before starting multi-step or non-trivial work.",
       "Break large complex tasks into smaller atomic steps.",
+      "⚠️ Task content MUST be 40 characters or less. Use concise, brief descriptions.",
       "Set priority to 'high' for critical path items, 'low' for nice-to-haves.",
       "Use blockedBy/blocks to express dependency relationships between tasks.",
     ],
