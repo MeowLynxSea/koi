@@ -1,0 +1,192 @@
+/**
+ * Subagent Runner
+ *
+ * Creates a lightweight child Agent by directly instantiating pi-agent-core's Agent
+ * class, copying the parent session's runtime config (streamFn, getApiKey, model,
+ * systemPrompt) but with an isolated message history and filtered tool set.
+ */
+
+import { Agent } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
+import type { UserMessage, AssistantMessage } from "@mariozechner/pi-ai";
+import { activeSessionRef } from "./hooks.js";
+
+export type SubagentType = "explore" | "plan";
+
+export interface SubagentConfig {
+  description: string;
+  prompt: string;
+  subagentType?: SubagentType;
+  runInBackground?: boolean;
+  maxTurns?: number;
+}
+
+const DEFAULT_MAX_TURNS = 50;
+
+/** Tools that no subagent should ever see. */
+const DISALLOWED_TOOLS = new Set([
+  "agent",
+  "askUserQuestion",
+  "exitPlanMode",
+]);
+
+/** Read-only tool set for explore agents. */
+const READONLY_TOOL_NAMES = new Set([
+  "read",
+  "grep",
+  "glob",
+  "ls",
+  "webfetch",
+  "taskGet",
+  "taskList",
+]);
+
+/** Planning tool set for plan agents. */
+const PLAN_TOOL_NAMES = new Set([
+  "read",
+  "grep",
+  "glob",
+  "ls",
+  "webfetch",
+  "taskGet",
+  "taskList",
+  "taskCreate",
+  "taskUpdate",
+  "enterPlanMode",
+]);
+
+function filterTools(
+  parentTools: AgentTool<any>[],
+  subagentType?: SubagentType
+): AgentTool<any>[] {
+  let allowedNames: Set<string> | null = null;
+  if (subagentType === "explore") {
+    allowedNames = READONLY_TOOL_NAMES;
+  } else if (subagentType === "plan") {
+    allowedNames = PLAN_TOOL_NAMES;
+  }
+
+  return parentTools.filter((tool) => {
+    if (DISALLOWED_TOOLS.has(tool.name)) return false;
+    if (allowedNames && !allowedNames.has(tool.name)) return false;
+    return true;
+  });
+}
+
+function buildSystemPrompt(
+  parentSystemPrompt: string,
+  subagentType?: SubagentType
+): string {
+  if (subagentType === "explore") {
+    return (
+      parentSystemPrompt +
+      "\n\n[SUBAGENT MODE: Explore]\n" +
+      "You are a read-only exploration subagent. " +
+      "You cannot modify files or execute shell commands. " +
+      "Your sole purpose is to gather information and report findings concisely."
+    );
+  }
+  if (subagentType === "plan") {
+    return (
+      parentSystemPrompt +
+      "\n\n[SUBAGENT MODE: Plan]\n" +
+      "You are a planning subagent. " +
+      "You can use read-only tools and task management tools to research and formulate plans. " +
+      "You cannot modify files or execute shell commands. " +
+      "Your output should be a detailed, actionable step-by-step plan."
+    );
+  }
+  return parentSystemPrompt;
+}
+
+function extractResult(messages: AgentMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (
+      msg &&
+      typeof msg === "object" &&
+      "role" in msg &&
+      msg.role === "assistant"
+    ) {
+      const assistant = msg as AssistantMessage;
+      let text = "";
+      for (const block of assistant.content) {
+        if (block.type === "text") {
+          text += block.text;
+        }
+      }
+      return text.trim() || "[Agent completed with no text output]";
+    }
+  }
+  return "[Agent completed with no assistant message]";
+}
+
+/**
+ * Run a subagent synchronously and return its final text output.
+ *
+ * @param onAgentCreated Optional callback invoked immediately after the Agent
+ *   instance is created. Used by the async registry to hold a reference for
+ *   abort/kill operations.
+ */
+export async function runSubagent(
+  config: SubagentConfig,
+  onAgentCreated?: (agent: Agent) => void
+): Promise<string> {
+  const parentSession = activeSessionRef.current;
+  if (!parentSession) {
+    throw new Error("No active session available to spawn subagent");
+  }
+
+  const parentAgent = parentSession.agent;
+  const parentState = parentSession.state;
+
+  const tools = filterTools(parentState.tools, config.subagentType);
+  const systemPrompt = buildSystemPrompt(
+    parentState.systemPrompt,
+    config.subagentType
+  );
+
+  const userMessage: UserMessage = {
+    role: "user",
+    content: config.prompt,
+    timestamp: Date.now(),
+  };
+
+  const agent = new Agent({
+    streamFn: parentAgent.streamFn,
+    getApiKey: parentAgent.getApiKey,
+    convertToLlm: parentAgent.convertToLlm,
+    transformContext: parentAgent.transformContext,
+    thinkingBudgets: parentAgent.thinkingBudgets,
+    transport: parentAgent.transport,
+    toolExecution: parentAgent.toolExecution,
+    maxRetryDelayMs: parentAgent.maxRetryDelayMs,
+    initialState: {
+      systemPrompt,
+      model: parentState.model,
+      thinkingLevel: parentState.thinkingLevel,
+      tools,
+    },
+  });
+
+  onAgentCreated?.(agent);
+
+  let turnCount = 0;
+  const maxTurns = config.maxTurns ?? DEFAULT_MAX_TURNS;
+  const unsubscribe = agent.subscribe((event, _signal) => {
+    if (event.type === "turn_start") {
+      turnCount++;
+      if (turnCount > maxTurns) {
+        agent.abort();
+      }
+    }
+  });
+
+  try {
+    await agent.prompt(userMessage);
+    await agent.waitForIdle();
+    return extractResult(agent.state.messages);
+  } finally {
+    unsubscribe();
+  }
+}

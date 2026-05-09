@@ -246,6 +246,7 @@ export async function createNewSession(
       "askUserQuestion",
       "enterPlanMode",
       "exitPlanMode",
+      "agent",
     ],
     // UI state
     expandedMessages: [],

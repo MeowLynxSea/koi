@@ -28,6 +28,7 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
   askUserQuestion: { name: "askUserQuestion", isReadOnly: true, isDestructive: false, riskLevel: "low" },
   enterPlanMode: { name: "enterPlanMode", isReadOnly: true, isDestructive: false, riskLevel: "low" },
   exitPlanMode: { name: "exitPlanMode", isReadOnly: true, isDestructive: false, riskLevel: "low" },
+  agent: { name: "agent", isReadOnly: false, isDestructive: false, riskLevel: "medium" },
 };
 
 export type KoiToolName = keyof typeof TOOL_METADATA;

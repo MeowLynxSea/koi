@@ -91,6 +91,7 @@ const ALL_TOOLS = [
   "askUserQuestion",
   "enterPlanMode",
   "exitPlanMode",
+  "agent",
 ];
 
 const READONLY_TOOLS = [

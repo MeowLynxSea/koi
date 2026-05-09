@@ -19,6 +19,7 @@ import {
   createEnterPlanModeToolDefinition,
   createExitPlanModeToolDefinition,
 } from "./plan-mode.js";
+import { createAgentToolDefinition } from "./agent.js";
 import {
   createTaskCreateToolDefinition,
   createTaskGetToolDefinition,
@@ -43,6 +44,7 @@ export function createCodingToolDefinitions(
     createAskUserQuestionToolDefinition(),
     createEnterPlanModeToolDefinition(),
     createExitPlanModeToolDefinition(),
+    createAgentToolDefinition(),
     createTaskCreateToolDefinition(_cwd, taskManager),
     createTaskGetToolDefinition(_cwd, taskManager),
     createTaskListToolDefinition(_cwd, taskManager),
