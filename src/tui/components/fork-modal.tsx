@@ -11,6 +11,7 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import { isInternalNotification } from "../../agent/hooks.js";
 
 type SessionManagerType = AgentSession["sessionManager"];
 type SessionTreeNode = ReturnType<SessionManagerType["getTree"]>[number];
@@ -62,7 +63,10 @@ function isMessageEntry(entry: unknown): entry is MessageEntry {
 function isVisibleNode(node: SessionTreeNode): boolean {
   const entry = node.entry;
   if (!isMessageEntry(entry)) return false;
-  return entry.message.role === "user";
+  if (entry.message.role !== "user") return false;
+  // Hide internal subagent notifications — they are not real user messages.
+  const text = extractUserText(entry.message.content);
+  return !isInternalNotification(text);
 }
 
 function isUserMessageEntry(entry: unknown): boolean {

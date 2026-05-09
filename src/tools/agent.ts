@@ -42,7 +42,7 @@ export const agentSchema = Type.Object({
   ),
   run_in_background: Type.Optional(
     Type.Boolean({
-      description: "Run asynchronously in the background. You will be notified when it completes.",
+      description: "Run asynchronously in the background. A <task-notification> will be injected into your context when it completes. The user does not see this notification.",
     })
   ),
 });
@@ -82,7 +82,7 @@ export async function executeAgent(
       content: [
         {
           type: "text",
-          text: `Launched background agent ${agentId}: ${params.description}\n\nThe agent is running asynchronously. You will receive a <task-notification> when it completes.`,
+          text: `Launched background agent ${agentId}: ${params.description}\n\nThe agent is running asynchronously. A <task-notification> will be injected into your context when it completes. The user does not see this notification.`,
         },
       ],
       details: { status: "async_launched", agentId },
