@@ -12,7 +12,7 @@
  */
 
 import { Type } from "typebox";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition, AgentToolResult } from "@mariozechner/pi-coding-agent";
 import type { TextContent, ImageContent } from "@mariozechner/pi-ai";
 import type { SessionTaskManager, Task } from "../agent/session-tasks.js";
 import type { ToolResultWithError } from "./types.js";
@@ -135,7 +135,7 @@ export async function executeTaskCreate(
   taskManager: SessionTaskManager,
   _toolCallId: string,
   params: TaskCreateInput
-): Promise<{ content: TextContent[]; details: { task: Task } }> {
+): Promise<AgentToolResult<{ task: Task }>> {
   // Block overly long task content to prevent AI misuse of todo list
   if (params.content.length > 40) {
     return {
@@ -144,8 +144,7 @@ export async function executeTaskCreate(
         text: `Error: Task content exceeds 40 characters (${params.content.length} chars). Please shorten the description to 40 characters or less. Example: "Fix login bug" instead of "Fix the login bug where users cannot authenticate with SSO"`,
       }],
       details: { task: null! },
-      isError: true,
-    } as ToolResultWithError<{ task: Task }>;
+    };
   }
 
   const task = taskManager.createTask(
@@ -210,18 +209,16 @@ export async function executeTaskUpdate(
   taskManager: SessionTaskManager,
   _toolCallId: string,
   params: TaskUpdateInput
-): Promise<{ content: (TextContent | ImageContent)[]; details: { task: Task | null } }> {
+): Promise<AgentToolResult<{ task: Task | null }>> {
   // Block overly long task content to prevent AI misuse of todo list
   if (params.content !== undefined && params.content.length > 40) {
-    const result: ToolResultWithError<{ task: Task | null }> = {
+    return {
       content: [{ 
         type: "text", 
         text: `Error: Task content exceeds 40 characters (${params.content.length} chars). Please shorten the description to 40 characters or less.`,
       }],
       details: { task: null },
-      isError: true,
     };
-    return result;
   }
 
   const task = taskManager.updateTask(params.taskId, {
@@ -235,12 +232,10 @@ export async function executeTaskUpdate(
   });
 
   if (!task) {
-    const result: ToolResultWithError<{ task: Task | null }> = {
+    return {
       content: [{ type: "text", text: `Task not found: ${params.taskId}` }],
       details: { task: null },
-      isError: true,
     };
-    return result;
   }
 
   return {

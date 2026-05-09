@@ -61,7 +61,6 @@ import {
   injectModeIntoSystemPrompt,
   type AgentMode,
 } from "../agent/mode.js";
-import { getCurrentPlanText } from "../agent/plan-ui.js";
 import {
   subscribeQuestions,
   getQuestionQueue,
