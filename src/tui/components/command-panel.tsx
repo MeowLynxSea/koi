@@ -36,7 +36,7 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
   const inputRef = useRef<TextareaRenderable>(null);
   const [filterText, setFilterText] = useState("");
   const [selectedCmdIndex, setSelectedCmdIndex] = useState(0);
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const scrollOffsetRef = useRef(0);
 
   const panelWidth = Math.min(70, Math.max(40, Math.floor(width * 0.7)));
   const listHeight = Math.min(12, Math.floor(height * 0.4));
@@ -46,7 +46,7 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
     if (isActive) {
       setFilterText("");
       setSelectedCmdIndex(0);
-      setScrollOffset(0);
+      scrollOffsetRef.current = 0;
       const ta = inputRef.current;
       if (ta) {
         ta.editBuffer.replaceText("");
@@ -97,25 +97,8 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
     return { flatItems: items, cmdCount: cmdIdx };
   }, [commands, query]);
 
-  // Clamp selected index
-  useEffect(() => {
-    if (selectedCmdIndex >= cmdCount && cmdCount > 0) {
-      setSelectedCmdIndex(cmdCount - 1);
-    }
-  }, [cmdCount, selectedCmdIndex]);
-
-  // Auto-scroll selected into view
-  useEffect(() => {
-    const selectedFlatIndex = flatItems.findIndex(
-      (i) => i.type === "command" && i.cmdIndex === selectedCmdIndex
-    );
-    if (selectedFlatIndex === -1) return;
-    if (selectedFlatIndex < scrollOffset) {
-      setScrollOffset(selectedFlatIndex);
-    } else if (selectedFlatIndex >= scrollOffset + listHeight) {
-      setScrollOffset(selectedFlatIndex - listHeight + 1);
-    }
-  }, [selectedCmdIndex, flatItems, listHeight, scrollOffset]);
+  // Effective scroll offset (synced from ref)
+  const effectiveScrollOffset = scrollOffsetRef.current;
 
   // Global keyboard for navigation and close shortcuts
   useKeyboard((key) => {
@@ -132,16 +115,42 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
       onClose();
       return;
     }
-    if (key.name === "up") {
+    
+    // Navigation with direct scroll calculation
+    if (key.name === "up" || key.name === "down") {
       key.preventDefault();
       key.stopPropagation();
-      setSelectedCmdIndex((prev) => Math.max(0, prev - 1));
-      return;
-    }
-    if (key.name === "down") {
-      key.preventDefault();
-      key.stopPropagation();
-      setSelectedCmdIndex((prev) => Math.max(0, Math.min(cmdCount - 1, prev + 1)));
+      
+      const newIndex = key.name === "up" 
+        ? Math.max(0, selectedCmdIndex - 1)
+        : Math.min(cmdCount - 1, selectedCmdIndex + 1);
+      
+      // Calculate scroll based on new index
+      const newFlatIndex = flatItems.findIndex(
+        (i) => i.type === "command" && i.cmdIndex === newIndex
+      );
+      
+      const currentScroll = scrollOffsetRef.current;
+      let newScrollOffset = currentScroll;
+      if (newFlatIndex !== -1) {
+        if (newFlatIndex < currentScroll) {
+          newScrollOffset = newFlatIndex;
+        } else if (newFlatIndex > currentScroll + listHeight - 1) {
+          newScrollOffset = newFlatIndex - listHeight + 1;
+        }
+      }
+      
+      console.log('[CommandPanel] Key press:', {
+        key: key.name,
+        newIndex,
+        newFlatIndex,
+        currentScroll,
+        listHeight,
+        newScrollOffset
+      });
+      
+      scrollOffsetRef.current = newScrollOffset;
+      setSelectedCmdIndex(newIndex);
       return;
     }
   });
@@ -150,7 +159,7 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
     const text = inputRef.current?.editBuffer.getText() ?? "";
     setFilterText(text);
     setSelectedCmdIndex(0);
-    setScrollOffset(0);
+    scrollOffsetRef.current = 0;
   };
 
   const handleSubmit = () => {
@@ -170,7 +179,7 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
 
   if (!isActive) return null;
 
-  const visibleItems = flatItems.slice(scrollOffset, scrollOffset + listHeight);
+  const visibleItems = flatItems.slice(effectiveScrollOffset, effectiveScrollOffset + listHeight);
 
   return (
     <box
@@ -216,16 +225,12 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
         </box>
 
         {/* Command list */}
-        <box
-          height={listHeight}
-          flexDirection="column"
-          overflow="hidden"
-        >
+        <box height={listHeight} flexDirection="column" overflow="hidden">
           {visibleItems.map((item, idx) => {
-            const flatIndex = scrollOffset + idx;
+            const flatIndex = effectiveScrollOffset + idx;
             if (item.type === "header") {
               return (
-                <box key={`h-${item.section}-${flatIndex}`} height={1} marginTop={1}>
+                <box key={`h-${item.section}-${flatIndex}`} height={1}>
                   <text
                     fg="#ff79c6"
                     attributes={createTextAttributes({ bold: true })}
@@ -237,17 +242,7 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
             }
             const isSelected = item.cmdIndex === selectedCmdIndex;
             return (
-              <box
-                key={`c-${item.cmd!.id}-${flatIndex}`}
-                height={1}
-                backgroundColor={isSelected ? "#44475a" : undefined}
-                paddingLeft={2}
-                onMouseUp={(e: MouseEvent) => {
-                  e.stopPropagation();
-                  onClose();
-                  item.cmd!.action();
-                }}
-              >
+              <box key={`c-${item.cmd!.id}-${flatIndex}`} height={1} backgroundColor={isSelected ? "#44475a" : undefined} paddingLeft={2}>
                 <text fg={isSelected ? "#ff79c6" : "#f8f8f2"}>
                   {`${item.cmd!.id}  ${item.cmd!.label}`}
                 </text>
