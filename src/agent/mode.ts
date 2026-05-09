@@ -97,12 +97,14 @@ const PLAN_TOOLS = [
 export function getActiveToolNamesForMode(mode: AgentMode): string[] {
   switch (mode) {
     case "build":
-      return ALL_TOOLS;
+      // Build mode can enter plan mode, but exitPlanMode is only for plan mode
+      return ALL_TOOLS.filter((t) => t !== "exitPlanMode");
     case "ask":
       return READONLY_TOOLS;
     case "plan":
-      return PLAN_TOOLS;
+      // Plan mode can exit plan mode, but enterPlanMode is redundant while already in plan mode
+      return PLAN_TOOLS.filter((t) => t !== "enterPlanMode");
     default:
-      return ALL_TOOLS;
+      return ALL_TOOLS.filter((t) => t !== "exitPlanMode");
   }
 }
