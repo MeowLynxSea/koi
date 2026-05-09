@@ -132,10 +132,18 @@ class SubagentRegistry {
       `</task-notification>`,
     ].join("\n");
 
-    // Queue as follow-up so the parent sees it on its next turn
-    parent.followUp(notification).catch(() => {
-      // Silently ignore if the parent session is no longer available
-    });
+    // If the parent is still running, inject as steer so it gets processed
+    // at the end of the current turn. If idle, prompt immediately to trigger
+    // a new run right away.
+    if (parent.isStreaming) {
+      parent.steer(notification).catch(() => {
+        // Silently ignore if the parent session is no longer available
+      });
+    } else {
+      parent.prompt(notification).catch(() => {
+        // Silently ignore if the parent session is no longer available
+      });
+    }
   }
 
   /**

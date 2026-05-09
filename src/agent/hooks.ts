@@ -264,6 +264,10 @@ function removeAgentMessageIfEmpty(
  * preserving existing UI state (thinkingCollapsed, expanded, etc.) for matched messages.
  * Unmatched messages from the current UI (e.g. tool_call, tool_result) are appended at the end.
  */
+function isInternalNotification(text: string): boolean {
+  return text.trimStart().startsWith("<task-notification>");
+}
+
 function rebuildMessagesFromHistory(
   currentMessages: UIMessage[],
   historyMessages: AgentMessage[],
@@ -275,6 +279,9 @@ function rebuildMessagesFromHistory(
   for (const histMsg of historyMessages) {
     if (isUserMessage(histMsg)) {
       const content = getUserMessageContent(histMsg);
+      // Skip system-internal subagent notifications — they are meant for the
+      // LLM context only and should not appear in the UI message list.
+      if (isInternalNotification(content)) continue;
       const idx = currentMessages.findIndex(
         (m, i) => !usedIndices.has(i) && m.type === "user" && m.content === content
       );
@@ -425,8 +432,12 @@ function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>
     }
 
     const inserts = [
-      ...steerToInsert.map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
-      ...followUpToInsert.map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
+      ...steerToInsert
+        .filter((text) => !isInternalNotification(text))
+        .map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
+      ...followUpToInsert
+        .filter((text) => !isInternalNotification(text))
+        .map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
     ];
     if (inserts.length > 0) {
       return next.concat(inserts);
@@ -451,10 +462,11 @@ function handleMessageStart(event: Extract<AgentSessionEvent, { type: "message_s
   }
   const msgId = generateId("agent");
   ctx.streamingMsgIdRef.current = msgId;
+  const visibleSteer = steerToInsert.filter((text) => !isInternalNotification(text));
   ctx.setMessages((prev) => [
     ...prev.filter((m) => m.type !== "status"),
-    ...(steerToInsert.length > 0
-      ? steerToInsert.map((text) => ({ id: generateId("user"), type: "user" as const, content: text }))
+    ...(visibleSteer.length > 0
+      ? visibleSteer.map((text) => ({ id: generateId("user"), type: "user" as const, content: text }))
       : []),
     { id: msgId, type: "agent", content: "", thinkingCollapsed: true },
   ]);
