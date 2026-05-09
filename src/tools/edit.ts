@@ -68,7 +68,7 @@ function generateDiff(filePath: string, oldContent: string, newContent: string):
   return result;
 }
 
-export async function executeEdit(params: EditToolInput): Promise<{ content: TextContent[]; details: { replacements: number } }> {
+export async function executeEdit(params: EditToolInput): Promise<{ content: TextContent[]; details: { replacements: number; diff: string } }> {
   const filePath = resolve(params.path);
 
   if (!existsSync(filePath)) {
@@ -117,11 +117,11 @@ export async function executeEdit(params: EditToolInput): Promise<{ content: Tex
 
   return {
     content: [{ type: "text", text: `File edited: ${params.path}${diffDisplay}` }],
-    details: { replacements: replacementCount },
+    details: { replacements: replacementCount, diff },
   };
 }
 
-export function createEditToolDefinition(_cwd: string): ToolDefinition<typeof editSchema, { replacements: number }> {
+export function createEditToolDefinition(_cwd: string): ToolDefinition<typeof editSchema, { replacements: number; diff: string }> {
   return {
     name: "edit",
     label: "Edit",
@@ -139,9 +139,9 @@ export function createEditToolDefinition(_cwd: string): ToolDefinition<typeof ed
       return withWriteLock(async () => {
         const perm = checkPermission("edit", params);
         if (perm.decision === "deny") {
-          const result: ToolResultWithError<{ replacements: number }> = {
+          const result: ToolResultWithError<{ replacements: number; diff: string }> = {
             content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "edit operation blocked"}` }],
-            details: { replacements: 0 },
+            details: { replacements: 0, diff: "" },
             isError: true,
           };
           return result;
@@ -149,9 +149,9 @@ export function createEditToolDefinition(_cwd: string): ToolDefinition<typeof ed
         if (perm.decision === "ask") {
           const allowed = await requestPermission({ toolName: "edit", args: params, reason: perm.reason ?? "Confirm file edit" });
           if (!allowed) {
-            const result: ToolResultWithError<{ replacements: number }> = {
+            const result: ToolResultWithError<{ replacements: number; diff: string }> = {
               content: [{ type: "text", text: "User denied permission to edit file." }],
-              details: { replacements: 0 },
+              details: { replacements: 0, diff: "" },
               isError: true,
             };
             return result;

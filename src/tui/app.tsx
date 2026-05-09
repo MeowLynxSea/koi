@@ -16,6 +16,8 @@ import {
   ChatPanel,
   type ChatPanelHandle,
   wrapText,
+  isToolExpandable,
+  isToolForceExpanded,
 } from "./components/chat-panel.js";
 import { InputBox } from "./components/input-box.js";
 import { InfoBar } from "./components/info-bar.js";
@@ -28,6 +30,7 @@ import { ModelModal } from "./components/model-modal.js";
 import { SessionModal } from "./components/session-modal.js";
 import { ConfirmModal } from "./components/confirm-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
+import { ImagePreviewModal } from "./components/image-preview-modal.js";
 
 /* ───────── Agent & Config ───────── */
 import {
@@ -95,6 +98,8 @@ export function App({ onExit }: AppProps) {
   const [showForkModal, setShowForkModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<SessionMeta | null>(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [imageModalUrl, setImageModalUrl] = useState("");
   const [currentModel, setCurrentModelState] = useState(getCurrentModel);
   const [, setAuxiliaryModelState] = useState(getAuxiliaryModel);
 
@@ -113,6 +118,7 @@ export function App({ onExit }: AppProps) {
     error,
     prompt,
     abort,
+    toggleCollapse,
     expandAll,
     collapseAll,
     switchSession,
@@ -262,7 +268,7 @@ export function App({ onExit }: AppProps) {
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
-    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm;
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal;
 
   // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
@@ -320,6 +326,16 @@ export function App({ onExit }: AppProps) {
   const handleCancelDelete = useCallback(() => {
     setShowDeleteConfirm(false);
     setSessionToDelete(null);
+  }, []);
+
+  const handleImageClick = useCallback((url: string) => {
+    setImageModalUrl(url);
+    setShowImageModal(true);
+  }, []);
+
+  const handleCloseImageModal = useCallback(() => {
+    setShowImageModal(false);
+    setImageModalUrl("");
   }, []);
 
   // Slash-command definitions for the command palette (Ctrl+P).
@@ -380,7 +396,7 @@ export function App({ onExit }: AppProps) {
       const hasExpanded = messages.some(
         (m) =>
           (m.type === "agent" && m.thinking && !m.thinkingCollapsed) ||
-          (m.type === "tool_call" && !m.collapsed)
+          (m.type === "tool_call" && !m.collapsed && isToolExpandable(m.toolName) && !isToolForceExpanded(m.toolName))
       );
       if (hasExpanded) {
         collapseAll();
@@ -438,7 +454,7 @@ export function App({ onExit }: AppProps) {
               <text fg="#ff5555">Error: {error}</text>
             </box>
           )}
-          <ChatPanel ref={chatPanelRef} messages={messages} width={leftWidth} height={chatPanelHeight} isStreaming={isStreaming} />
+          <ChatPanel ref={chatPanelRef} messages={messages} width={leftWidth} height={chatPanelHeight} isStreaming={isStreaming} onToggleCollapse={toggleCollapse} onImageClick={handleImageClick} />
           <InputBox
             value={inputText}
             onChange={setInputText}
@@ -504,6 +520,7 @@ export function App({ onExit }: AppProps) {
         />
       )}
       <ForkModal isActive={showForkModal} onClose={() => setShowForkModal(false)} session={session} onFork={handleFork} />
+      <ImagePreviewModal isActive={showImageModal} url={imageModalUrl} onClose={handleCloseImageModal} terminalWidth={width} terminalHeight={height} />
     </box>
   );
 }

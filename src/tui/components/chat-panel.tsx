@@ -2,11 +2,14 @@
  * Chat Panel Component
  *
  * Renders the scrollable message history using OpenTUI native components.
+ * Supports per-tool-type rendering, diff views, segmented markdown with
+ * custom code blocks, separators, and image links.
  */
 
 import { useMemo, useImperativeHandle, forwardRef, useRef, useState, useEffect } from "react";
 import stringWidth from "string-width";
-import { SyntaxStyle, type ScrollBoxRenderable } from "@opentui/core";
+import { SyntaxStyle, createTextAttributes, type ScrollBoxRenderable, type MouseEvent } from "@opentui/core";
+import { imageToHalfBlocks, type ImageRow } from "./image-utils.js";
 
 export type UIMessage =
   | { id: string; type: "user"; content: string }
@@ -46,6 +49,7 @@ interface ChatPanelProps {
   width?: number;
   height?: number;
   onToggleCollapse?: (id: string) => void;
+  onImageClick?: (url: string) => void;
   isStreaming?: boolean;
 }
 
@@ -103,7 +107,6 @@ function padToWidth(text: string, width: number): string {
  * Tool Summary
  *
  * Maps tool names to short one-line descriptions for the collapsed tool_call view.
- * Keeps the chat panel compact when many tools are invoked in a single turn.
  */
 
 const TOOL_SUMMARY_MAP: Record<string, (args: Record<string, unknown>) => string> = {
@@ -117,7 +120,31 @@ const TOOL_SUMMARY_MAP: Record<string, (args: Record<string, unknown>) => string
   grep: (a) => `grep: ${String(a["pattern"] ?? "?")}`,
   find: (a) => `find: ${String(a["path"] ?? ".")}`,
   ls: (a) => `ls: ${String(a["path"] ?? ".")}`,
+  webfetch: (a) => `webfetch: ${String(a["url"] ?? "?")}`,
 };
+
+/**
+ * Tool Classification
+ *
+ * Determines expand/collapse behavior per tool type.
+ */
+
+const NON_EXPANDABLE_TOOLS = new Set(["read", "glob", "grep", "ls", "taskCreate", "taskGet", "taskList", "taskUpdate"]);
+const FORCE_EXPANDED_TOOLS = new Set(["write", "edit"]);
+
+export function isToolExpandable(toolName: string): boolean {
+  return !NON_EXPANDABLE_TOOLS.has(toolName) && !FORCE_EXPANDED_TOOLS.has(toolName);
+}
+
+export function isToolForceExpanded(toolName: string): boolean {
+  return FORCE_EXPANDED_TOOLS.has(toolName);
+}
+
+export function getToolDefaultCollapsed(toolName: string, allExpanded: boolean): boolean {
+  if (FORCE_EXPANDED_TOOLS.has(toolName)) return false;
+  if (NON_EXPANDABLE_TOOLS.has(toolName)) return true;
+  return !allExpanded;
+}
 
 function summarizeToolCall(toolName: string, args: Record<string, unknown>): string {
   try {
@@ -139,6 +166,57 @@ function formatResult(result: unknown): string {
   }
 }
 
+function extractToolResultText(result: unknown): string {
+  if (result === undefined || result === null) return "";
+  if (typeof result === "string") return result;
+  if (typeof result === "object" && result !== null) {
+    const r = result as Record<string, unknown>;
+    if (Array.isArray(r["content"])) {
+      const texts = r["content"]
+        .filter(
+          (c): c is { type: string; text: string } =>
+            typeof c === "object" && c !== null && (c as Record<string, unknown>)["type"] === "text"
+        )
+        .map((c) => c["text"]);
+      return texts.join("\n");
+    }
+    if (typeof r["text"] === "string") return r["text"];
+  }
+  return formatResult(result);
+}
+
+function extractDiffFromResult(result: unknown): string | null {
+  if (result === undefined || result === null) return null;
+  if (typeof result === "object" && result !== null) {
+    const r = result as Record<string, unknown>;
+    if (typeof r["details"] === "object" && r["details"] !== null) {
+      const diff = (r["details"] as Record<string, unknown>)["diff"];
+      if (typeof diff === "string" && diff.length > 0) return diff;
+    }
+    const text = extractToolResultText(result);
+    const diffIndex = text.indexOf("Diff:\n");
+    if (diffIndex >= 0) return text.slice(diffIndex + 6);
+  }
+  return null;
+}
+
+function tailLines(text: string, count: number): { lines: string[]; total: number } {
+  const all = text.split("\n");
+  return {
+    lines: all.length > count ? all.slice(-count) : all,
+    total: all.length,
+  };
+}
+
+function middleEllipsisLines(text: string, maxLines: number, headCount: number, tailCount: number): string[] {
+  const all = text.split("\n");
+  if (all.length <= maxLines) return all;
+  const head = all.slice(0, headCount);
+  const tail = all.slice(-tailCount);
+  const omitted = all.length - headCount - tailCount;
+  return [...head, `... (${omitted} lines omitted) ...`, ...tail];
+}
+
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 function formatDuration(ms: number): string {
@@ -146,11 +224,148 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Message Renderers
+ * Markdown Segment Parser
  *
- * Each message type has its own component to keep the main ChatPanel switch readable.
- * AgentMessage is the most complex: it handles thinking blocks (spinner, collapse, duration)
- * and delegates the final markdown content to MarkdownContent.
+ * Splits finalized markdown content into segments so that code blocks,
+ * horizontal rules, and images can be rendered with custom components.
+ */
+
+type MarkdownSegment =
+  | { type: "text"; content: string }
+  | { type: "code"; language: string; content: string }
+  | { type: "hr" }
+  | { type: "image"; alt: string; url: string };
+
+const LANG_MAP: Record<string, string> = {
+  ts: "typescript",
+  js: "javascript",
+  py: "python",
+  sh: "bash",
+  shell: "bash",
+  yml: "yaml",
+  jsonc: "json",
+  md: "markdown",
+  tf: "hcl",
+  hcl: "hcl",
+};
+
+function normalizeLang(lang: string): string {
+  return LANG_MAP[lang] ?? lang;
+}
+
+function ImageThumbnail({
+  url,
+  alt,
+  onClick,
+}: {
+  url: string;
+  alt: string;
+  onClick: () => void;
+}) {
+  const [rows, setRows] = useState<ImageRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const data = await imageToHalfBlocks(url, 30, 12);
+        if (!cancelled) setRows(data);
+      } catch {
+        if (!cancelled) setRows(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  if (rows) {
+    return (
+      <box
+        flexDirection="column"
+        marginTop={1}
+        marginBottom={1}
+        onMouseUp={onClick}
+      >
+        {rows.map((row, y) => (
+          <text key={y}>
+            {row.map((cell, x) => (
+              <span key={x} fg={cell.fg} bg={cell.bg}>
+                {"▄"}
+              </span>
+            ))}
+          </text>
+        ))}
+        <text fg="#6c6c7c" marginTop={1} attributes={createTextAttributes({ dim: true })}>
+          {`[Click to enlarge] ${alt || url}`}
+        </text>
+      </box>
+    );
+  }
+
+  return (
+    <box flexDirection="row" marginTop={1} marginBottom={1}>
+      <text fg="#8be9fd" onMouseUp={onClick}>
+        {loading ? `[Loading image: ${alt || url}]` : `[Image: ${alt || url}]`}
+      </text>
+    </box>
+  );
+}
+
+function parseTextSegment(text: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = [];
+  // Match horizontal rules or inline images
+  const regex = /(^[ \t]*---[ \t]*$|!\[([^\]]*)\]\(([^)]+)\))/gm;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ type: "text", content: text.slice(lastIndex, match.index) });
+    }
+    if (match[0].startsWith("!")) {
+      segments.push({ type: "image", alt: match[2]!, url: match[3]! });
+    } else {
+      segments.push({ type: "hr" });
+    }
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ type: "text", content: text.slice(lastIndex) });
+  }
+
+  return segments;
+}
+
+function parseMarkdownSegments(content: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = [];
+  const codeBlockRegex = /```([^\n]*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push(...parseTextSegment(content.slice(lastIndex, match.index)));
+    }
+    segments.push({ type: "code", language: match[1]!.trim(), content: match[2]! });
+    lastIndex = codeBlockRegex.lastIndex;
+  }
+
+  if (lastIndex < content.length) {
+    segments.push(...parseTextSegment(content.slice(lastIndex)));
+  }
+
+  return segments;
+}
+
+/**
+ * Message Renderers
  */
 
 function UserMessage({
@@ -182,18 +397,92 @@ function UserMessage({
   );
 }
 
+function SegmentedMarkdownContent({
+  content,
+  width,
+  syntaxStyle,
+  onImageClick,
+}: {
+  content: string;
+  width: number;
+  syntaxStyle: SyntaxStyle;
+  onImageClick: (url: string) => void;
+}) {
+  const segments = useMemo(() => parseMarkdownSegments(content), [content]);
+
+  return (
+    <box flexDirection="column" width={width}>
+      {segments.map((seg, i) => {
+        switch (seg.type) {
+          case "text":
+            if (!seg.content.trim()) return <text key={i} />;
+            return (
+              <MarkdownContent
+                key={i}
+                content={seg.content}
+                width={width}
+                streaming={false}
+                syntaxStyle={syntaxStyle}
+              />
+            );
+          case "code": {
+            const lang = normalizeLang(seg.language);
+            return (
+              <box
+                key={i}
+                flexDirection="column"
+                width={width}
+                border={["left"]}
+                borderColor="#6272a4"
+                paddingLeft={1}
+                marginTop={1}
+                marginBottom={1}
+              >
+                <code
+                  content={seg.content}
+                  filetype={lang || undefined}
+                  syntaxStyle={syntaxStyle}
+                  conceal={true}
+                  width={width - 2}
+                />
+              </box>
+            );
+          }
+          case "hr":
+            return (
+              <text key={i} fg="#6c6c7c" marginLeft={2} marginRight={2} marginTop={1} marginBottom={1}>
+                {"─".repeat(Math.max(1, width - 4))}
+              </text>
+            );
+          case "image":
+            return (
+              <ImageThumbnail
+                key={i}
+                url={seg.url}
+                alt={seg.alt}
+                onClick={() => onImageClick(seg.url)}
+              />
+            );
+        }
+      })}
+    </box>
+  );
+}
+
 function AgentMessage({
   msg,
   contentWidth,
   marginTop,
   isStreaming,
   spinnerFrame,
+  onImageClick,
 }: {
   msg: UIMessage & { type: "agent" };
   contentWidth: number;
   marginTop: number;
   isStreaming: boolean;
   spinnerFrame: number;
+  onImageClick: (url: string) => void;
 }) {
   const margin = "  ";
   const prefix = "⏺ ";
@@ -203,6 +492,7 @@ function AgentMessage({
     ? Date.now() - (msg.thinkingStartTime ?? 0)
     : (msg.thinkingEndTime ?? 0) - (msg.thinkingStartTime ?? 0);
   const thinkingDuration = formatDuration(thinkingElapsed);
+  const syntaxStyle = useMemo(() => buildSyntaxStyle(), []);
 
   return (
     <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
@@ -236,11 +526,21 @@ function AgentMessage({
       {msg.content.trimEnd().length > 0 && (
         <box flexDirection="row" width={contentWidth}>
           <text width={prefixWidth}>{prefix}</text>
-          <MarkdownContent
-            content={msg.content.trimEnd()}
-            width={contentWidth - prefixWidth}
-            streaming={isStreaming}
-          />
+          {isStreaming ? (
+            <MarkdownContent
+              content={msg.content.trimEnd()}
+              width={contentWidth - prefixWidth}
+              streaming={isStreaming}
+              syntaxStyle={syntaxStyle}
+            />
+          ) : (
+            <SegmentedMarkdownContent
+              content={msg.content.trimEnd()}
+              width={contentWidth - prefixWidth}
+              syntaxStyle={syntaxStyle}
+              onImageClick={onImageClick}
+            />
+          )}
         </box>
       )}
     </box>
@@ -253,14 +553,91 @@ function StatusMessage({ msg, marginTop }: { msg: UIMessage & { type: "status" }
   );
 }
 
+function DiffToolContent({
+  diff,
+  contentWidth,
+}: {
+  diff: string;
+  contentWidth: number;
+}) {
+  const syntaxStyle = useMemo(() => buildSyntaxStyle(), []);
+  return (
+    <box marginTop={1} flexDirection="column" width={contentWidth - 4}>
+      <diff
+        diff={diff}
+        view="unified"
+        showLineNumbers={true}
+        width={contentWidth - 4}
+        syntaxStyle={syntaxStyle}
+        addedSignColor="#50fa7b"
+        removedSignColor="#ff5555"
+        addedBg="#1d3b2a"
+        removedBg="#3b1d1d"
+        contextBg="transparent"
+        addedContentBg="#1d3b2a"
+        removedContentBg="#3b1d1d"
+        contextContentBg="transparent"
+        lineNumberFg="#6c6c7c"
+        lineNumberBg="transparent"
+        fg="#f8f8f2"
+      />
+    </box>
+  );
+}
+
+function BashToolContent({
+  result,
+  contentWidth,
+}: {
+  result: unknown;
+  contentWidth: number;
+}) {
+  const margin = "  ";
+  const text = extractToolResultText(result);
+  const { lines, total } = tailLines(text, 15);
+
+  return (
+    <box flexDirection="column" width={contentWidth}>
+      {total > 15 && (
+        <text fg="#6c6c7c">{margin}  ... (showing last 15 of {total} lines)</text>
+      )}
+      {lines.map((line, j) => (
+        <text key={`bash-${j}`} fg="#6c6c7c">{margin}  {line}</text>
+      ))}
+    </box>
+  );
+}
+
+function WebfetchToolContent({
+  result,
+  contentWidth,
+}: {
+  result: unknown;
+  contentWidth: number;
+}) {
+  const margin = "  ";
+  const text = extractToolResultText(result);
+  const lines = middleEllipsisLines(text, 30, 10, 10);
+
+  return (
+    <box flexDirection="column" width={contentWidth}>
+      {lines.map((line, j) => (
+        <text key={`wf-${j}`} fg="#6c6c7c">{margin}  {line}</text>
+      ))}
+    </box>
+  );
+}
+
 function ToolCallMessage({
   msg,
   contentWidth,
   marginTop,
+  onToggleCollapse,
 }: {
   msg: UIMessage & { type: "tool_call" };
   contentWidth: number;
   marginTop: number;
+  onToggleCollapse?: (id: string) => void;
 }) {
   const margin = "  ";
   const summary = summarizeToolCall(msg.toolName, msg.args);
@@ -270,10 +647,65 @@ function ToolCallMessage({
       ? "#f1fa8c"
       : "#50fa7b";
 
+  const expandable = isToolExpandable(msg.toolName);
+  const forceExpanded = isToolForceExpanded(msg.toolName);
+
+  const handleToggle = (e: MouseEvent) => {
+    if (expandable && onToggleCollapse) {
+      e.stopPropagation();
+      onToggleCollapse(msg.id);
+    }
+  };
+
+  // Non-expandable tools always render collapsed summary
+  if (!expandable && !forceExpanded) {
+    return (
+      <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
+        <box flexDirection="row">
+          <text fg={statusColor}>{margin}• </text>
+          <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
+            {summary}{msg.isError ? " [error]" : ""}
+          </text>
+        </box>
+      </box>
+    );
+  }
+
+  // Force-expanded tools (write/edit) always render expanded with diff
+  if (forceExpanded) {
+    const diff = extractDiffFromResult(msg.result);
+    return (
+      <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
+        <box flexDirection="row">
+          <text fg={statusColor}>{margin}• </text>
+          <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>{msg.toolName}</text>
+        </box>
+        {msg.result !== undefined && diff ? (
+          <DiffToolContent diff={diff} contentWidth={contentWidth} />
+        ) : msg.result !== undefined ? (
+          wrapText(
+            msg.isError ? `Error: ${extractToolResultText(msg.result)}` : extractToolResultText(msg.result),
+            contentWidth,
+            2
+          ).map((line, j) => (
+            <text key={`res-${j}`} fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
+              {margin}  {line}
+            </text>
+          ))
+        ) : (
+          <text fg="#f1fa8c">{margin}  Executing...</text>
+        )}
+      </box>
+    );
+  }
+
+  // Expandable tools (bash, webfetch, and others)
+  const isCollapsed = msg.collapsed;
+
   return (
     <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
-      {msg.collapsed ? (
-        <box flexDirection="row">
+      {isCollapsed ? (
+        <box flexDirection="row" onMouseUp={handleToggle}>
           <text fg={statusColor}>{margin}• </text>
           <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
             {summary}{msg.isError ? " [error]" : ""} (ctrl+o to expand)
@@ -281,7 +713,7 @@ function ToolCallMessage({
         </box>
       ) : (
         <>
-          <box flexDirection="row">
+          <box flexDirection="row" onMouseUp={handleToggle}>
             <text fg={statusColor}>{margin}• </text>
             <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>{msg.toolName}</text>
           </box>
@@ -291,15 +723,21 @@ function ToolCallMessage({
           {msg.result !== undefined ? (
             <>
               <text fg="#6c6c7c">{margin}  ──</text>
-              {wrapText(
-                msg.isError ? `Error: ${formatResult(msg.result)}` : formatResult(msg.result),
-                contentWidth,
-                2
-              ).map((line, j) => (
-                <text key={`res-${j}`} fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
-                  {margin}  {line}
-                </text>
-              ))}
+              {msg.toolName === "bash" ? (
+                <BashToolContent result={msg.result} contentWidth={contentWidth} />
+              ) : msg.toolName === "webfetch" ? (
+                <WebfetchToolContent result={msg.result} contentWidth={contentWidth} />
+              ) : (
+                wrapText(
+                  msg.isError ? `Error: ${extractToolResultText(msg.result)}` : extractToolResultText(msg.result),
+                  contentWidth,
+                  2
+                ).map((line, j) => (
+                  <text key={`res-${j}`} fg={msg.isError ? "#ff5555" : "#6c6c7c"}>
+                    {margin}  {line}
+                  </text>
+                ))
+              )}
             </>
           ) : (
             <text fg="#f1fa8c">{margin}  Executing...</text>
@@ -337,7 +775,6 @@ function SimpleMessage({ msg, marginTop }: { msg: UIMessage & { type: "compactio
  * Syntax Style
  *
  * Registers Dracula-like colors for markdown elements rendered by OpenTUI's native markdown component.
- * Registered once per component mount via useMemo.
  */
 
 function buildSyntaxStyle() {
@@ -366,12 +803,13 @@ function MarkdownContent({
   content,
   width,
   streaming,
+  syntaxStyle,
 }: {
   content: string;
   width: number;
   streaming: boolean;
+  syntaxStyle: SyntaxStyle;
 }) {
-  const syntaxStyle = useMemo(() => buildSyntaxStyle(), []);
   return (
     <markdown
       content={content}
@@ -407,12 +845,11 @@ function getMarginTop(messages: UIMessage[], msgIdx: number): number {
  */
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
-  function ChatPanel({ messages, width = 80, height, isStreaming }, ref) {
+  function ChatPanel({ messages, width = 80, height, isStreaming, onToggleCollapse, onImageClick }, ref) {
     const scrollboxRef = useRef<ScrollBoxRenderable>(null);
     const panelHeight = Math.max(1, height ?? 10);
     const contentWidth = Math.max(1, (width ?? 80) - 2);
     const [spinnerFrame, setSpinnerFrame] = useState(0);
-
     useEffect(() => {
       const hasThinkingInProgress = messages.some(
         (m) => m.type === "agent" && m.thinking && m.thinkingStartTime && !m.thinkingEndTime
@@ -461,12 +898,21 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                     marginTop={marginTop}
                     isStreaming={msgStreaming}
                     spinnerFrame={spinnerFrame}
+                    onImageClick={onImageClick ?? (() => {})}
                   />
                 );
               case "status":
                 return <StatusMessage key={msg.id} msg={msg} marginTop={marginTop} />;
               case "tool_call":
-                return <ToolCallMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} />;
+                return (
+                  <ToolCallMessage
+                    key={msg.id}
+                    msg={msg}
+                    contentWidth={contentWidth}
+                    marginTop={marginTop}
+                    onToggleCollapse={onToggleCollapse}
+                  />
+                );
               case "system":
                 return <SystemMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} />;
               case "compaction":

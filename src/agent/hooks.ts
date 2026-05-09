@@ -15,6 +15,7 @@ type SessionManagerType = AgentSession["sessionManager"];
 type SessionTreeNode = ReturnType<SessionManagerType["getTree"]>[number];
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { UIMessage } from "../tui/components/chat-panel.js";
+import { isToolExpandable, isToolForceExpanded, getToolDefaultCollapsed } from "../tui/components/chat-panel.js";
 import type { ModelRef } from "../config/settings.js";
 import { setSessionTitle, getSessionTitle, getCurrentModel, getAuxiliaryModel } from "../config/settings.js";
 import {
@@ -269,7 +270,7 @@ function handleToolExecutionStart(event: Extract<AgentSessionEvent, { type: "too
       toolCallId: event.toolCallId,
       toolName: event.toolName,
       args: event.args as Record<string, unknown>,
-      collapsed: !ctx.allExpandedRef.current,
+      collapsed: getToolDefaultCollapsed(event.toolName, ctx.allExpandedRef.current),
     })
   );
 }
@@ -749,7 +750,10 @@ export function useKoiAgent(): KoiAgentState {
   const toggleCollapse = useCallback((id: string) => {
     setMessages((prev) =>
       prev.map((m) => {
-        if (m.id === id && m.type === "tool_call") return { ...m, collapsed: !m.collapsed };
+        if (m.id === id && m.type === "tool_call") {
+          if (!isToolExpandable(m.toolName)) return m;
+          return { ...m, collapsed: !m.collapsed };
+        }
         if (m.id === id && m.type === "agent" && m.thinking) return { ...m, thinkingCollapsed: !m.thinkingCollapsed };
         return m;
       })
@@ -762,7 +766,10 @@ export function useKoiAgent(): KoiAgentState {
     allExpandedRef.current = !collapsed;
     setMessages((prev) =>
       prev.map((m) => {
-        if (m.type === "tool_call") return { ...m, collapsed };
+        if (m.type === "tool_call") {
+          if (!isToolExpandable(m.toolName) || isToolForceExpanded(m.toolName)) return m;
+          return { ...m, collapsed };
+        }
         if (m.type === "agent" && m.thinking) return { ...m, thinkingCollapsed: collapsed };
         return m;
       })
