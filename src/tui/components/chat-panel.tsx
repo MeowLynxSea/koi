@@ -104,6 +104,59 @@ function padToWidth(text: string, width: number): string {
 }
 
 /**
+ * Middle Truncation
+ *
+ * Truncates text to fit within maxWidth, preserving the beginning and end,
+ * with an ellipsis in the middle. Correctly handles CJK characters and emoji
+ * by using string-width for accurate visual width calculation.
+ */
+function truncateMiddle(text: string, maxWidth: number): string {
+  const w = stringWidth(text);
+  if (w <= maxWidth) return text;
+
+  // Reserve space for ellipsis
+  const ellipsis = "...";
+  const ellipsisWidth = stringWidth(ellipsis);
+  const availableWidth = maxWidth - ellipsisWidth;
+
+  if (availableWidth <= 0) {
+    // Max width is too small even for ellipsis, just return partial ellipsis
+    const partial = stringWidth(ellipsis) > maxWidth ? ".." : ".";
+    return partial.slice(0, Math.min(partial.length, Math.floor(maxWidth / stringWidth("."))));
+  }
+
+  // Split available width between head and tail (roughly equal)
+  const headMaxWidth = Math.ceil(availableWidth / 2);
+  const tailMaxWidth = Math.floor(availableWidth / 2);
+
+  // Find head portion that fits
+  let head = "";
+  let headWidth = 0;
+  for (const seg of new Intl.Segmenter("en", { granularity: "grapheme" }).segment(text)) {
+    const segWidth = stringWidth(seg.segment);
+    if (headWidth + segWidth > headMaxWidth) break;
+    head += seg.segment;
+    headWidth += segWidth;
+  }
+
+  // Find tail portion that fits (from the end)
+  let tail = "";
+  let tailWidth = 0;
+  const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+  const segments = [...segmenter.segment(text)];
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const seg = segments[i];
+    if (!seg) break;
+    const segWidth = stringWidth(seg.segment);
+    if (tailWidth + segWidth > tailMaxWidth) break;
+    tail = seg.segment + tail;
+    tailWidth += segWidth;
+  }
+
+  return head + ellipsis + tail;
+}
+
+/**
  * Tool Summary
  *
  * Maps tool names to short one-line descriptions for the collapsed tool_call view.
@@ -113,14 +166,24 @@ const TOOL_SUMMARY_MAP: Record<string, (args: Record<string, unknown>) => string
   read: (a) => `read: ${String(a["path"] ?? a["file"] ?? "?")}`,
   bash: (a) => {
     const cmd = String(a["command"] ?? "");
-    return `bash: ${cmd.slice(0, 40)}${cmd.length > 40 ? "..." : ""}`;
+    // Reserve 10 chars for "bash: " prefix
+    const prefix = "bash: ";
+    const maxCmdWidth = 60 - stringWidth(prefix);
+    const truncatedCmd = truncateMiddle(cmd, maxCmdWidth);
+    return `${prefix}${truncatedCmd}`;
   },
   edit: (a) => `edit: ${String(a["path"] ?? a["file"] ?? "?")}`,
   write: (a) => `write: ${String(a["path"] ?? a["file"] ?? "?")}`,
   grep: (a) => `grep: ${String(a["pattern"] ?? "?")}`,
   find: (a) => `find: ${String(a["path"] ?? ".")}`,
   ls: (a) => `ls: ${String(a["path"] ?? ".")}`,
-  webfetch: (a) => `webfetch: ${String(a["url"] ?? "?")}`,
+  webfetch: (a) => {
+    const url = String(a["url"] ?? "?");
+    // Reserve 12 chars for "webfetch: " prefix
+    const prefix = "webfetch: ";
+    const maxUrlWidth = 70 - stringWidth(prefix);
+    return `${prefix}${truncateMiddle(url, maxUrlWidth)}`;
+  },
 };
 
 /**
@@ -150,7 +213,11 @@ function summarizeToolCall(toolName: string, args: Record<string, unknown>): str
   try {
     const formatter = TOOL_SUMMARY_MAP[toolName];
     if (formatter) return formatter(args);
-    return `${toolName}: ${JSON.stringify(args).slice(0, 40)}`;
+    // Fallback for unknown tools: truncate JSON args with middle ellipsis
+    const jsonArgs = JSON.stringify(args);
+    const prefix = `${toolName}: `;
+    const maxArgsWidth = 60 - stringWidth(prefix);
+    return `${prefix}${truncateMiddle(jsonArgs, maxArgsWidth)}`;
   } catch {
     return `${toolName}: ...`;
   }
