@@ -5,7 +5,7 @@
  * Uses OpenTUI <textarea> for editing logic.
  */
 
-import { useRef, useMemo, useEffect, useState } from "react";
+import { useRef, useMemo, useState, useEffect } from "react";
 import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
 import type { KeyEvent } from "@opentui/core";
 import type { AgentMode } from "../../agent/mode.js";
@@ -27,7 +27,6 @@ const INK_WAVE_COLORS = [
   "#666666",
   "#5a5a5a",
   "#4e4e4e",
-  "#434343",
   "#383838",
   "#2d2d2d",
   "#222222",
@@ -35,8 +34,6 @@ const INK_WAVE_COLORS = [
 ];
 
 interface InputBoxProps {
-  value: string;
-  onChange: (value: string) => void;
   onSubmit: (value: string) => void;
   onQueueSubmit?: (value: string) => void;
   onSlashEmpty?: () => void;
@@ -48,21 +45,20 @@ interface InputBoxProps {
   onModeSwitch?: () => void;
 }
 
-function useInputActions(
-  textareaRef: React.RefObject<TextareaRenderable | null>,
-  value: string,
-  onChange: (value: string) => void,
-  onSubmit: (value: string) => void,
-  onQueueSubmit?: (value: string) => void,
-  onSlashEmpty?: () => void,
-  onModeSwitch?: () => void
-) {
-  const getText = () => textareaRef.current?.editBuffer.getText() ?? "";
+export function InputBox({
+  onSubmit,
+  onQueueSubmit,
+  onSlashEmpty,
+  focused = true,
+  disabled = false,
+  width,
+  mode = "build",
+  isBusy = false,
+  onModeSwitch,
+}: InputBoxProps) {
+  const textareaRef = useRef<TextareaRenderable | null>(null);
 
-  const handleContentChange = () => {
-    const text = getText();
-    if (text !== value) onChange(text);
-  };
+  const getText = () => textareaRef.current?.editBuffer.getText() ?? "";
 
   const handleSubmit = () => {
     const text = getText();
@@ -79,7 +75,7 @@ function useInputActions(
       onModeSwitch();
       return;
     }
-    if (event.name === "/" && value === "" && onSlashEmpty) {
+    if (event.name === "/" && getText() === "" && onSlashEmpty) {
       event.preventDefault();
       event.stopPropagation();
       onSlashEmpty();
@@ -96,31 +92,12 @@ function useInputActions(
     }
   };
 
-  return { handleContentChange, handleSubmit, handleKeyDown };
-}
-
-export function InputBox({
-  value,
-  onChange,
-  onSubmit,
-  onQueueSubmit,
-  onSlashEmpty,
-  focused = true,
-  disabled = false,
-  width,
-  mode = "build",
-  isBusy = false,
-  onModeSwitch,
-}: InputBoxProps) {
-  const textareaRef = useRef<TextareaRenderable>(null);
-  const { handleContentChange, handleSubmit, handleKeyDown } = useInputActions(
-    textareaRef,
-    value,
-    onChange,
-    onSubmit,
-    onQueueSubmit,
-    onSlashEmpty,
-    onModeSwitch
+  const keyBindings = useMemo<KeyBinding[]>(
+    () => [
+      { name: "return", action: "submit" },
+      { name: "return", shift: true, action: "newline" },
+    ],
+    []
   );
 
   // Ink wave animation state
@@ -134,25 +111,6 @@ export function InputBox({
     }, 300);
     return () => clearInterval(interval);
   }, [isBusy]);
-
-  // Sync external value changes into the textarea editBuffer
-  // (e.g. when a pending message is retracted back into the input box)
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    const current = textarea.editBuffer.getText();
-    if (current !== value) {
-      textarea.editBuffer.replaceText(value);
-    }
-  }, [value]);
-
-  const keyBindings = useMemo<KeyBinding[]>(
-    () => [
-      { name: "return", action: "submit" },
-      { name: "return", shift: true, action: "newline" },
-    ],
-    []
-  );
 
   // Determine border color based on state
   const getBorderColor = () => {
@@ -181,11 +139,10 @@ export function InputBox({
         <box flexGrow={1} height={3}>
           <textarea
             ref={textareaRef}
-            initialValue={value}
             focused={focused}
             showCursor={true}
             height={3}
-            onContentChange={handleContentChange}
+            width={Math.max(1, (width ?? 80) - MODE_PREFIX[mode].length - 2)}
             onSubmit={handleSubmit}
             onKeyDown={handleKeyDown}
             keyBindings={keyBindings}

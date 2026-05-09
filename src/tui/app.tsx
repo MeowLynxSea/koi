@@ -175,7 +175,6 @@ function CustomPromptContent({
 
 export function App({ onExit }: AppProps) {
   const { width, height } = useTerminalDimensions();
-  const [inputText, setInputText] = useState("");
   const [showExitModal, setShowExitModal] = useState(false);
   const [showCommandPanel, setShowCommandPanel] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -656,7 +655,6 @@ export function App({ onExit }: AppProps) {
       } else {
         void prompt(text);
       }
-      setInputText("");
     },
     [isReady, isStreaming, steer, prompt]
   );
@@ -669,7 +667,6 @@ export function App({ onExit }: AppProps) {
       } else {
         void prompt(text);
       }
-      setInputText("");
     },
     [isReady, isStreaming, followUp, prompt]
   );
@@ -688,7 +685,6 @@ export function App({ onExit }: AppProps) {
 
   const handleNewSession = useCallback(async () => {
     await newSession();
-    setInputText("");
     setShowSessionModal(false);
   }, [newSession]);
 
@@ -867,7 +863,6 @@ export function App({ onExit }: AppProps) {
 
   const handleSlashEmpty = useCallback(() => {
     setShowCommandPanel(true);
-    setInputText("");
   }, []);
 
   const handleSelectPrimary = useCallback(
@@ -914,8 +909,6 @@ export function App({ onExit }: AppProps) {
             />
           )}
           <InputBox
-            value={inputText}
-            onChange={setInputText}
             onSubmit={handleSubmit}
             onQueueSubmit={handleQueueSubmit}
             onSlashEmpty={handleSlashEmpty}

@@ -5,9 +5,9 @@
  * Contains an InputBox for multi-line editing.
  */
 
-import { useState, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import { useKeyboard } from "@opentui/react";
-import { createTextAttributes } from "@opentui/core";
+import { createTextAttributes, type TextareaRenderable } from "@opentui/core";
 import { InputBox } from "./input-box.js";
 
 interface EditPendingModalProps {
@@ -27,11 +27,11 @@ export function EditPendingModal({
   onCancel,
   width = 70,
 }: EditPendingModalProps) {
-  const [text, setText] = useState(initialText);
+  const textareaRef = useRef<TextareaRenderable | null>(null);
 
   useEffect(() => {
-    if (isActive) {
-      setText(initialText);
+    if (isActive && textareaRef.current) {
+      textareaRef.current.editBuffer.setText(initialText);
     }
   }, [isActive, initialText]);
 
@@ -45,6 +45,13 @@ export function EditPendingModal({
   if (!isActive) return null;
 
   const label = type === "sheer" ? "Edit Sheer" : "Edit Queued";
+
+  const handleConfirm = () => {
+    const text = textareaRef.current?.editBuffer.getText() ?? "";
+    if (text.trim()) {
+      onConfirm(text.trim());
+    }
+  };
 
   return (
     <box
@@ -72,13 +79,7 @@ export function EditPendingModal({
         </text>
         <box marginTop={1} marginBottom={1}>
           <InputBox
-            value={text}
-            onChange={setText}
-            onSubmit={() => {
-              if (text.trim()) {
-                onConfirm(text.trim());
-              }
-            }}
+            onSubmit={handleConfirm}
             focused={true}
             disabled={false}
             width={width - 4}
@@ -88,11 +89,7 @@ export function EditPendingModal({
           <box
             paddingX={2}
             backgroundColor="#2dd4bf"
-            onMouseUp={() => {
-              if (text.trim()) {
-                onConfirm(text.trim());
-              }
-            }}
+            onMouseUp={handleConfirm}
           >
             <text fg="white" attributes={createTextAttributes({ bold: true })}>Confirm</text>
           </box>
