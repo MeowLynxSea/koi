@@ -55,7 +55,12 @@ export interface KoiAgentState {
   deleteSession: (sessionId: string) => Promise<void>;
 }
 
-/* ───────── ID & Type Guards ───────── */
+/**
+ * ID & Type Guards
+ *
+ * generateId: collision-resistant enough for UI message keys within a single session.
+ * isAssistantMessage / isThinkingBlock: narrow union types from the generic AgentMessage content blocks.
+ */
 
 function generateId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -95,7 +100,13 @@ function extractTextAndThinking(msg: AssistantMessage): {
   return { text, thinking };
 }
 
-/* ───────── Event Handlers ───────── */
+/**
+ * Event Handlers
+ *
+ * Each Pi AgentSession event is mapped to a dedicated handler below.
+ * Handlers receive an EventHandlerContext (setters + refs) so they stay pure-ish and testable.
+ * The handleEvent() switch at the bottom of this section dispatches by event type.
+ */
 
 interface EventHandlerContext {
   setMessages: React.Dispatch<React.SetStateAction<UIMessage[]>>;
@@ -107,6 +118,11 @@ interface EventHandlerContext {
   allExpandedRef: React.MutableRefObject<boolean>;
 }
 
+/**
+ * Computes the next agent message state during a streaming message_update event.
+ * Tracks thinking start/end timestamps so the UI can show a "Thinking..." spinner
+ * and collapse/expand the reasoning block after generation finishes.
+ */
 function buildAgentMessageUpdate(
   prevMsg: UIMessage & { type: "agent" },
   text: string,
@@ -172,6 +188,7 @@ function removeAgentMessageIfEmpty(
   return next;
 }
 
+/** Fired when the LLM begins generating a response. Shows a status indicator. */
 function handleAgentStart(ctx: EventHandlerContext) {
   ctx.setIsStreaming(true);
   ctx.setMessages((prev) => [
@@ -180,6 +197,10 @@ function handleAgentStart(ctx: EventHandlerContext) {
   ]);
 }
 
+/**
+ * Fired when the LLM finishes a full turn.
+ * Replaces the streaming placeholder with the final assistant text (or removes it if empty).
+ */
 function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>, ctx: EventHandlerContext) {
   ctx.setIsStreaming(false);
   const pendingMsgId = ctx.streamingMsgIdRef.current;
@@ -195,6 +216,7 @@ function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>
   ctx.pendingToolsRef.current.clear();
 }
 
+/** Creates a blank streaming placeholder for the incoming assistant message. */
 function handleMessageStart(event: Extract<AgentSessionEvent, { type: "message_start" }>, ctx: EventHandlerContext) {
   if (!isAssistantMessage(event.message)) return;
   const msgId = generateId("agent");
@@ -205,6 +227,10 @@ function handleMessageStart(event: Extract<AgentSessionEvent, { type: "message_s
   ]);
 }
 
+/**
+ * Fired on every token / block delta during streaming.
+ * Updates content, thinking text, and thinking start/end timestamps in a single immutable swap.
+ */
 function handleMessageUpdate(event: Extract<AgentSessionEvent, { type: "message_update" }>, ctx: EventHandlerContext) {
   if (!isAssistantMessage(event.message)) return;
   const msgId = ctx.streamingMsgIdRef.current;
@@ -218,6 +244,10 @@ function handleMessageUpdate(event: Extract<AgentSessionEvent, { type: "message_
   );
 }
 
+/**
+ * Finalizes the streaming message. Unlike agent_end, this fires per-message
+ * (a turn may contain multiple messages when tools are involved).
+ */
 function handleMessageEnd(event: Extract<AgentSessionEvent, { type: "message_end" }>, ctx: EventHandlerContext) {
   if (!isAssistantMessage(event.message)) return;
   const msgId = ctx.streamingMsgIdRef.current;
@@ -228,6 +258,7 @@ function handleMessageEnd(event: Extract<AgentSessionEvent, { type: "message_end
   ctx.streamingMsgIdRef.current = null;
 }
 
+/** Adds a pending tool_call message to the UI so the user sees live execution. */
 function handleToolExecutionStart(event: Extract<AgentSessionEvent, { type: "tool_execution_start" }>, ctx: EventHandlerContext) {
   const toolMsgId = generateId("tool");
   ctx.pendingToolsRef.current.set(event.toolCallId, toolMsgId);
@@ -243,6 +274,7 @@ function handleToolExecutionStart(event: Extract<AgentSessionEvent, { type: "too
   );
 }
 
+/** Streams partial tool results (e.g. long-running bash output chunks). */
 function handleToolExecutionUpdate(event: Extract<AgentSessionEvent, { type: "tool_execution_update" }>, ctx: EventHandlerContext) {
   const toolMsgId = ctx.pendingToolsRef.current.get(event.toolCallId);
   if (!toolMsgId) return;
@@ -255,6 +287,7 @@ function handleToolExecutionUpdate(event: Extract<AgentSessionEvent, { type: "to
   );
 }
 
+/** Marks the tool call as complete and stores the final result (or error). */
 function handleToolExecutionEnd(event: Extract<AgentSessionEvent, { type: "tool_execution_end" }>, ctx: EventHandlerContext) {
   const toolMsgId = ctx.pendingToolsRef.current.get(event.toolCallId);
   if (!toolMsgId) return;
@@ -267,6 +300,7 @@ function handleToolExecutionEnd(event: Extract<AgentSessionEvent, { type: "tool_
   );
 }
 
+/** Notifies the user that the session is being compacted to reduce context usage. */
 function handleCompactionStart(event: Extract<AgentSessionEvent, { type: "compaction_start" }>, ctx: EventHandlerContext) {
   ctx.setMessages((prev) =>
     prev.concat({
@@ -290,6 +324,7 @@ function handleCompactionEnd(event: Extract<AgentSessionEvent, { type: "compacti
   );
 }
 
+/** Shows a retry banner when the agent encounters a transient error and retries automatically. */
 function handleAutoRetryStart(event: Extract<AgentSessionEvent, { type: "auto_retry_start" }>, ctx: EventHandlerContext) {
   ctx.setMessages((prev) =>
     prev
@@ -304,10 +339,12 @@ function handleAutoRetryStart(event: Extract<AgentSessionEvent, { type: "auto_re
   );
 }
 
+/** Clears the retry banner once the retry cycle finishes (success or final failure). */
 function handleAutoRetryEnd(_event: Extract<AgentSessionEvent, { type: "auto_retry_end" }>, ctx: EventHandlerContext) {
   ctx.setMessages((prev) => prev.filter((m) => m.type !== "retry"));
 }
 
+/** Syncs the session name when the agent or user renames it. */
 function handleSessionInfoChanged(event: Extract<AgentSessionEvent, { type: "session_info_changed" }>, ctx: EventHandlerContext) {
   if (event.name) {
     ctx.setSessionTitleState(event.name);
@@ -315,6 +352,10 @@ function handleSessionInfoChanged(event: Extract<AgentSessionEvent, { type: "ses
   }
 }
 
+/**
+ * Central dispatcher for all AgentSession events.
+ * Uses a switch so TypeScript can narrow the event type for each handler.
+ */
 function handleEvent(event: AgentSessionEvent, ctx: EventHandlerContext) {
   switch (event.type) {
     case "agent_start": handleAgentStart(ctx); break;
@@ -334,7 +375,12 @@ function handleEvent(event: AgentSessionEvent, ctx: EventHandlerContext) {
   }
 }
 
-/* ───────── Tree Navigation ───────── */
+/**
+ * Tree Navigation
+ *
+ * Session entries form a tree because of forking / branching.
+ * findNodeInTree walks the entire tree to locate an entry by its id.
+ */
 
 function findNodeInTree(
   nodes: SessionTreeNode[],
@@ -348,7 +394,18 @@ function findNodeInTree(
   return null;
 }
 
-/* ───────── useKoiAgent ───────── */
+/**
+ * useKoiAgent — Core React hook for the Koi TUI.
+ *
+ * Bridges Pi's AgentSession lifecycle to React state:
+ *   • Event subscription & message streaming
+ *   • Session CRUD (create, switch, fork, delete)
+ *   • Auto-save of UI state to ~/.config/koi/sessions/<id>/koi-state.json
+ *   • Collapse / expand helpers for tool_calls and thinking blocks
+ *
+ * Refs are kept in sync with state so cleanup handlers (unmount, switch, delete)
+ * always see the latest values without adding them to dependency arrays.
+ */
 
 export function useKoiAgent(): KoiAgentState {
   const [session, setSession] = useState<AgentSession | null>(null);
@@ -370,12 +427,14 @@ export function useKoiAgent(): KoiAgentState {
   const currentSessionIdRef = useRef<string | null>(null);
   const allExpandedRef = useRef<boolean>(false);
 
-  /* ── Ref Sync ── */
+  // Keep refs in sync with latest state for cleanup handlers (unmount, switch, delete).
+  // These refs avoid stale closures without adding every state to dependency arrays.
   useEffect(() => { sessionRef.current = session; }, [session]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
 
-  /* ── Debounced Save ── */
+  // Debounce writes to disk: avoids hammering the filesystem on every token during streaming.
+  // Also batches rapid message updates into a single save.
   const scheduleSave = useCallback(
     (sessionId: string, msgs: UIMessage[], title: string) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -402,7 +461,7 @@ export function useKoiAgent(): KoiAgentState {
     }
   }, [messages, currentSessionId, session, scheduleSave]);
 
-  /* ── Subscribe to Session ── */
+  // Wire Pi AgentSession events into React setters via the central handleEvent dispatcher.
   const subscribeToSession = useCallback((s: AgentSession) => {
     const ctx: EventHandlerContext = {
       setMessages,
@@ -416,7 +475,7 @@ export function useKoiAgent(): KoiAgentState {
     return s.subscribe((event: AgentSessionEvent) => handleEvent(event, ctx));
   }, []);
 
-  /* ── Restore State ── */
+  // On session load: prefer persisted koi-state.json; fall back to rebuilding from AgentSession.messages.
   const restoreSessionState = useCallback((s: AgentSession) => {
     const koiState = loadKoiState(s.sessionId);
     setMessages(koiState?.messages.length ? koiState.messages : buildUIMessagesFromAgentSession(s));
@@ -430,7 +489,7 @@ export function useKoiAgent(): KoiAgentState {
     if (koiState?.auxiliaryModel) auxiliaryModelRef.current = koiState.auxiliaryModel;
   }, []);
 
-  /* ── Setup Session ── */
+  // Orchestrates the full session boot sequence (subscribe → restore state → refresh list).
   const setupSession = useCallback(
     async (result: { session: AgentSession }) => {
       const s = result.session;
@@ -445,7 +504,7 @@ export function useKoiAgent(): KoiAgentState {
     [subscribeToSession, restoreSessionState]
   );
 
-  /* ── Build Koi State ── */
+  // Shared state shape used by saveCurrentState, scheduleSave, and the unmount cleanup effect.
   const buildKoiState = useCallback(
     (sid: string, msgs: UIMessage[], title: string): KoiSessionState => ({
       sessionId: sid,
@@ -459,7 +518,7 @@ export function useKoiAgent(): KoiAgentState {
     []
   );
 
-  /* ── Initialize ── */
+  // On mount: try to continue the most recent session; on failure surface the error and show the UI anyway.
   useEffect(() => {
     let mounted = true;
     void continueRecentSession(globalTaskManager)
@@ -478,7 +537,7 @@ export function useKoiAgent(): KoiAgentState {
     return () => { mounted = false; };
   }, [setupSession]);
 
-  /* ── Cleanup ── */
+  // On unmount: persist final state before disposing the AgentSession to prevent data loss.
   useEffect(() => {
     return () => {
       const s = sessionRef.current;
@@ -502,14 +561,14 @@ export function useKoiAgent(): KoiAgentState {
     }
   }, [currentSessionId, session, messages, buildKoiState]);
 
-  /* ── Reset Session UI ── */
+  // Clears streaming artifacts (msg id, pending tools) when switching or creating a new session.
   const resetSessionUI = useCallback(() => {
     setError(null);
     streamingMsgIdRef.current = null;
     pendingToolsRef.current.clear();
   }, []);
 
-  /* ── Session Actions ── */
+  // -- Session Actions --
   const switchSession = useCallback(
     async (sessionFile: string) => {
       if (!session) return;
@@ -550,7 +609,14 @@ export function useKoiAgent(): KoiAgentState {
     }
   }, [session, saveCurrentState, setupSession, resetSessionUI]);
 
-  /* ── Fork Logic ── */
+/**
+   * Fork Logic
+   *
+   * Forking creates a new branch in the conversation tree.
+   * computeForwardPath builds the path from the selected entry to the leaf.
+   * findBranchPoint walks forward to locate the next user message; we branch
+   * from the entry *before* it so the entire assistant/tool turn is preserved.
+   */
   const computeForwardPath = useCallback(
     (session: AgentSession, entryId: string) => {
       const branchPath = session.sessionManager.getBranch();
@@ -615,6 +681,7 @@ export function useKoiAgent(): KoiAgentState {
     [session, computeForwardPath, findBranchPoint, saveCurrentState]
   );
 
+  // Persist the title to both React state and the Pi AgentSession so the JSONL file reflects the change.
   const setSessionTitleWrapper = useCallback(
     (title: string) => {
       setSessionTitleState(title);
@@ -628,6 +695,8 @@ export function useKoiAgent(): KoiAgentState {
     setSessionList(await listSessions());
   }, []);
 
+  // Deleting the active session disposes it and immediately creates a new blank session
+  // so the UI never enters a "dead" state with no session available.
   const deleteSession = useCallback(
     async (sessionId: string) => {
       const isCurrent = sessionId === currentSessionId;
@@ -675,6 +744,8 @@ export function useKoiAgent(): KoiAgentState {
     await session?.abort();
   }, [session]);
 
+  // Per-message collapse toggle: tool_calls collapse their full output;
+  // agent messages collapse their thinking block (if present).
   const toggleCollapse = useCallback((id: string) => {
     setMessages((prev) =>
       prev.map((m) => {
@@ -685,6 +756,8 @@ export function useKoiAgent(): KoiAgentState {
     );
   }, []);
 
+  // Global expand/collapse: updates every collapsible message at once.
+  // Also sets allExpandedRef so *new* tool calls inherit the current preference.
   const updateAllCollapsed = useCallback((collapsed: boolean) => {
     allExpandedRef.current = !collapsed;
     setMessages((prev) =>

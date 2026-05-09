@@ -29,7 +29,14 @@ export interface PermissionCheckResult {
   reason?: string;
 }
 
-/* ───────── Static Rule Data ───────── */
+/**
+ * Static Rule Data
+ *
+ * DANGEROUS_BASH_PATTERNS: commands that can destroy data or rewrite git history.
+ * BLOCKED_PATHS: device/special files that should never be read or written.
+ * SENSITIVE_FILE_PATTERNS: credentials, keys, env files — editing them requires confirmation.
+ * Tool sets are grouped as constants so the default/fallback logic stays readable.
+ */
 
 const DANGEROUS_BASH_PATTERNS = [
   /\brm\s+-(rf|fr|r\s+f|f\s+r)\b/i,
@@ -65,7 +72,12 @@ const PATH_TOOLS = new Set(["read", "bash", "edit", "write"]);
 const DESTRUCTIVE_TOOLS = new Set(["bash", "write"]);
 const WRITE_TOOLS = new Set(["edit", "write"]);
 
-/* ───────── String & Path Helpers ───────── */
+/**
+ * String & Path Helpers
+ *
+ * stringifyArgs normalizes tool arguments so regex rules can match against a plain string.
+ * extractPath is a convenience helper because different tools use "path" vs "file_path" keys.
+ */
 
 export function isDangerousBashCommand(command: string): boolean {
   return DANGEROUS_BASH_PATTERNS.some((p) => p.test(command));
@@ -99,10 +111,16 @@ function extractPath(args: unknown): string | undefined {
   return undefined;
 }
 
-/* ───────── Tool-Specific Checkers ───────── */
+/**
+ * Tool-Specific Checkers
+ *
+ * Each checker returns a PermissionCheckResult when it matches, or null to let the next checker run.
+ * They are evaluated in order (toolCheckers array below) — first match wins.
+ */
 
 type ToolChecker = (toolName: string, args: unknown, argStr: string) => PermissionCheckResult | null;
 
+/** Blocks access to device/special paths (e.g. /dev/zero) for read/bash/edit/write tools. */
 const checkBlockedPaths: ToolChecker = (toolName, args) => {
   if (!PATH_TOOLS.has(toolName)) return null;
   const path = extractPath(args);
@@ -112,6 +130,7 @@ const checkBlockedPaths: ToolChecker = (toolName, args) => {
   return null;
 };
 
+/** Flags destructive bash commands (rm -rf, git reset --hard, DROP TABLE, etc.) for confirmation. */
 const checkDangerousBash: ToolChecker = (toolName, _args, argStr) => {
   if (toolName !== "bash") return null;
   if (isDangerousBashCommand(argStr)) {
@@ -123,6 +142,7 @@ const checkDangerousBash: ToolChecker = (toolName, _args, argStr) => {
   return null;
 };
 
+/** Requires confirmation before editing credentials, keys, or .env files. */
 const checkSensitiveFiles: ToolChecker = (toolName, args) => {
   if (!WRITE_TOOLS.has(toolName)) return null;
   const path = extractPath(args);
@@ -132,6 +152,7 @@ const checkSensitiveFiles: ToolChecker = (toolName, args) => {
   return null;
 };
 
+/** Asks before reading files larger than 1 GiB (to avoid accidental OOM / long blocks). */
 const checkLargeFileRead: ToolChecker = (toolName, args) => {
   if (toolName !== "read") return null;
   const path = extractPath(args);
@@ -147,6 +168,7 @@ const checkLargeFileRead: ToolChecker = (toolName, args) => {
   return null;
 };
 
+/** Blocks dangerous hosts (localhost, IPs) and asks for non-preapproved domains. */
 const checkWebFetch: ToolChecker = (_toolName, args) => {
   const url = (args as Record<string, unknown>)?.["url"];
   if (typeof url !== "string") return null;
@@ -173,7 +195,14 @@ const toolCheckers: ToolChecker[] = [
   checkWebFetch,
 ];
 
-/* ───────── Main API ───────── */
+/**
+ * Main API
+ *
+ * Evaluates toolCheckers in order. If none match:
+ *   • read-only tools → allow
+ *   • destructive tools (bash, write) → ask
+ *   • edit → allow (already vetted by checkSensitiveFiles if needed)
+ */
 
 /**
  * Check permission for a tool call.

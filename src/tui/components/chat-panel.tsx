@@ -55,7 +55,12 @@ export interface ChatPanelHandle {
   scrollDown: () => void;
 }
 
-/* ───────── Text Utilities ───────── */
+/**
+ * Text Utilities
+ *
+ * wrapText uses Intl.Segmenter for grapheme-accurate wrapping (handles emoji/CJK correctly).
+ * padToWidth pads with spaces so background colors fill the full line width in the TUI.
+ */
 
 export function wrapText(text: string, width: number, indent: number): string[] {
   const available = Math.max(1, width - indent);
@@ -94,7 +99,12 @@ function padToWidth(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - w));
 }
 
-/* ───────── Tool Summary ───────── */
+/**
+ * Tool Summary
+ *
+ * Maps tool names to short one-line descriptions for the collapsed tool_call view.
+ * Keeps the chat panel compact when many tools are invoked in a single turn.
+ */
 
 const TOOL_SUMMARY_MAP: Record<string, (args: Record<string, unknown>) => string> = {
   read: (a) => `read: ${String(a["path"] ?? a["file"] ?? "?")}`,
@@ -135,7 +145,13 @@ function formatDuration(ms: number): string {
   return `${Math.max(0, Math.floor(ms / 1000))}s`;
 }
 
-/* ───────── Message Renderers ───────── */
+/**
+ * Message Renderers
+ *
+ * Each message type has its own component to keep the main ChatPanel switch readable.
+ * AgentMessage is the most complex: it handles thinking blocks (spinner, collapse, duration)
+ * and delegates the final markdown content to MarkdownContent.
+ */
 
 function UserMessage({
   msg,
@@ -317,7 +333,12 @@ function SimpleMessage({ msg, marginTop }: { msg: UIMessage & { type: "compactio
   return <text fg="#6c6c7c" marginTop={marginTop}>{msg.content}</text>;
 }
 
-/* ───────── Syntax Style ───────── */
+/**
+ * Syntax Style
+ *
+ * Registers Dracula-like colors for markdown elements rendered by OpenTUI's native markdown component.
+ * Registered once per component mount via useMemo.
+ */
 
 function buildSyntaxStyle() {
   const style = SyntaxStyle.create();
@@ -363,7 +384,12 @@ function MarkdownContent({
   );
 }
 
-/* ───────── Margin Calculator ───────── */
+/**
+ * Margin Calculator
+ *
+ * Consecutive tool_call messages are rendered with 0 margin so they visually group
+ * into a single "tool batch". All other adjacent pairs get 1 line of separation.
+ */
 
 function getMarginTop(messages: UIMessage[], msgIdx: number): number {
   if (msgIdx === 0) return 0;
@@ -373,7 +399,12 @@ function getMarginTop(messages: UIMessage[], msgIdx: number): number {
   return 1;
 }
 
-/* ───────── ChatPanel ───────── */
+/**
+ * ChatPanel
+ *
+ * Scrollable message history with sticky bottom scroll.
+ * Exposes imperative scroll handles (scrollUp/scrollDown) for the global keyboard shortcuts.
+ */
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
   function ChatPanel({ messages, width = 80, height, isStreaming }, ref) {

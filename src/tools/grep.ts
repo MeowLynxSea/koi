@@ -42,7 +42,12 @@ export type GrepToolInput = {
 const VCS_DIRS = [".git", ".svn", ".hg", ".bzr", ".jj", ".sl"];
 const DEFAULT_HEAD_LIMIT = 250;
 
-/* ───────── Arg Builders ───────── */
+/**
+ * Argument Builders
+ *
+ * buildRgArgs builds ripgrep flags; buildGrepArgs is the POSIX-grep fallback.
+ * addVcsExcludes, addModeFlags, addPattern are shared building blocks.
+ */
 
 function addVcsExcludes(args: string[], cmd: "rg" | "grep"): void {
   if (cmd === "rg") {
@@ -109,7 +114,12 @@ function buildGrepArgs(input: GrepToolInput): string[] {
   return args;
 }
 
-/* ───────── Execution ───────── */
+/**
+ * Execution
+ *
+ * Tries ripgrep first; on ENOENT falls back to system grep.
+ * Exit code 1 from ripgrep means "no matches" — not an error.
+ */
 
 interface SearchResult {
   stdout: string;
@@ -181,7 +191,7 @@ export async function executeGrep(params: GrepToolInput): Promise<{
   };
 }
 
-/* ───────── Permission Helpers ───────── */
+/** Factory helpers for permission-denied tool results. */
 
 function buildDeniedResult(): ToolResultWithError<{ matches: number; truncated: boolean }> {
   return {
@@ -199,7 +209,11 @@ function buildUserDeniedResult(): ToolResultWithError<{ matches: number; truncat
   };
 }
 
-/* ───────── ToolDefinition ───────── */
+/**
+ * ToolDefinition Factory
+ *
+ * Registers the grep tool with the Pi agent runtime.
+ */
 
 export function createGrepToolDefinition(_cwd: string): ToolDefinition<typeof grepSchema, { matches: number; truncated: boolean }> {
   return {

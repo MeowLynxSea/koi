@@ -29,7 +29,12 @@ export type WebFetchToolInput = {
   prompt: string;
 };
 
-/* ───────── Safe Cache Operations ───────── */
+/**
+ * Safe Cache Operations
+ *
+ * CacheError wraps cache failures so the caller can decide whether to fall back to a fresh fetch
+ * instead of silently swallowing the error or crashing the agent loop.
+ */
 
 class CacheError extends Error {}
 
@@ -49,7 +54,14 @@ function safeCacheSet(cache: { set(key: string, value: unknown): void }, key: st
   }
 }
 
-/* ───────── LRU 缓存实现 ───────── */
+/**
+ * LRU Cache Implementations
+ *
+ * SizeBoundedLRUCache: byte-capped + TTL + entry-capped. Used for page HTML/Markdown content.
+ * SimpleLRUCache: entry-capped + TTL only. Used for lightweight domain safety checks.
+ *
+ * Both use Map iteration order as the LRU queue (set/delete/re-set moves the key to the end).
+ */
 
 /** 带容量（字节）与 TTL 的 LRU 字符串缓存 */
 class SizeBoundedLRUCache {
@@ -148,7 +160,13 @@ const pageCache = new SizeBoundedLRUCache(50 * 1024 * 1024, 15 * 60 * 1000, 256)
 /* 域名预检缓存：5 min TTL，128 条目 */
 const domainCheckCache = new SimpleLRUCache<string, boolean>(128, 5 * 60 * 1000);
 
-/* ───────── Domain Safety ───────── */
+/**
+ * Domain Safety
+ *
+ * Checks URL against the dangerous-host list and preapproved-domain list.
+ * Results are cached in domainCheckCache to avoid re-parsing the same URL repeatedly
+ * within a single agent turn.
+ */
 
 function checkDomainSafety(url: string): { safe: boolean; reason?: string } {
   try {
@@ -177,7 +195,15 @@ function checkDomainSafety(url: string): { safe: boolean; reason?: string } {
   }
 }
 
-/* ───────── 重定向安全策略 ───────── */
+/**
+ * Redirect Safety Policy
+ *
+ * Rules:
+ *   1. Allow http→https upgrades; deny downgrades or protocol switches.
+ *   2. Port must remain identical.
+ *   3. Reject URLs containing embedded credentials (user:pass@host).
+ *   4. Allow same-origin or www-prefix-only host changes.
+ */
 
 function isSafeRedirect(currentUrl: URL, redirectUrl: URL): boolean {
   // 协议：允许 http→https，禁止 https→http，禁止其他协议跳变
@@ -209,7 +235,12 @@ function isSafeRedirect(currentUrl: URL, redirectUrl: URL): boolean {
   return false;
 }
 
-/* ───────── HTTP 抓取（带安全重定向） ───────── */
+/**
+ * HTTP Fetch with Safe Redirects
+ *
+ * Manually follows redirects (axios maxRedirects: 0) so we can enforce isSafeRedirect
+ * on every hop. Auto-upgrades http→https on the initial URL.
+ */
 
 async function fetchWithRedirects(
   initialUrl: string,
@@ -259,14 +290,20 @@ async function fetchWithRedirects(
   throw new Error(`重定向次数超过最大限制 (${maxRedirects})`);
 }
 
-/* ───────── Turndown 实例（复用） ───────── */
+/** Shared TurndownService instance: avoids re-creating regex-heavy parsers on every fetch. */
 
 const turndownService = new TurndownService({
   headingStyle: "atx",
   codeBlockStyle: "fenced",
 });
 
-/* ───────── 内容获取 ───────── */
+/**
+ * Content Fetch
+ *
+ * Checks pageCache first; on miss performs the HTTP request, converts HTML→Markdown,
+ * stores the result in the cache, and returns the content.
+ * Cache failures are caught and re-thrown as CacheError so executeWebFetch can retry.
+ */
 
 async function fetchPageContent(url: string): Promise<{ content: string; contentType: string }> {
   try {
@@ -292,7 +329,13 @@ async function fetchPageContent(url: string): Promise<{ content: string; content
   return { content, contentType };
 }
 
-/* ───────── AI 摘要 ───────── */
+/**
+ * AI Summarization
+ *
+ * Sends the truncated page content + user prompt to the current Pi model.
+ * Preapproved domains get a plain system prompt; non-preapproved domains include
+ * a copyright/disclaimer notice to reduce hallucinated attribution.
+ */
 
 async function summarizeWithAI(content: string, prompt: string, url: string): Promise<string> {
   const model = getCurrentPiModel();
@@ -337,7 +380,12 @@ async function summarizeWithAI(content: string, prompt: string, url: string): Pr
     .join("");
 }
 
-/* ───────── 核心执行函数 ───────── */
+/**
+ * Main Entry Point
+ *
+ * Pipeline: domain safety → fetch content → truncate → AI summarize → return.
+ * On cache failure we re-fetch uncached; all other errors bubble up to the tool layer.
+ */
 
 export async function executeWebFetch(params: WebFetchToolInput): Promise<{
   content: TextContent[];
@@ -399,7 +447,7 @@ export async function executeWebFetch(params: WebFetchToolInput): Promise<{
   };
 }
 
-/* ───────── Permission Helpers ───────── */
+/** Factory functions for permission-denied tool results (keeps execute() readable). */
 
 function buildDeniedResult(params: WebFetchToolInput, reason: string): ToolResultWithError<{
   url: string;
@@ -429,7 +477,12 @@ function buildUserDeniedResult(params: WebFetchToolInput): ToolResultWithError<{
   };
 }
 
-/* ───────── ToolDefinition 工厂 ───────── */
+/**
+ * ToolDefinition Factory
+ *
+ * Registers the webfetch tool with the Pi agent runtime.
+ * Permission flow: deny → return error immediately; ask → show modal → proceed or return error.
+ */
 
 export function createWebFetchToolDefinition(
   _cwd: string

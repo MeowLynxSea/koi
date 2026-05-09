@@ -27,7 +27,12 @@ export interface Task {
   updatedAt: number;
 }
 
-/* ───────── File System Helpers ───────── */
+/**
+ * File System Helpers
+ *
+ * All fs operations are wrapped with silent error handling so a corrupted tasks.json
+ * or missing directory never crashes the agent loop.
+ */
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -66,7 +71,12 @@ function safeDeleteFile(filePath: string): void {
   }
 }
 
-/* ───────── Task Update Helpers ───────── */
+/**
+ * Task Update Helpers
+ *
+ * updateStringArray applies add/remove delta operations on id arrays (blockedBy, blocks)
+ * without mutating the original reference until the final assignment.
+ */
 
 function updateStringArray(current: string[], add?: string[], remove?: string[]): string[] {
   let result = [...current];
@@ -98,7 +108,13 @@ function applyTaskUpdates(
   task.blocks = updateStringArray(task.blocks, updates.addBlocks, updates.removeBlocks);
 }
 
-/* ───────── SessionTaskManager ───────── */
+/**
+ * SessionTaskManager
+ *
+ * Per-session in-memory task storage with JSON persistence.
+ * When no session is active, tasks land in a transient "__transient__" store
+ * so the API surface never returns undefined/null unexpectedly.
+ */
 
 export class SessionTaskManager {
   private stores = new Map<string, Map<string, Task>>();

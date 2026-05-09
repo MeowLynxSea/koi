@@ -46,7 +46,12 @@ export interface KoiSessionState {
   updatedAt: number;
 }
 
-/* ───────── File System Helpers ───────── */
+/**
+ * File System Helpers
+ *
+ * All fs operations are wrapped in safe* variants that swallow errors gracefully.
+ * This avoids crashing the agent loop when ~/.config is read-only or a session file is corrupted.
+ */
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -97,7 +102,12 @@ function safeDeleteDir(dir: string): void {
   }
 }
 
-/* ───────── Session Helpers ───────── */
+/**
+ * Session Helpers
+ *
+ * SessionConfig collects the cross-cutting dependencies (auth, registry, settings, tools)
+ * needed by every createAgentSession call so create/load/continue can share one code path.
+ */
 
 function sessionInfoToMeta(info: SessionInfo): SessionMeta {
   return {
@@ -146,7 +156,13 @@ async function createAgentSessionWithConfig(
   });
 }
 
-/* ───────── Public API ───────── */
+/**
+ * Public API
+ *
+ * createNewSession / loadSession / continueRecentSession all share the same boot sequence:
+ *   buildSessionConfig → createAgentSessionWithConfig → (optionally save initial state)
+ * listSessions converts Pi SessionInfo objects into Koi's SessionMeta shape.
+ */
 
 export async function listSessions(): Promise<SessionMeta[]> {
   try {
@@ -215,7 +231,15 @@ export async function deleteSession(meta: SessionMeta): Promise<void> {
   deleteKoiSessionData(meta.id);
 }
 
-/* ───────── Message Builders ───────── */
+/**
+ * Message Builders
+ *
+ * extractUserContent / extractAssistantContent normalize Pi's message content unions
+ * (string | TextBlock[] | ThinkingBlock[]) into plain strings for the TUI fallback path.
+ *
+ * buildUIMessagesFromAgentSession is a best-effort reconstruction used when koi-state.json
+ * is missing (e.g. the user deleted it or opened the session on a different machine).
+ */
 
 function extractUserContent(content: unknown): string {
   if (typeof content === "string") return content;

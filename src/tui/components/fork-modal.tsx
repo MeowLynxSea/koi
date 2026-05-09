@@ -40,7 +40,12 @@ interface MessageEntry {
   };
 }
 
-/* ───────── Type Guards ───────── */
+/**
+ * Type Guards
+ *
+ * isMessageEntry narrows the generic SessionTreeNode entry to a message-shaped object.
+ * isVisibleNode filters the tree to only user/assistant messages (hides tool_results, compaction nodes, etc.).
+ */
 
 function isMessageEntry(entry: unknown): entry is MessageEntry {
   return (
@@ -64,7 +69,12 @@ function isUserMessageEntry(entry: unknown): boolean {
   return isMessageEntry(entry) && entry.message.role === "user";
 }
 
-/* ───────── Text Extraction ───────── */
+/**
+ * Text Extraction
+ *
+ * Pi messages may be plain strings or arrays of {type, text} blocks.
+ * These helpers normalize both shapes into a single string for the tree view.
+ */
 
 function extractTextFromBlocks(content: unknown): string {
   if (typeof content === "string") return content;
@@ -98,7 +108,13 @@ function formatEntry(node: SessionTreeNode): string {
   return "";
 }
 
-/* ───────── Tree Flattening ───────── */
+/**
+ * Tree Flattening
+ *
+ * Converts the recursive SessionTreeNode structure into a flat list of TreeRows.
+ * Hidden nodes (tool results, compaction markers) are skipped but their children are promoted
+ * to the same depth so the conversation flow stays visually continuous.
+ */
 
 function flattenTree(
   nodes: SessionTreeNode[],
@@ -137,7 +153,12 @@ function flattenTree(
   return result;
 }
 
-/* ───────── Tree Prefix ───────── */
+/**
+ * Tree Prefix
+ *
+ * Builds the "│  └ " ASCII art prefix for each tree row based on depth and sibling position.
+ * Deep trees are truncated with "…" so the rightmost branch structure remains visible.
+ */
 
 function treePrefix(depth: number, parentIsLast: boolean[], isLast: boolean): string {
   let prefix = "";
@@ -154,7 +175,12 @@ function getVisiblePrefix(row: TreeRow, contentWidth: number): string {
   return "…" + prefix.slice(-(contentWidth - 2));
 }
 
-/* ───────── Default Selection ───────── */
+/**
+ * Default Selection
+ *
+ * When the modal opens, auto-selects the last user message on the current active branch
+ * so the user can press Enter immediately without manual navigation.
+ */
 
 function findDefaultIndex(rows: TreeRow[], session: AgentSession): number {
   const selectable = rows.filter((r) => r.isUserMessage);
@@ -177,7 +203,13 @@ function findDefaultIndex(rows: TreeRow[], session: AgentSession): number {
   return selectable.length - 1;
 }
 
-/* ───────── ForkModal Component ───────── */
+/**
+ * ForkModal
+ *
+ * Interactive tree view of the conversation history.
+ * Only user messages are selectable (Enter / mouse click) because forking
+ * from an assistant node would cut off the user's original question.
+ */
 
 export function ForkModal({ isActive, onClose, session, onFork }: ForkModalProps) {
   const { width, height } = useTerminalDimensions();

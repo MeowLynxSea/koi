@@ -52,7 +52,12 @@ interface AppProps {
   onExit: () => void;
 }
 
-/* ───────── Permission Formatting ───────── */
+/**
+ * Permission Formatting
+ *
+ * Converts raw tool arguments into a one-line human-readable string for the confirmation modal.
+ * Each tool has a tailored formatter so the user sees "Command: rm -rf /" instead of raw JSON.
+ */
 
 const PERMISSION_FORMATTERS: Record<string, (args: Record<string, unknown>) => string> = {
   bash: (a) => `Command: ${String(a["command"] ?? "?")}`,
@@ -71,7 +76,12 @@ function formatPermissionArgs(toolName: string, args: unknown): string {
   return formatter ? formatter(args as Record<string, unknown>) : JSON.stringify(args, null, 2);
 }
 
-/* ───────── App Component ───────── */
+/**
+ * App Component
+ *
+ * Root TUI layout: chat panel + input + sidebar on the left, modals overlay on top.
+ * Keyboard shortcuts are globally bound here; modal-open state blocks shortcuts underneath.
+ */
 
 export function App({ onExit }: AppProps) {
   const { width, height } = useTerminalDimensions();
@@ -117,7 +127,8 @@ export function App({ onExit }: AppProps) {
     deleteSession,
   } = useKoiAgent();
 
-  /* ── Sidebar Stats ── */
+  // Polls session stats (token count, cost, context usage) every 2s for the sidebar.
+  // Falls back to zeroed values when no session is active.
   useEffect(() => {
     const update = () => {
       if (!session) {
@@ -158,7 +169,8 @@ export function App({ onExit }: AppProps) {
     return () => clearInterval(interval);
   }, [session]);
 
-  /* ── Permission Modal ── */
+  // Processes the permission-request queue one item at a time.
+  // Shows a styled confirm modal; keyboard y/n also works while the modal is open.
   const processingPermissionRef = useRef(false);
   const permissionResolveRef = useRef<((value: boolean) => void) | null>(null);
   const [permissionModalOpen, setPermissionModalOpen] = useState(false);
@@ -243,7 +255,7 @@ export function App({ onExit }: AppProps) {
     return unsubscribe;
   }, [dialog, width, height]);
 
-  /* ── Layout ── */
+  // Responsive layout: left column fills remaining width; sidebar is fixed at SIDEBAR_WIDTH.
   const leftWidth = Math.max(1, width - SIDEBAR_WIDTH - 2);
   const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
@@ -252,7 +264,7 @@ export function App({ onExit }: AppProps) {
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
     showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm;
 
-  /* ── Handlers ── */
+  // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
     (text: string) => {
       if (text.trim() && isReady && !isStreaming) {
@@ -310,7 +322,7 @@ export function App({ onExit }: AppProps) {
     setSessionToDelete(null);
   }, []);
 
-  /* ── Commands ── */
+  // Slash-command definitions for the command palette (Ctrl+P).
   const commands = useMemo<CommandDef[]>(
     () => [
       { id: "/new", label: "Start a new session", section: "Session", action: () => void handleNewSession() },
@@ -324,7 +336,7 @@ export function App({ onExit }: AppProps) {
     [session, handleNewSession, refreshSessionList]
   );
 
-  /* ── Keyboard ── */
+  // Global keyboard shortcuts. Guarded by anyModalOpen so typing in a modal doesn't trigger app actions.
   useKeyboard((key) => {
     if (anyModalOpen && !permissionModalOpen) return;
 
@@ -415,7 +427,7 @@ export function App({ onExit }: AppProps) {
     []
   );
 
-  /* ── Render ── */
+  // Render: main layout + modal overlay layer.
   return (
     <box width={width} height={height} flexDirection="column">
       <box width={width} height={height} flexDirection="row">
