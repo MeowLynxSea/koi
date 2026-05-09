@@ -61,12 +61,22 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
     let filtered = commands;
     if (query) {
       const q = query.toLowerCase();
-      filtered = commands.filter(
-        (c) =>
-          c.id.toLowerCase().includes(q) ||
-          c.label.toLowerCase().includes(q) ||
-          c.section.toLowerCase().includes(q)
-      );
+      // Filter and sort by match priority: id > label > section
+      filtered = commands
+        .map((cmd) => {
+          const idMatch = cmd.id.toLowerCase().includes(q);
+          const labelMatch = cmd.label.toLowerCase().includes(q);
+          const sectionMatch = cmd.section.toLowerCase().includes(q);
+          // Priority: 0 = id match (highest), 1 = label match, 2 = section match, 3 = no match
+          const priority = !idMatch && !labelMatch && !sectionMatch ? 3
+            : idMatch ? 0
+            : labelMatch ? 1
+            : 2;
+          return { cmd, priority };
+        })
+        .filter((item) => item.priority < 3)
+        .sort((a, b) => a.priority - b.priority)
+        .map((item) => item.cmd);
     }
 
     const grouped = new Map<string, CommandDef[]>();
