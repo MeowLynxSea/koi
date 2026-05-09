@@ -331,6 +331,11 @@ export function App({ onExit }: AppProps) {
   const permissionResolveRef = useRef<((value: boolean) => void) | null>(null);
   const [permissionModalOpen, setPermissionModalOpen] = useState(false);
 
+  // Keyboard shortcut refs for dialog-based modals (not React-state modals).
+  const planApprovalResolveRef = useRef<((value: string) => void) | null>(null);
+  const questionResolveRef = useRef<((value: string) => void) | null>(null);
+  const questionOptionsRef = useRef<string[]>([]);
+
   useEffect(() => {
     const unsubscribe = subscribePermissions(async () => {
       if (processingPermissionRef.current) return;
@@ -435,13 +440,15 @@ export function App({ onExit }: AppProps) {
       const allOptions = [...request.options, "__other__"];
       let answer = "";
 
-      while (true) {
+      for (;;) {
         const choiceResult = await dialog.choice<string>({
           backdropColor: "#000000",
           backdropOpacity: "50%",
           closeOnEscape: true,
           unstyled: true,
           content: ({ resolve, dismiss: _dismiss }) => {
+            questionResolveRef.current = resolve;
+            questionOptionsRef.current = allOptions;
             const contentWidth = Math.min(70, Math.max(20, width - 8));
             const questionLines = wrapText(request.question, contentWidth - 4, 0);
             return (
@@ -465,7 +472,7 @@ export function App({ onExit }: AppProps) {
                   ))}
                 </box>
                 <box flexDirection="column" gap={1} marginTop={1}>
-                  {allOptions.map((opt) => {
+                  {allOptions.map((opt, idx) => {
                     const label = opt === "__other__" ? "Other (custom)" : opt;
                     return (
                       <box
@@ -475,14 +482,14 @@ export function App({ onExit }: AppProps) {
                         backgroundColor="#2d2d44"
                         onMouseUp={() => resolve(opt)}
                       >
-                        <text fg="#f8f8f2">{label}</text>
+                        <text fg="#f8f8f2">{`[${idx + 1}] ${label}`}</text>
                       </box>
                     );
                   })}
                 </box>
                 <box alignSelf="center" marginTop={1}>
                   <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-                    Esc to cancel
+                    {`Press 1-${allOptions.length} to select, Esc to cancel`}
                   </text>
                 </box>
               </box>
@@ -490,6 +497,8 @@ export function App({ onExit }: AppProps) {
           },
         });
 
+        questionResolveRef.current = null;
+        questionOptionsRef.current = [];
         if (choiceResult === "__other__") {
           const custom = await dialog.prompt<string>({
             backdropColor: "#000000",
@@ -505,11 +514,11 @@ export function App({ onExit }: AppProps) {
               />
             ),
           });
-          if (custom !== undefined) {
+          if (custom !== undefined && custom.trim() !== "") {
             answer = custom;
             break;
           }
-          // custom === undefined means user cancelled; loop back to choice dialog
+          // cancelled or empty input — loop back to choice dialog
         } else {
           answer = choiceResult ?? "";
           break;
@@ -540,82 +549,95 @@ export function App({ onExit }: AppProps) {
       const modalWidth = Math.min(80, Math.max(40, width - 10));
       const planHeight = Math.max(8, height - 14);
 
-      const result = await dialog.choice<string>({
-        backdropColor: "#000000",
-        backdropOpacity: "50%",
-        closeOnEscape: true,
-        unstyled: true,
-        content: ({ resolve, dismiss: _dismiss }) => {
-          const syntaxStyle = SyntaxStyle.create();
-          syntaxStyle.registerStyle("markup.heading", { fg: "#60a5fa", bold: true });
-          syntaxStyle.registerStyle("markup.strong", { bold: true });
-          syntaxStyle.registerStyle("markup.italic", { fg: "#bd93f9", italic: true });
-          syntaxStyle.registerStyle("markup.link", { fg: "#8be9fd", underline: true });
-          syntaxStyle.registerStyle("markup.raw", { fg: "#a5b4fc" });
-          syntaxStyle.registerStyle("markup.raw.block", { fg: "#f8f8f2", bg: "#44475a" });
-          syntaxStyle.registerStyle("markup.list", { fg: "#ff79c6" });
-          return (
-            <box
-              flexDirection="column"
-              alignSelf="center"
-              borderStyle="rounded"
-              borderColor="#4a4a5a"
-              backgroundColor="#1a1a2e"
-              paddingX={2}
-              paddingY={1}
-              width={modalWidth}
-              maxHeight={height - 4}
-            >
-              <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#60a5fa">
-                Review Plan
-              </text>
-              <box marginTop={1} height={planHeight} flexDirection="column">
-                <scrollbox scrollY={true} scrollX={false} height={planHeight} flexDirection="column">
-                  <markdown
-                    content={request.plan}
-                    syntaxStyle={syntaxStyle}
-                    width={modalWidth - 6}
-                    streaming={false}
-                    conceal={true}
-                  />
-                  <text />
-                </scrollbox>
-              </box>
-              <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
-                <box paddingX={2} backgroundColor="#2dd4bf" onMouseUp={() => resolve("yes")}>
-                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Yes</text>
-                </box>
-                <box paddingX={2} backgroundColor="#f43f5e" onMouseUp={() => resolve("no")}>
-                  <text fg="white" attributes={createTextAttributes({ bold: true })}>No</text>
-                </box>
-                <box paddingX={2} backgroundColor="#fbbf24" onMouseUp={() => resolve("comment")}>
-                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Comment</text>
-                </box>
-              </box>
-            </box>
-          );
-        },
-      });
-
       let approvalResult: PlanApprovalResult = { approved: false };
-      if (result === "yes") {
-        approvalResult = { approved: true };
-      } else if (result === "comment") {
-        const comment = await dialog.prompt<string>({
+
+      for (;;) {
+        const result = await dialog.choice<string>({
           backdropColor: "#000000",
           backdropOpacity: "50%",
           closeOnEscape: true,
           unstyled: true,
-          content: ({ resolve }) => (
-            <CustomPromptContent
-              resolve={resolve}
-              question="Enter your feedback on the plan:"
-              width={width}
-              height={height}
-            />
-          ),
+          content: ({ resolve, dismiss: _dismiss }) => {
+            planApprovalResolveRef.current = resolve;
+            const syntaxStyle = SyntaxStyle.create();
+            syntaxStyle.registerStyle("markup.heading", { fg: "#60a5fa", bold: true });
+            syntaxStyle.registerStyle("markup.strong", { bold: true });
+            syntaxStyle.registerStyle("markup.italic", { fg: "#bd93f9", italic: true });
+            syntaxStyle.registerStyle("markup.link", { fg: "#8be9fd", underline: true });
+            syntaxStyle.registerStyle("markup.raw", { fg: "#a5b4fc" });
+            syntaxStyle.registerStyle("markup.raw.block", { fg: "#f8f8f2", bg: "#44475a" });
+            syntaxStyle.registerStyle("markup.list", { fg: "#ff79c6" });
+            return (
+              <box
+                flexDirection="column"
+                alignSelf="center"
+                borderStyle="rounded"
+                borderColor="#4a4a5a"
+                backgroundColor="#1a1a2e"
+                paddingX={2}
+                paddingY={1}
+                width={modalWidth}
+                maxHeight={height - 4}
+              >
+                <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#60a5fa">
+                  Review Plan
+                </text>
+                <scrollbox scrollY={true} scrollX={false} height={planHeight} marginTop={1}>
+                  <box flexDirection="column" width={modalWidth - 6}>
+                    <markdown
+                      content={request.plan}
+                      syntaxStyle={syntaxStyle}
+                      width={modalWidth - 6}
+                      streaming={false}
+                      conceal={true}
+                    />
+                  </box>
+                </scrollbox>
+                <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
+                  <box paddingX={2} backgroundColor="#2dd4bf" onMouseUp={() => resolve("yes")}>
+                    <text fg="white" attributes={createTextAttributes({ bold: true })}>[Y]es</text>
+                  </box>
+                  <box paddingX={2} backgroundColor="#f43f5e" onMouseUp={() => resolve("no")}>
+                    <text fg="white" attributes={createTextAttributes({ bold: true })}>[N]o</text>
+                  </box>
+                  <box paddingX={2} backgroundColor="#fbbf24" onMouseUp={() => resolve("comment")}>
+                    <text fg="white" attributes={createTextAttributes({ bold: true })}>[C]omment</text>
+                  </box>
+                </box>
+              </box>
+            );
+          },
         });
-        approvalResult = { approved: false, comment: comment ?? undefined };
+
+        planApprovalResolveRef.current = null;
+        if (result === "yes") {
+          approvalResult = { approved: true };
+          break;
+        } else if (result === "comment") {
+          const comment = await dialog.prompt<string>({
+            backdropColor: "#000000",
+            backdropOpacity: "50%",
+            closeOnEscape: true,
+            unstyled: true,
+            content: ({ resolve }) => (
+              <CustomPromptContent
+                resolve={resolve}
+                question="Enter your feedback on the plan:"
+                width={width}
+                height={height}
+              />
+            ),
+          });
+          if (comment !== undefined && comment.trim() !== "") {
+            approvalResult = { approved: false, comment };
+            break;
+          }
+          // cancelled or empty — loop back to plan review dialog
+        } else {
+          // "no" or ESC
+          approvalResult = { approved: false };
+          break;
+        }
       }
 
       resolvePlanApproval(request.id, approvalResult);
@@ -780,6 +802,29 @@ export function App({ onExit }: AppProps) {
         return;
       }
       return;
+    }
+
+    if (planApprovalResolveRef.current) {
+      if (key.name === "y" || key.name === "Y") {
+        planApprovalResolveRef.current("yes");
+        return;
+      }
+      if (key.name === "n" || key.name === "N") {
+        planApprovalResolveRef.current("no");
+        return;
+      }
+      if (key.name === "c" || key.name === "C") {
+        planApprovalResolveRef.current("comment");
+        return;
+      }
+    }
+
+    if (questionResolveRef.current && questionOptionsRef.current.length > 0) {
+      const digit = parseInt(key.name, 10);
+      if (!isNaN(digit) && digit >= 1 && digit <= questionOptionsRef.current.length) {
+        questionResolveRef.current(questionOptionsRef.current[digit - 1]!);
+        return;
+      }
     }
 
     if (key.ctrl && key.name === "c") {
