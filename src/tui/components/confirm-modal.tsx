@@ -4,7 +4,7 @@
  * Generic confirmation dialog with customizable title, message, and buttons.
  */
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";

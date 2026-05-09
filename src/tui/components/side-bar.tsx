@@ -5,7 +5,6 @@
  * context usage, cost estimate, and task list.
  */
 
-import React from "react";
 import { createTextAttributes } from "@opentui/core";
 
 const KOI_LOGO = [
@@ -52,11 +51,6 @@ function abbreviatePath(path: string, maxLen: number = 24): string {
   const abbreviatedLast =
     last.length > maxLen - 4 ? last.slice(0, maxLen - 4) + "…" : last;
   return prefix ? `${prefix}/…/${abbreviatedLast}` : `/…/${abbreviatedLast}`;
-}
-
-function truncateText(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return text.slice(0, Math.max(0, maxLen - 1)) + "…";
 }
 
 function FixedWidthText({
@@ -135,9 +129,9 @@ export function SideBar({
 
   return (
     <box width={width} flexDirection="column" paddingLeft={1}>
-      {/* Row 0: Meowdream™ (left) + version (right) */}
+      {/* Row 0: Meowdream (left) + version (right) */}
       <box width={usableWidth} flexDirection="row" justifyContent="space-between">
-        <text attributes={createTextAttributes({ bold: true })} fg="#00f5ff">Meowdream™</text>
+        <text attributes={createTextAttributes({ bold: true })} fg="#00f5ff">Meowdream</text>
         <text fg="#00ff99">{VERSION}</text>
       </box>
 

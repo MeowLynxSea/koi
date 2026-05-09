@@ -26,6 +26,7 @@ import { checkPermission } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
 import { getCurrentPiModel, getPiModelRegistry } from "../config/settings.js";
 import { isPreapprovedDomain, isDangerousHost } from "./webfetch-domains.js";
+import type { ToolResultWithError } from "./types.js";
 
 /* ───────── TypeBox Schema ───────── */
 
@@ -52,7 +53,8 @@ class SizeBoundedLRUCache {
 
   constructor(
     private maxSizeBytes: number,
-    private ttlMs: number
+    private ttlMs: number,
+    private maxEntries: number
   ) {}
 
   get(key: string): string | undefined {
@@ -83,8 +85,11 @@ class SizeBoundedLRUCache {
       }
     }
 
-    // 淘汰最旧条目直到有足够空间
-    while (this.currentSize + size > this.maxSizeBytes && this.cache.size > 0) {
+    // 淘汰最旧条目直到有足够空间且不超过条目数上限
+    while (
+      (this.currentSize + size > this.maxSizeBytes || this.cache.size >= this.maxEntries) &&
+      this.cache.size > 0
+    ) {
       const firstKey = this.cache.keys().next().value as string;
       const firstEntry = this.cache.get(firstKey)!;
       this.currentSize -= firstEntry.size;
@@ -138,8 +143,8 @@ class SimpleLRUCache<K, V> {
   }
 }
 
-/* 页面缓存：15 min TTL，50 MB 上限 */
-const pageCache = new SizeBoundedLRUCache(50 * 1024 * 1024, 15 * 60 * 1000);
+/* 页面缓存：15 min TTL，50 MB 上限，256 条目上限 */
+const pageCache = new SizeBoundedLRUCache(50 * 1024 * 1024, 15 * 60 * 1000, 256);
 
 /* 域名预检缓存：5 min TTL，128 条目 */
 const domainCheckCache = new SimpleLRUCache<string, boolean>(128, 5 * 60 * 1000);
@@ -239,8 +244,8 @@ async function fetchWithRedirects(
     }
 
     if (response.status >= 300 && response.status < 400) {
-      const location = response.headers["location"];
-      if (!location) {
+      const location = response.headers["location"] as unknown;
+      if (typeof location !== "string") {
         throw new Error(`重定向响应缺少 Location 头 (HTTP ${response.status})`);
       }
 
@@ -416,7 +421,7 @@ export function createWebFetchToolDefinition(
     async execute(_toolCallId, params, _signal, _onUpdate) {
       const perm = checkPermission("webfetch", params);
       if (perm.decision === "deny") {
-        return {
+        const result: ToolResultWithError<{ url: string; contentType: string; charCount: number; truncated: boolean; cached: boolean }> = {
           content: [
             {
               type: "text",
@@ -431,7 +436,8 @@ export function createWebFetchToolDefinition(
             cached: false,
           },
           isError: true,
-        } as any;
+        };
+        return result;
       }
       if (perm.decision === "ask") {
         const allowed = await requestPermission({
@@ -440,7 +446,7 @@ export function createWebFetchToolDefinition(
           reason: perm.reason ?? "Confirm web fetch",
         });
         if (!allowed) {
-          return {
+          const result: ToolResultWithError<{ url: string; contentType: string; charCount: number; truncated: boolean; cached: boolean }> = {
             content: [
               {
                 type: "text",
@@ -455,7 +461,8 @@ export function createWebFetchToolDefinition(
               cached: false,
             },
             isError: true,
-          } as any;
+          };
+          return result;
         }
       }
       return await executeWebFetch(params);

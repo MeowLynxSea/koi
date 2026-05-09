@@ -6,7 +6,7 @@
  * to fork from that point in the conversation history.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
@@ -32,12 +32,31 @@ interface TreeRow {
   parentIsLast: boolean[];
 }
 
-function isVisibleNode(node: SessionTreeNode): boolean {
-  const entry = node.entry as any;
+interface MessageEntry {
+  type: "message";
+  message: {
+    role: string;
+    content: unknown;
+  };
+}
+
+function isMessageEntry(entry: unknown): entry is MessageEntry {
   return (
-    entry.type === "message" &&
-    entry.message &&
-    (entry.message.role === "user" || entry.message.role === "assistant")
+    typeof entry === "object" &&
+    entry !== null &&
+    "type" in entry &&
+    (entry as Record<string, unknown>)["type"] === "message" &&
+    "message" in entry &&
+    typeof (entry as Record<string, unknown>)["message"] === "object" &&
+    (entry as Record<string, unknown>)["message"] !== null
+  );
+}
+
+function isVisibleNode(node: SessionTreeNode): boolean {
+  const entry = node.entry;
+  if (!isMessageEntry(entry)) return false;
+  return (
+    entry.message.role === "user" || entry.message.role === "assistant"
   );
 }
 
@@ -45,7 +64,9 @@ function extractUserText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .filter((c): c is { type: "text"; text: string } => c?.type === "text")
+      .filter((c: unknown): c is { type: "text"; text: string } =>
+        typeof c === "object" && c !== null && "type" in c && (c as Record<string, unknown>)["type"] === "text"
+      )
       .map((c) => c.text)
       .join("");
   }
@@ -53,8 +74,8 @@ function extractUserText(content: unknown): string {
 }
 
 function formatEntry(node: SessionTreeNode): string {
-  const entry = node.entry as any;
-  if (entry.type !== "message") return "";
+  const entry = node.entry;
+  if (!isMessageEntry(entry)) return "";
   const msg = entry.message;
   if (msg.role === "user") {
     const text = extractUserText(msg.content);
@@ -62,8 +83,12 @@ function formatEntry(node: SessionTreeNode): string {
   }
   if (msg.role === "assistant") {
     let text = "";
-    for (const block of msg.content) {
-      if (block.type === "text") text += block.text;
+    if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block && typeof block === "object" && "type" in block && (block as unknown as Record<string, unknown>)["type"] === "text") {
+          text += String((block as unknown as Record<string, unknown>)["text"] ?? "");
+        }
+      }
     }
     return text.slice(0, 50) || "(assistant)";
   }
@@ -86,7 +111,7 @@ function flattenTree(
 
     if (isVisible) {
       const isLast = visibleIndex === visibleNodes.length - 1;
-      const isUserMessage = (node.entry as any).message?.role === "user";
+      const isUserMessage = isMessageEntry(node.entry) && node.entry.message.role === "user";
       result.push({
         node,
         depth,
@@ -162,7 +187,7 @@ export function ForkModal({
       const branch = session.sessionManager.getBranch();
       const lastUserEntry = [...branch]
         .reverse()
-        .find((e: any) => e.type === "message" && e.message?.role === "user");
+        .find((e) => isMessageEntry(e) && e.message.role === "user");
 
       const selectable = newRows.filter((r) => r.isUserMessage);
       let defaultIndex = 0;

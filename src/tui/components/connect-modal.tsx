@@ -5,7 +5,7 @@
  * verification (animated) → result.
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { TextareaRenderable, MouseEvent } from "@opentui/core";
@@ -89,7 +89,7 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
 
     let cancelled = false;
 
-    (async () => {
+    void (async () => {
       try {
         const result = await validateProviderCredential(
           selectedProvider!,
@@ -113,11 +113,11 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
         if (result.valid && selectedProvider) {
           configureProvider(config);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (cancelled) return;
         setVerifyResult({
           success: false,
-          message: `Failed to connect to ${selectedProvider}: ${err?.message ?? String(err)}`,
+          message: `Failed to connect to ${selectedProvider}: ${err instanceof Error ? err.message : String(err)}`,
         });
       } finally {
         if (!cancelled) {

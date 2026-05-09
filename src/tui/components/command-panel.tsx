@@ -6,10 +6,10 @@
  * Closed with Ctrl+P, Esc, or clearing the input.
  */
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes, type KeyBinding } from "@opentui/core";
-import type { KeyEvent, TextareaRenderable, MouseEvent } from "@opentui/core";
+import type { TextareaRenderable, MouseEvent } from "@opentui/core";
 
 export interface CommandDef {
   id: string;

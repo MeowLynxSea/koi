@@ -13,8 +13,9 @@
 
 import { Type } from "typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import type { TextContent } from "@mariozechner/pi-ai";
+import type { TextContent, ImageContent } from "@mariozechner/pi-ai";
 import type { SessionTaskManager, Task } from "../agent/session-tasks.js";
+import type { ToolResultWithError } from "./types.js";
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -146,15 +147,16 @@ export async function executeTaskGet(
   taskManager: SessionTaskManager,
   _toolCallId: string,
   params: TaskGetInput
-): Promise<{ content: TextContent[]; details: { task: Task | null } }> {
+): Promise<{ content: (TextContent | ImageContent)[]; details: { task: Task | null } }> {
   const task = taskManager.getTask(params.taskId);
 
   if (!task) {
-    return {
+    const result: ToolResultWithError<{ task: Task | null }> = {
       content: [{ type: "text", text: `Task not found: ${params.taskId}` }],
       details: { task: null },
       isError: true,
-    } as any;
+    };
+    return result;
   }
 
   const lines = [
@@ -190,7 +192,7 @@ export async function executeTaskUpdate(
   taskManager: SessionTaskManager,
   _toolCallId: string,
   params: TaskUpdateInput
-): Promise<{ content: TextContent[]; details: { task: Task | null } }> {
+): Promise<{ content: (TextContent | ImageContent)[]; details: { task: Task | null } }> {
   const task = taskManager.updateTask(params.taskId, {
     content: params.content,
     status: params.status,
@@ -202,11 +204,12 @@ export async function executeTaskUpdate(
   });
 
   if (!task) {
-    return {
+    const result: ToolResultWithError<{ task: Task | null }> = {
       content: [{ type: "text", text: `Task not found: ${params.taskId}` }],
       details: { task: null },
       isError: true,
-    } as any;
+    };
+    return result;
   }
 
   return {

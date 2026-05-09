@@ -4,7 +4,7 @@
  * Prompts the user for a new session title.
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { TextareaRenderable } from "@opentui/core";

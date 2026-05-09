@@ -19,6 +19,7 @@ import {
   type Model,
   type Api,
 } from "@mariozechner/pi-ai";
+import { getErrorMessage } from "../tools/types.js";
 import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
 import {
   AuthStorage,
@@ -114,17 +115,17 @@ export function getPiSettingsManager(): SettingsManager {
 
 /* ───────── Pi model resolution ───────── */
 
-export function getCurrentPiModel(): Model<any> | undefined {
+export function getCurrentPiModel(): Model<Api> | undefined {
   const ref = getCurrentModel();
   if (!ref) return undefined;
   return getPiModelRegistry().find(ref.provider, ref.modelId);
 }
 
-export function getAvailablePiModels(): Model<any>[] {
+export function getAvailablePiModels(): Model<Api>[] {
   return getPiModelRegistry().getAvailable();
 }
 
-export function resolvePiModel(ref: ModelRef): Model<any> | undefined {
+export function resolvePiModel(ref: ModelRef): Model<Api> | undefined {
   return getPiModelRegistry().find(ref.provider, ref.modelId);
 }
 
@@ -281,7 +282,7 @@ export async function validateProviderCredential(
   credential: string
 ): Promise<{ valid: boolean; error?: string }> {
   try {
-    let models = getModels(provider as KnownProvider);
+    const models = getModels(provider as KnownProvider);
     if (!models || models.length === 0) {
       return { valid: false, error: "No models available for this provider" };
     }
@@ -326,8 +327,7 @@ export async function validateProviderCredential(
     }
 
     return { valid: true };
-  } catch (err: any) {
-    const msg = err?.message ?? String(err);
-    return { valid: false, error: msg };
+  } catch (err: unknown) {
+    return { valid: false, error: getErrorMessage(err) };
   }
 }

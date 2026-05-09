@@ -8,6 +8,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { randomUUID } from "crypto";
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
 const KOI_SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
@@ -39,7 +40,6 @@ function getTasksPath(sessionId: string): string {
 export class SessionTaskManager {
   private stores = new Map<string, Map<string, Task>>();
   private activeSessionId: string | null = null;
-  private taskIdCounter = 0;
 
   setActiveSession(sessionId: string): void {
     this.activeSessionId = sessionId;
@@ -68,7 +68,7 @@ export class SessionTaskManager {
   }
 
   generateTaskId(): string {
-    return `task-${++this.taskIdCounter}`;
+    return `task-${randomUUID()}`;
   }
 
   createTask(
@@ -164,7 +164,7 @@ export class SessionTaskManager {
         return;
       }
       const raw = fs.readFileSync(filePath, "utf-8");
-      const tasksArray: Task[] = JSON.parse(raw);
+      const tasksArray: Task[] = JSON.parse(raw) as Task[];
       const map = new Map<string, Task>();
       for (const t of tasksArray) {
         map.set(t.id, t);

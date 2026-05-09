@@ -5,7 +5,7 @@
  * empty space on the right reserved for the koi pet.
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createTextAttributes } from "@opentui/core";
 
 const HINT_TEXT =

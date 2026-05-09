@@ -255,8 +255,8 @@ export function buildUIMessagesFromAgentSession(session: AgentSession): UIMessag
       for (const block of msg.content) {
         if (block.type === "text") {
           text += block.text;
-        } else if (block.type === "thinking") {
-          thinking += (block as any).thinking || "";
+        } else if (block.type === "thinking" && "thinking" in block) {
+          thinking += (block as { thinking: string }).thinking || "";
         }
       }
       uiMessages.push({

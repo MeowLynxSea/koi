@@ -11,9 +11,10 @@ import { Type } from "typebox";
 import { spawn } from "child_process";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { TextContent } from "@mariozechner/pi-ai";
-import { checkPermission } from "../agent/check-permissions.js";
+import { checkPermission, isDangerousBashCommand } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
 import { withWriteLock } from "../agent/tool-orchestration.js";
+import type { ToolResultWithError } from "./types.js";
 
 export const bashSchema = Type.Object({
   command: Type.String({ description: "Bash command to execute" }),
@@ -26,23 +27,6 @@ export type BashToolInput = {
 };
 
 const MAX_OUTPUT_CHARS = 200_000;
-
-const DANGEROUS_PATTERNS = [
-  /\brm\s+-(rf|fr)\b/i,
-  /\bgit\s+reset\s+--hard\b/i,
-  /\bgit\s+push\s+--force\b/i,
-  /\bgit\s+clean\s+-[fd]\b/i,
-  /\bgit\s+checkout\s+--\s+\.\b/i,
-  /\bgit\s+restore\s+--\s+\.\b/i,
-  /\b(git\s+stash\s+drop|git\s+stash\s+clear)\b/i,
-  /\bgit\s+branch\s+-D\b/i,
-  /\bkubectl\s+delete\b/i,
-  /\bterraform\s+destroy\b/i,
-];
-
-function isDangerous(command: string): boolean {
-  return DANGEROUS_PATTERNS.some((p) => p.test(command));
-}
 
 function execBash(command: string, timeoutSec?: number): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
   return new Promise((resolve, reject) => {
@@ -108,7 +92,7 @@ export async function executeBash(params: BashToolInput): Promise<{ content: Tex
     output = output.slice(0, MAX_OUTPUT_CHARS) + `\n\n[Output truncated: ${output.length} chars total, limit: ${MAX_OUTPUT_CHARS}]`;
   }
 
-  const warning = isDangerous(params.command)
+  const warning = isDangerousBashCommand(params.command)
     ? "\n\n[Warning: This command may be destructive. Proceed with caution.]"
     : "";
 
@@ -138,20 +122,22 @@ export function createBashToolDefinition(_cwd: string): ToolDefinition<typeof ba
       return withWriteLock(async () => {
         const perm = checkPermission("bash", params);
         if (perm.decision === "deny") {
-          return {
+          const result: ToolResultWithError<{ exitCode: number; timedOut: boolean }> = {
             content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "bash operation blocked"}` }],
             details: { exitCode: 1, timedOut: false },
             isError: true,
-          } as any;
+          };
+          return result;
         }
         if (perm.decision === "ask") {
           const allowed = await requestPermission({ toolName: "bash", args: params, reason: perm.reason ?? "Confirm shell command" });
           if (!allowed) {
-            return {
+            const result: ToolResultWithError<{ exitCode: number; timedOut: boolean }> = {
               content: [{ type: "text", text: "User denied permission to execute command." }],
               details: { exitCode: 1, timedOut: false },
               isError: true,
-            } as any;
+            };
+            return result;
           }
         }
         return await executeBash(params);

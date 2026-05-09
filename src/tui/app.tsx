@@ -6,7 +6,7 @@
  * Integrates with Pi AgentSession for LLM agent loop.
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import { useDialog } from "@opentui-ui/dialog/react";
@@ -22,7 +22,7 @@ import { ModelModal } from "./components/model-modal.js";
 import { SessionModal } from "./components/session-modal.js";
 import { ConfirmModal } from "./components/confirm-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
-import { getSessionTitle, setSessionTitle, getCurrentModel, setCurrentModel, getAuxiliaryModel, setAuxiliaryModel, resolvePiModel } from "../config/settings.js";
+import { getCurrentModel, setCurrentModel, getAuxiliaryModel, setAuxiliaryModel, resolvePiModel } from "../config/settings.js";
 import { useKoiAgent } from "../agent/hooks.js";
 import type { SessionMeta } from "../agent/session-store.js";
 import { globalTaskManager, type Task } from "../agent/session-tasks.js";
@@ -47,7 +47,7 @@ export function App({ onExit }: AppProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<SessionMeta | null>(null);
   const [currentModel, setCurrentModelState] = useState(getCurrentModel);
-  const [auxiliaryModel, setAuxiliaryModelState] = useState(getAuxiliaryModel);
+  const [, setAuxiliaryModelState] = useState(getAuxiliaryModel);
 
   const [sidebarContextUsage, setSidebarContextUsage] = useState("0%");
   const [sidebarTokenCount, setSidebarTokenCount] = useState("(0)");
@@ -66,7 +66,6 @@ export function App({ onExit }: AppProps) {
     abort,
     expandAll,
     collapseAll,
-    clearMessages,
     switchSession,
     newSession,
     forkSession,
@@ -136,21 +135,21 @@ export function App({ onExit }: AppProps) {
     const a = args as Record<string, unknown>;
     switch (toolName) {
       case "bash":
-        return `Command: ${String(a.command ?? "?")}`;
+        return `Command: ${String(a["command"] ?? "?")}`;
       case "webfetch":
-        return `URL: ${String(a.url ?? "?")}`;
+        return `URL: ${String(a["url"] ?? "?")}`;
       case "read":
-        return `Path: ${String(a.path ?? a.file ?? "?")}`;
+        return `Path: ${String(a["path"] ?? a["file"] ?? "?")}`;
       case "write":
-        return `Path: ${String(a.path ?? a.file ?? "?")}`;
+        return `Path: ${String(a["path"] ?? a["file"] ?? "?")}`;
       case "edit":
-        return `Path: ${String(a.path ?? a.file ?? "?")}`;
+        return `Path: ${String(a["path"] ?? a["file"] ?? "?")}`;
       case "grep":
-        return `Pattern: ${String(a.pattern ?? "?")}`;
+        return `Pattern: ${String(a["pattern"] ?? "?")}`;
       case "find":
-        return `Path: ${String(a.path ?? ".")}`;
+        return `Path: ${String(a["path"] ?? ".")}`;
       case "ls":
-        return `Path: ${String(a.path ?? ".")}`;
+        return `Path: ${String(a["path"] ?? ".")}`;
       default:
         return JSON.stringify(args, null, 2);
     }
@@ -236,7 +235,7 @@ export function App({ onExit }: AppProps) {
         },
       });
 
-      resolvePermission(request.id, !!allowed);
+      resolvePermission(request.id, allowed);
       processingPermissionRef.current = false;
       setPermissionModalOpen(false);
       permissionResolveRef.current = null;
@@ -255,7 +254,7 @@ export function App({ onExit }: AppProps) {
   const handleSubmit = useCallback(
     (text: string) => {
       if (text.trim() && isReady && !isStreaming) {
-        prompt(text);
+        void prompt(text);
         setInputText("");
       }
     },
@@ -320,7 +319,7 @@ export function App({ onExit }: AppProps) {
         label: "Start a new session",
         section: "Session",
         action: () => {
-          handleNewSession();
+          void handleNewSession();
         },
       },
       {
@@ -335,8 +334,9 @@ export function App({ onExit }: AppProps) {
         id: "/sessions",
         label: "Browse sessions",
         section: "Session",
-        action: () => {
-          refreshSessionList().then(() => setShowSessionModal(true));
+        action: async () => {
+          await refreshSessionList();
+          setShowSessionModal(true);
         },
       },
       {
@@ -389,7 +389,7 @@ export function App({ onExit }: AppProps) {
 
     if (key.ctrl && key.name === "c") {
       if (isStreaming) {
-        abort();
+        void abort();
       } else {
         setShowExitModal(true);
       }
@@ -402,7 +402,10 @@ export function App({ onExit }: AppProps) {
     }
 
     if (key.ctrl && key.name === "s") {
-      refreshSessionList().then(() => setShowSessionModal(true));
+      void (async () => {
+        await refreshSessionList();
+        setShowSessionModal(true);
+      })();
       return;
     }
 

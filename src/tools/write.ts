@@ -13,6 +13,7 @@ import type { TextContent } from "@mariozechner/pi-ai";
 import { checkPermission } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
 import { withWriteLock } from "../agent/tool-orchestration.js";
+import type { ToolResultWithError } from "./types.js";
 
 export const writeSchema = Type.Object({
   path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
@@ -59,20 +60,22 @@ export function createWriteToolDefinition(_cwd: string): ToolDefinition<typeof w
       return withWriteLock(async () => {
         const perm = checkPermission("write", params);
         if (perm.decision === "deny") {
-          return {
+          const result: ToolResultWithError<{ bytesWritten: number }> = {
             content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "write operation blocked"}` }],
             details: { bytesWritten: 0 },
             isError: true,
-          } as any;
+          };
+          return result;
         }
         if (perm.decision === "ask") {
           const allowed = await requestPermission({ toolName: "write", args: params, reason: perm.reason ?? "Confirm file write" });
           if (!allowed) {
-            return {
+            const result: ToolResultWithError<{ bytesWritten: number }> = {
               content: [{ type: "text", text: "User denied permission to write file." }],
               details: { bytesWritten: 0 },
               isError: true,
-            } as any;
+            };
+            return result;
           }
         }
         return await executeWrite(params);

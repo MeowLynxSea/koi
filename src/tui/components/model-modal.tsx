@@ -8,7 +8,7 @@
  * in the top-right corner. Press Tab to toggle between modes.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";

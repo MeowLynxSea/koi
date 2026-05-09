@@ -5,7 +5,6 @@
  * All tools are registered via createAgentSession({ customTools, noTools: 'builtin' }).
  */
 
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { SessionTaskManager } from "../agent/session-tasks.js";
 import { createReadToolDefinition } from "./read.js";
 import { createGrepToolDefinition } from "./grep.js";
@@ -21,35 +20,36 @@ import {
   createTaskListToolDefinition,
   createTaskUpdateToolDefinition,
 } from "./task.js";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 export function createCodingToolDefinitions(
-  cwd: string,
+  _cwd: string,
   taskManager: SessionTaskManager
-): ToolDefinition<any, any, any>[] {
+): ToolDefinition[] {
   return [
-    createReadToolDefinition(cwd),
-    createGrepToolDefinition(cwd),
-    createGlobToolDefinition(cwd),
-    createLsToolDefinition(cwd),
-    createBashToolDefinition(cwd),
-    createEditToolDefinition(cwd),
-    createWriteToolDefinition(cwd),
-    createWebFetchToolDefinition(cwd),
-    createTaskCreateToolDefinition(cwd, taskManager),
-    createTaskGetToolDefinition(cwd, taskManager),
-    createTaskListToolDefinition(cwd, taskManager),
-    createTaskUpdateToolDefinition(cwd, taskManager),
-  ];
+    createReadToolDefinition(_cwd),
+    createGrepToolDefinition(_cwd),
+    createGlobToolDefinition(_cwd),
+    createLsToolDefinition(_cwd),
+    createBashToolDefinition(_cwd),
+    createEditToolDefinition(_cwd),
+    createWriteToolDefinition(_cwd),
+    createWebFetchToolDefinition(_cwd),
+    createTaskCreateToolDefinition(_cwd, taskManager),
+    createTaskGetToolDefinition(_cwd, taskManager),
+    createTaskListToolDefinition(_cwd, taskManager),
+    createTaskUpdateToolDefinition(_cwd, taskManager),
+  ] as ToolDefinition[];
 }
 
-export function createReadOnlyToolDefinitions(cwd: string): ToolDefinition<any, any, any>[] {
+export function createReadOnlyToolDefinitions(_cwd: string): ToolDefinition[] {
   return [
-    createReadToolDefinition(cwd),
-    createGrepToolDefinition(cwd),
-    createGlobToolDefinition(cwd),
-    createLsToolDefinition(cwd),
-    createWebFetchToolDefinition(cwd),
-  ];
+    createReadToolDefinition(_cwd),
+    createGrepToolDefinition(_cwd),
+    createGlobToolDefinition(_cwd),
+    createLsToolDefinition(_cwd),
+    createWebFetchToolDefinition(_cwd),
+  ] as ToolDefinition[];
 }
 
 export * from "./types.js";

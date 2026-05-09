@@ -12,6 +12,8 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { TextContent } from "@mariozechner/pi-ai";
 import { checkPermission } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
+import type { ToolResultWithError } from "./types.js";
+import { getErrorMessage } from "./types.js";
 
 export const readSchema = Type.Object({
   path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
@@ -36,6 +38,9 @@ const BLOCKED_PATHS = [
   "/dev/stdout",
   "/dev/stderr",
 ];
+
+/** 可配置的文件大小上限（默认 256 MiB） */
+const MAX_FILE_SIZE_BYTES = 256 * 1024 * 1024;
 
 function isBlockedPath(p: string): boolean {
   const normalized = p.toLowerCase().replace(/\\/g, "/");
@@ -68,12 +73,18 @@ export async function executeRead(
     throw new Error(`Reading from device/special paths is not allowed: ${params.path}`);
   }
 
-  const stats = statSync(filePath);
+  let stats: ReturnType<typeof statSync>;
+  try {
+    stats = statSync(filePath);
+  } catch (err: unknown) {
+    throw new Error(`Unable to read file metadata: ${params.path} (${getErrorMessage(err)})`);
+  }
+
   if (stats.isDirectory()) {
     throw new Error(`Path is a directory, not a file: ${params.path}`);
   }
 
-  if (stats.size > 256 * 1024 * 1024) {
+  if (stats.size > MAX_FILE_SIZE_BYTES) {
     throw new Error(`File too large (${(stats.size / 1024 / 1024).toFixed(1)} MiB). Use a more targeted approach.`);
   }
 
@@ -86,7 +97,7 @@ export async function executeRead(
   };
 }
 
-export function createReadToolDefinition(cwd: string): ToolDefinition<typeof readSchema, { path: string; totalLines: number; readLines: number }> {
+export function createReadToolDefinition(_cwd: string): ToolDefinition<typeof readSchema, { path: string; totalLines: number; readLines: number }> {
   return {
     name: "read",
     label: "Read",
@@ -102,20 +113,22 @@ export function createReadToolDefinition(cwd: string): ToolDefinition<typeof rea
     async execute(toolCallId, params, _signal, _onUpdate) {
       const perm = checkPermission("read", params);
       if (perm.decision === "deny") {
-        return {
+        const result: ToolResultWithError<{ path: string; totalLines: number; readLines: number }> = {
           content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "read operation blocked"}` }],
           details: { path: params.path, totalLines: 0, readLines: 0 },
           isError: true,
-        } as any;
+        };
+        return result;
       }
       if (perm.decision === "ask") {
         const allowed = await requestPermission({ toolName: "read", args: params, reason: perm.reason ?? "Confirm file read" });
         if (!allowed) {
-          return {
+          const result: ToolResultWithError<{ path: string; totalLines: number; readLines: number }> = {
             content: [{ type: "text", text: "User denied permission to read the file." }],
             details: { path: params.path, totalLines: 0, readLines: 0 },
             isError: true,
-          } as any;
+          };
+          return result;
         }
       }
       return await executeRead(toolCallId, params);

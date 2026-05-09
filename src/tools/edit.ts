@@ -17,6 +17,7 @@ import type { TextContent } from "@mariozechner/pi-ai";
 import { checkPermission } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
 import { withWriteLock } from "../agent/tool-orchestration.js";
+import type { ToolResultWithError } from "./types.js";
 
 export const editSchema = Type.Object({
   path: Type.String({ description: "Path to the file to edit (relative or absolute)" }),
@@ -78,7 +79,7 @@ export async function executeEdit(params: EditToolInput): Promise<{ content: Tex
   const encoding = buffer[0] === 0xff && buffer[1] === 0xfe ? "utf16le" : "utf8";
   const originalContent = buffer.toString(encoding);
   const crlf = originalContent.includes("\r\n");
-  let fileContent = originalContent.replace(/\r\n/g, "\n");
+  const fileContent = originalContent.replace(/\r\n/g, "\n");
 
   if (params.old_string === params.new_string) {
     throw new Error("old_string and new_string are identical — no change needed.");
@@ -138,20 +139,22 @@ export function createEditToolDefinition(_cwd: string): ToolDefinition<typeof ed
       return withWriteLock(async () => {
         const perm = checkPermission("edit", params);
         if (perm.decision === "deny") {
-          return {
+          const result: ToolResultWithError<{ replacements: number }> = {
             content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "edit operation blocked"}` }],
             details: { replacements: 0 },
             isError: true,
-          } as any;
+          };
+          return result;
         }
         if (perm.decision === "ask") {
           const allowed = await requestPermission({ toolName: "edit", args: params, reason: perm.reason ?? "Confirm file edit" });
           if (!allowed) {
-            return {
+            const result: ToolResultWithError<{ replacements: number }> = {
               content: [{ type: "text", text: "User denied permission to edit file." }],
               details: { replacements: 0 },
               isError: true,
-            } as any;
+            };
+            return result;
           }
         }
         return await executeEdit(params);

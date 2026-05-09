@@ -11,6 +11,7 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { TextContent } from "@mariozechner/pi-ai";
 import { checkPermission } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
+import type { ToolResultWithError } from "./types.js";
 
 export const lsSchema = Type.Object({
   path: Type.Optional(Type.String({ description: "Directory to list (default: current directory)" })),
@@ -60,20 +61,22 @@ export function createLsToolDefinition(_cwd: string): ToolDefinition<typeof lsSc
     async execute(_toolCallId, params, _signal, _onUpdate) {
       const perm = checkPermission("ls", params);
       if (perm.decision === "deny") {
-        return {
+        const result: ToolResultWithError<{ entryCount: number }> = {
           content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "ls operation blocked"}` }],
           details: { entryCount: 0 },
           isError: true,
-        } as any;
+        };
+        return result;
       }
       if (perm.decision === "ask") {
         const allowed = await requestPermission({ toolName: "ls", args: params, reason: perm.reason ?? "Confirm directory listing" });
         if (!allowed) {
-          return {
+          const result: ToolResultWithError<{ entryCount: number }> = {
             content: [{ type: "text", text: "User denied permission to list directory." }],
             details: { entryCount: 0 },
             isError: true,
-          } as any;
+          };
+          return result;
         }
       }
       return await executeLs(params);

@@ -7,6 +7,9 @@
  *   ask   → show a confirmation modal and wait for user input
  */
 
+import { statSync } from "fs";
+import { isPreapprovedDomain, isDangerousHost } from "../tools/webfetch-domains.js";
+
 export type PermissionDecision = "allow" | "deny" | "ask";
 
 export interface PermissionRule {
@@ -72,13 +75,17 @@ const SENSITIVE_FILE_PATTERNS = [
   /password/i,
 ];
 
+export function isDangerousBashCommand(command: string): boolean {
+  return DANGEROUS_BASH_PATTERNS.some((p) => p.test(command));
+}
+
 function stringifyArgs(toolName: string, args: unknown): string {
   if (typeof args === "string") return args;
   if (args && typeof args === "object") {
     const obj = args as Record<string, unknown>;
-    if (toolName === "bash" && typeof obj.command === "string") return obj.command;
-    if (typeof obj.path === "string") return obj.path;
-    if (typeof obj.file_path === "string") return obj.file_path;
+    if (toolName === "bash" && typeof obj["command"] === "string") return obj["command"];
+    if (typeof obj["path"] === "string") return obj["path"];
+    if (typeof obj["file_path"] === "string") return obj["file_path"];
     return JSON.stringify(args);
   }
   return String(args);
@@ -117,7 +124,7 @@ export function checkPermission(
 
   // 1. Blocked paths (device files)
   if (toolName === "read" || toolName === "bash" || toolName === "edit" || toolName === "write") {
-    const path = (args as Record<string, unknown>)?.path ?? (args as Record<string, unknown>)?.file_path;
+    const path = (args as Record<string, unknown>)?.["path"] ?? (args as Record<string, unknown>)?.["file_path"];
     if (typeof path === "string" && matchesBlockedPath(path)) {
       return { decision: "deny", reason: `Access to device/special path blocked: ${path}` };
     }
@@ -137,7 +144,7 @@ export function checkPermission(
 
   // 3. Sensitive files for edit/write
   if (toolName === "edit" || toolName === "write") {
-    const path = (args as Record<string, unknown>)?.path ?? (args as Record<string, unknown>)?.file_path;
+    const path = (args as Record<string, unknown>)?.["path"] ?? (args as Record<string, unknown>)?.["file_path"];
     if (typeof path === "string" && isSensitiveFile(path)) {
       return {
         decision: "ask",
@@ -148,25 +155,23 @@ export function checkPermission(
 
   // 4. Large file reads (> 1 GiB) — ask
   if (toolName === "read") {
-    const path = (args as Record<string, unknown>)?.path;
+    const path = (args as Record<string, unknown>)?.["path"];
     if (typeof path === "string") {
       try {
-        const { statSync } = require("fs");
         const stats = statSync(path);
         if (stats.size > 1024 * 1024 * 1024) {
           return { decision: "ask", reason: `File is very large (${(stats.size / 1024 / 1024).toFixed(0)} MiB). Confirm to read.` };
         }
       } catch {
-        // ignore stat errors
+        return { decision: "ask", reason: `Unable to verify file size for ${path}. Confirm to read.` };
       }
     }
   }
 
   // 5. WebFetch: dangerous hosts → deny, non-preapproved → ask
   if (toolName === "webfetch") {
-    const url = (args as Record<string, unknown>)?.url;
+    const url = (args as Record<string, unknown>)?.["url"];
     if (typeof url === "string") {
-      const { isPreapprovedDomain, isDangerousHost } = require("../tools/webfetch-domains.js");
       try {
         const parsed = new URL(url);
         const hostname = parsed.hostname.toLowerCase();

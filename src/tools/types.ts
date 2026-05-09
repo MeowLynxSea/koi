@@ -3,6 +3,7 @@
  */
 
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult } from "@mariozechner/pi-coding-agent";
 
 export interface ToolMetadata {
   name: string;
@@ -36,4 +37,12 @@ export function isDestructiveTool(name: string): boolean {
   return TOOL_METADATA[name]?.isDestructive ?? false;
 }
 
-export type AnyToolDefinition = ToolDefinition<any, any, any>;
+export type AnyToolDefinition = ToolDefinition;
+
+/** AgentToolResult with optional isError flag for permission denials. */
+export type ToolResultWithError<T> = AgentToolResult<T> & { isError?: boolean };
+
+/** Extract a readable message from an unknown error value. */
+export function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}

@@ -5,7 +5,7 @@
  * Uses OpenTUI <textarea> for editing logic.
  */
 
-import React, { useRef, useMemo } from "react";
+import { useRef, useMemo } from "react";
 import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
 import type { KeyEvent } from "@opentui/core";
 

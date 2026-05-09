@@ -12,6 +12,7 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { TextContent } from "@mariozechner/pi-ai";
 import { checkPermission } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
+import type { ToolResultWithError } from "./types.js";
 
 export const grepSchema = Type.Object({
   pattern: Type.String({ description: "Search pattern (regex or literal string)" }),
@@ -131,8 +132,8 @@ function execSearch(cmd: string, args: string[]): Promise<{ stdout: string; stde
     const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
-    child.stdout?.on("data", (chunk) => { stdout += chunk; });
-    child.stderr?.on("data", (chunk) => { stderr += chunk; });
+    child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf-8"); });
+    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf-8"); });
     child.on("error", (err) => reject(err));
     child.on("close", (code) => {
       resolve({ stdout, stderr, exitCode: code ?? 0 });
@@ -148,8 +149,8 @@ export async function executeGrep(params: GrepToolInput): Promise<{ content: Tex
   try {
     const args = buildRgArgs(params);
     ({ stdout, stderr, exitCode } = await execSearch("rg", args));
-  } catch (err: any) {
-    if (err.code === "ENOENT") {
+  } catch (err: unknown) {
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
       // ripgrep not installed — fallback to system grep
       const args = buildGrepArgs(params);
       ({ stdout, stderr, exitCode } = await execSearch("grep", args));
@@ -203,20 +204,22 @@ export function createGrepToolDefinition(_cwd: string): ToolDefinition<typeof gr
     async execute(_toolCallId, params, _signal, _onUpdate) {
       const perm = checkPermission("grep", params);
       if (perm.decision === "deny") {
-        return {
+        const result: ToolResultWithError<{ matches: number; truncated: boolean }> = {
           content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "grep operation blocked"}` }],
           details: { matches: 0, truncated: false },
           isError: true,
-        } as any;
+        };
+        return result;
       }
       if (perm.decision === "ask") {
         const allowed = await requestPermission({ toolName: "grep", args: params as GrepToolInput, reason: perm.reason ?? "Confirm search" });
         if (!allowed) {
-          return {
+          const result: ToolResultWithError<{ matches: number; truncated: boolean }> = {
             content: [{ type: "text", text: "User denied permission to search." }],
             details: { matches: 0, truncated: false },
             isError: true,
-          } as any;
+          };
+          return result;
         }
       }
       return await executeGrep(params);

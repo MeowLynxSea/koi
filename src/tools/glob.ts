@@ -13,6 +13,7 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { TextContent } from "@mariozechner/pi-ai";
 import { checkPermission } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
+import type { ToolResultWithError } from "./types.js";
 
 export const globSchema = Type.Object({
   pattern: Type.String({ description: "Glob pattern to match files, e.g. '**/*.ts' or 'src/**/*.tsx'" }),
@@ -77,20 +78,22 @@ export function createGlobToolDefinition(_cwd: string): ToolDefinition<typeof gl
     async execute(_toolCallId, params, _signal, _onUpdate) {
       const perm = checkPermission("glob", params);
       if (perm.decision === "deny") {
-        return {
+        const result: ToolResultWithError<{ count: number; truncated: boolean }> = {
           content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "glob operation blocked"}` }],
           details: { count: 0, truncated: false },
           isError: true,
-        } as any;
+        };
+        return result;
       }
       if (perm.decision === "ask") {
         const allowed = await requestPermission({ toolName: "glob", args: params, reason: perm.reason ?? "Confirm file search" });
         if (!allowed) {
-          return {
+          const result: ToolResultWithError<{ count: number; truncated: boolean }> = {
             content: [{ type: "text", text: "User denied permission to search files." }],
             details: { count: 0, truncated: false },
             isError: true,
-          } as any;
+          };
+          return result;
         }
       }
       return await executeGlob(params);

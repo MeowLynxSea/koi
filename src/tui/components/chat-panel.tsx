@@ -4,7 +4,7 @@
  * Renders the scrollable message history using OpenTUI native components.
  */
 
-import React, { useMemo, useImperativeHandle, forwardRef, useRef, useState, useEffect } from "react";
+import { useMemo, useImperativeHandle, forwardRef, useRef, useState, useEffect } from "react";
 import stringWidth from "string-width";
 import { SyntaxStyle, type ScrollBoxRenderable } from "@opentui/core";
 
@@ -26,8 +26,8 @@ export type UIMessage =
       type: "tool_call";
       toolCallId: string;
       toolName: string;
-      args: any;
-      result?: any;
+      args: Record<string, unknown>;
+      result?: unknown;
       isError?: boolean;
       collapsed: boolean;
     }
@@ -91,23 +91,23 @@ function padToWidth(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - w));
 }
 
-function summarizeToolCall(toolName: string, args: any): string {
+function summarizeToolCall(toolName: string, args: Record<string, unknown>): string {
   try {
     switch (toolName) {
       case "read":
-        return `read: ${args.path ?? args.file ?? "?"}`;
+        return `read: ${String(args["path"] ?? args["file"] ?? "?")}`;
       case "bash":
-        return `bash: ${(args.command ?? "").slice(0, 40)}${(args.command ?? "").length > 40 ? "..." : ""}`;
+        return `bash: ${String(args["command"] ?? "").slice(0, 40)}${String(args["command"] ?? "").length > 40 ? "..." : ""}`;
       case "edit":
-        return `edit: ${args.path ?? args.file ?? "?"}`;
+        return `edit: ${String(args["path"] ?? args["file"] ?? "?")}`;
       case "write":
-        return `write: ${args.path ?? args.file ?? "?"}`;
+        return `write: ${String(args["path"] ?? args["file"] ?? "?")}`;
       case "grep":
-        return `grep: ${args.pattern ?? "?"}`;
+        return `grep: ${String(args["pattern"] ?? "?")}`;
       case "find":
-        return `find: ${args.path ?? "."}`;
+        return `find: ${String(args["path"] ?? ".")}`;
       case "ls":
-        return `ls: ${args.path ?? "."}`;
+        return `ls: ${String(args["path"] ?? ".")}`;
       default:
         return `${toolName}: ${JSON.stringify(args).slice(0, 40)}`;
     }
@@ -116,7 +116,7 @@ function summarizeToolCall(toolName: string, args: any): string {
   }
 }
 
-function formatResult(result: any, isError?: boolean): string {
+function formatResult(result: unknown): string {
   if (result === undefined || result === null) return "";
   if (typeof result === "string") return result;
   try {
@@ -385,7 +385,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                           <>
                             <text fg="#6c6c7c">{margin}  ──</text>
                             {wrapText(
-                              formatResult(msg.result, msg.isError),
+                              msg.isError ? `Error: ${formatResult(msg.result)}` : formatResult(msg.result),
                               contentWidth,
                               2
                             ).map((line, j) => (

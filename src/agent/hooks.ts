@@ -64,8 +64,17 @@ function isAssistantMessage(msg: unknown): msg is AssistantMessage {
     typeof msg === "object" &&
     msg !== null &&
     "role" in msg &&
-    (msg as any).role === "assistant"
+    (msg as Record<string, unknown>)["role"] === "assistant"
   );
+}
+
+interface ThinkingBlock {
+  type: "thinking";
+  thinking: string;
+}
+
+function isThinkingBlock(block: { type: string }): block is ThinkingBlock {
+  return block.type === "thinking" && "thinking" in block;
 }
 
 function extractTextAndThinking(msg: AssistantMessage): {
@@ -77,8 +86,8 @@ function extractTextAndThinking(msg: AssistantMessage): {
   for (const block of msg.content) {
     if (block.type === "text") {
       text += block.text;
-    } else if (block.type === "thinking") {
-      thinking += (block as any).thinking || "";
+    } else if (isThinkingBlock(block)) {
+      thinking += block.thinking || "";
     }
   }
   return { text, thinking };
@@ -159,9 +168,12 @@ function handleEvent(
       if (!isAssistantMessage(event.message)) break;
       const msgId = streamingMsgIdRef.current;
       if (!msgId) return;
-      const assistantMsg = event.message as AssistantMessage;
+      const assistantMsg = event.message;
       const { text, thinking } = extractTextAndThinking(assistantMsg);
-      const assistantEvent = (event as any).assistantMessageEvent;
+      const assistantEvent =
+        "assistantMessageEvent" in event
+          ? (event as { assistantMessageEvent: { type: string } }).assistantMessageEvent
+          : undefined;
 
       setMessages((prev) => {
         const next = [...prev];
@@ -237,7 +249,7 @@ function handleEvent(
           type: "tool_call",
           toolCallId: event.toolCallId,
           toolName: event.toolName,
-          args: event.args,
+          args: event.args as Record<string, unknown>,
           collapsed: !allExpandedRef.current,
         })
       );
@@ -471,17 +483,17 @@ export function useKoiAgent(): KoiAgentState {
   useEffect(() => {
     let mounted = true;
 
-    continueRecentSession(globalTaskManager)
+    void continueRecentSession(globalTaskManager)
       .then((result) => {
         if (!mounted) {
           result.session.dispose();
           return;
         }
-        setupSession(result);
+        void setupSession(result);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (!mounted) return;
-        setError(err?.message ?? String(err));
+        setError(err instanceof Error ? err.message : String(err));
         setIsReady(true);
       });
 
@@ -554,8 +566,8 @@ export function useKoiAgent(): KoiAgentState {
         streamingMsgIdRef.current = null;
         pendingToolsRef.current.clear();
         await setupSession(result);
-      } catch (err: any) {
-        setError(err?.message ?? String(err));
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
         setIsReady(true);
       }
     },
@@ -583,8 +595,8 @@ export function useKoiAgent(): KoiAgentState {
       currentModelRef.current = getCurrentModel();
       auxiliaryModelRef.current = getAuxiliaryModel();
       await setupSession(result);
-    } catch (err: any) {
-      setError(err?.message ?? String(err));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
       setIsReady(true);
     }
   }, [session, saveCurrentState, setupSession]);
@@ -716,8 +728,8 @@ export function useKoiAgent(): KoiAgentState {
         currentModelRef.current = getCurrentModel();
         auxiliaryModelRef.current = getAuxiliaryModel();
         await setupSession(result);
-      } catch (err: any) {
-        setError(err?.message ?? String(err));
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
         setIsReady(true);
       }
     } else {
