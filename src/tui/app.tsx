@@ -986,9 +986,6 @@ export function App({ onExit }: AppProps) {
         onClose={() => setShowForkModal(false)}
         session={session}
         onFork={handleFork}
-        tasks={tasks}
-        agentMode={agentMode}
-        pendingPlanText={getCurrentPlanText()}
       />
       <ImagePreviewModal isActive={showImageModal} url={imageModalUrl} onClose={handleCloseImageModal} terminalWidth={width} terminalHeight={height} />
       <EditPendingModal
