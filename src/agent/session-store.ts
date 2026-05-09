@@ -21,6 +21,7 @@ import {
 } from "../config/settings.js";
 import { createCodingToolDefinitions } from "../tools/index.js";
 import type { SessionTaskManager } from "./session-tasks.js";
+import { forkManager } from "./session-fork.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
 const KOI_SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
@@ -34,6 +35,12 @@ export interface SessionMeta {
   createdAt: Date;
   updatedAt: Date;
   messageCount: number;
+  /** Fork source session ID (null for original sessions) */
+  forkedFrom: string | null;
+  /** Depth in the fork tree (0 for original, incremented for each fork level) */
+  forkDepth: number;
+  /** List of session IDs that were forked from this session */
+  childForks: string[];
 }
 
 export interface KoiSessionState {
@@ -44,6 +51,26 @@ export interface KoiSessionState {
   messages: UIMessage[];
   createdAt: number;
   updatedAt: number;
+
+  // === Fork-related state ===
+  /** Fork source session ID (null for original sessions) */
+  forkedFrom: string | null;
+  /** Branch ID at the fork point */
+  forkBranchId: string | null;
+  /** Timestamp when this session was forked */
+  forkedAt: number | null;
+
+  // === Agent mode state ===
+  /** Current agent mode (build/ask/plan) */
+  agentMode: "build" | "ask" | "plan";
+  /** Active tool names for current mode */
+  activeTools: string[];
+
+  // === UI state ===
+  /** IDs of expanded messages (thinking blocks) */
+  expandedMessages: string[];
+  /** IDs of collapsed messages (tool results) */
+  collapsedMessages: string[];
 }
 
 /**
@@ -110,6 +137,7 @@ function safeDeleteDir(dir: string): void {
  */
 
 function sessionInfoToMeta(info: SessionInfo): SessionMeta {
+  const forkMeta = forkManager.getForkMetadata(info.id);
   return {
     id: info.id,
     title: info.name || info.firstMessage || "Untitled Session",
@@ -118,6 +146,10 @@ function sessionInfoToMeta(info: SessionInfo): SessionMeta {
     createdAt: info.created,
     updatedAt: info.modified,
     messageCount: info.messageCount,
+    // Fork-related fields
+    forkedFrom: forkMeta?.sourceSessionId ?? null,
+    forkDepth: forkMeta ? forkManager.getForkDepth(info.id) : 0,
+    childForks: forkManager.getChildForks(info.id),
   };
 }
 
@@ -166,6 +198,8 @@ async function createAgentSessionWithConfig(
 
 export async function listSessions(): Promise<SessionMeta[]> {
   try {
+    // Clear fork manager cache to ensure fresh data
+    forkManager.clearCache();
     const infos = await SessionManager.listAll();
     return infos.map(sessionInfoToMeta);
   } catch {
@@ -190,6 +224,32 @@ export async function createNewSession(
     messages: [],
     createdAt: now,
     updatedAt: now,
+    // Fork-related state (null for new sessions)
+    forkedFrom: null,
+    forkBranchId: null,
+    forkedAt: null,
+    // Agent mode state (defaults for new sessions)
+    agentMode: "build",
+    activeTools: [
+      "read",
+      "grep",
+      "glob",
+      "ls",
+      "bash",
+      "edit",
+      "write",
+      "webfetch",
+      "taskCreate",
+      "taskGet",
+      "taskList",
+      "taskUpdate",
+      "askUserQuestion",
+      "enterPlanMode",
+      "exitPlanMode",
+    ],
+    // UI state
+    expandedMessages: [],
+    collapsedMessages: [],
   };
   saveKoiState(result.session.sessionId, state);
   return result;

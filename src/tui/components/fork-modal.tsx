@@ -11,6 +11,8 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { Task } from "../../agent/session-tasks.js";
+import type { AgentMode } from "../../agent/mode.js";
 
 type SessionManagerType = AgentSession["sessionManager"];
 type SessionTreeNode = ReturnType<SessionManagerType["getTree"]>[number];
@@ -20,6 +22,12 @@ interface ForkModalProps {
   onClose: () => void;
   session: AgentSession | null;
   onFork: (entryId: string) => void;
+  /** Current tasks to be included in fork */
+  tasks?: Task[];
+  /** Current agent mode */
+  agentMode?: AgentMode;
+  /** Current pending plan text (if any) */
+  pendingPlanText?: string | null;
 }
 
 interface TreeRow {
@@ -62,7 +70,7 @@ function isMessageEntry(entry: unknown): entry is MessageEntry {
 function isVisibleNode(node: SessionTreeNode): boolean {
   const entry = node.entry;
   if (!isMessageEntry(entry)) return false;
-  return entry.message.role === "user" || entry.message.role === "assistant";
+  return entry.message.role === "user";
 }
 
 function isUserMessageEntry(entry: unknown): boolean {
@@ -211,14 +219,28 @@ function findDefaultIndex(rows: TreeRow[], session: AgentSession): number {
  * from an assistant node would cut off the user's original question.
  */
 
-export function ForkModal({ isActive, onClose, session, onFork }: ForkModalProps) {
+export function ForkModal({
+  isActive,
+  onClose,
+  session,
+  onFork,
+  tasks = [],
+  agentMode = "build",
+  pendingPlanText,
+}: ForkModalProps) {
   const { width, height } = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [rows, setRows] = useState<TreeRow[]>([]);
 
+  // Has anything to preview?
+  const hasPreview = tasks.length > 0 || agentMode !== "build" || pendingPlanText;
+
+  // Calculate panel dimensions
   const panelWidth = Math.min(80, Math.max(52, Math.floor(width * 0.8)));
-  const listHeight = Math.min(16, Math.floor(height * 0.55));
+  // Reduced height to make room for preview panel
+  const previewHeight = hasPreview ? 5 : 0;
+  const listHeight = Math.min(16 - previewHeight, Math.floor(height * 0.5));
   const contentWidth = Math.max(1, panelWidth - 4);
 
   // Recompute tree rows when modal opens
@@ -296,6 +318,7 @@ export function ForkModal({ isActive, onClose, session, onFork }: ForkModalProps
       justifyContent="center"
     >
       <box
+        alignSelf="center"
         width={panelWidth}
         flexDirection="column"
         borderStyle="rounded"
@@ -311,6 +334,37 @@ export function ForkModal({ isActive, onClose, session, onFork }: ForkModalProps
         <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })} marginTop={1}>
           Select a user message to branch from:
         </text>
+
+        {/* Fork Preview - shows what's being preserved */}
+        {hasPreview && (
+          <box
+            paddingX={1}
+            borderStyle="single"
+            borderColor="#4a4a5a"
+            flexDirection="column"
+          >
+            <text fg="#60a5fa" attributes={createTextAttributes({ bold: true })}>
+              Will be preserved in fork:
+            </text>
+            <box flexDirection="row" gap={2}>
+              {tasks.length > 0 && (
+                <text fg="#50fa7b">
+                  ✓ {tasks.length} task{tasks.length !== 1 ? "s" : ""}
+                </text>
+              )}
+              {agentMode !== "build" && (
+                <text fg="#ff79c6">
+                  ✓ Mode: {agentMode}
+                </text>
+              )}
+              {pendingPlanText && (
+                <text fg="#bd93f9">
+                  ✓ Pending plan
+                </text>
+              )}
+            </box>
+          </box>
+        )}
 
         {/* Tree list */}
         <box height={listHeight} flexDirection="column" overflow="hidden" marginTop={1}>

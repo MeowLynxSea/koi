@@ -61,6 +61,7 @@ import {
   injectModeIntoSystemPrompt,
   type AgentMode,
 } from "../agent/mode.js";
+import { getCurrentPlanText } from "../agent/plan-ui.js";
 import {
   subscribeQuestions,
   getQuestionQueue,
@@ -234,6 +235,7 @@ export function App({ onExit }: AppProps) {
     setSessionTitle,
     deleteSession,
     addPlanMessage,
+    syncAgentMode,
   } = useKoiAgent();
 
   // Sync agent mode changes to the active session's tool set
@@ -241,8 +243,9 @@ export function App({ onExit }: AppProps) {
     (mode: AgentMode) => {
       setGlobalAgentMode(mode);
       setAgentMode(mode);
+      syncAgentMode(mode);
     },
-    []
+    [syncAgentMode]
   );
 
   const handleModeSwitch = useCallback(() => {
@@ -978,7 +981,15 @@ export function App({ onExit }: AppProps) {
           onCancel={handleCancelDelete}
         />
       )}
-      <ForkModal isActive={showForkModal} onClose={() => setShowForkModal(false)} session={session} onFork={handleFork} />
+      <ForkModal
+        isActive={showForkModal}
+        onClose={() => setShowForkModal(false)}
+        session={session}
+        onFork={handleFork}
+        tasks={tasks}
+        agentMode={agentMode}
+        pendingPlanText={getCurrentPlanText()}
+      />
       <ImagePreviewModal isActive={showImageModal} url={imageModalUrl} onClose={handleCloseImageModal} terminalWidth={width} terminalHeight={height} />
       <EditPendingModal
         isActive={showEditPendingModal}

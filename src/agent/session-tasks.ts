@@ -25,6 +25,10 @@ export interface Task {
   blocks: string[];
   createdAt: number;
   updatedAt: number;
+  /** Fork source task ID (null for original tasks) */
+  forkedFrom: string | null;
+  /** Timestamp when this task was forked */
+  forkedAt: number | null;
 }
 
 /**
@@ -166,6 +170,8 @@ export class SessionTaskManager {
       blocks: [...blocks],
       createdAt: now,
       updatedAt: now,
+      forkedFrom: null,
+      forkedAt: null,
     };
     this.getStore().set(id, task);
     this.saveActive();
@@ -238,6 +244,41 @@ export class SessionTaskManager {
   clearSession(sessionId: string): void {
     this.stores.delete(sessionId);
     safeDeleteFile(getTasksPath(sessionId));
+  }
+
+  /**
+   * Fork all tasks for a new session.
+   * Creates new task IDs and sets fork metadata to track the fork relationship.
+   * Returns a map of old task IDs to new task IDs for updating blockedBy/blocks references.
+   */
+  forkTasks(): Map<string, string> {
+    const currentStore = this.getStore();
+    const oldToNewIdMap = new Map<string, string>();
+    const now = Date.now();
+
+    // First pass: create new IDs
+    for (const task of currentStore.values()) {
+      oldToNewIdMap.set(task.id, this.generateTaskId());
+    }
+
+    // Second pass: create forked tasks with updated references
+    for (const task of currentStore.values()) {
+      const newId = oldToNewIdMap.get(task.id)!;
+      const forkedTask: Task = {
+        ...task,
+        id: newId,
+        forkedFrom: task.id,
+        forkedAt: now,
+        // Update blockedBy references to new IDs
+        blockedBy: task.blockedBy.map(id => oldToNewIdMap.get(id) ?? id),
+        // Update blocks references to new IDs
+        blocks: task.blocks.map(id => oldToNewIdMap.get(id) ?? id),
+      };
+      currentStore.set(newId, forkedTask);
+    }
+
+    this.saveActive();
+    return oldToNewIdMap;
   }
 }
 

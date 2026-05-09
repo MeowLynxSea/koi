@@ -34,9 +34,12 @@ import {
 import { globalTaskManager } from "./session-tasks.js";
 import {
   getAgentMode,
+  setAgentMode,
   getActiveToolNamesForMode,
   injectModeIntoSystemPrompt,
 } from "./mode.js";
+import { getCurrentPlanText } from "./plan-ui.js";
+import { forkManager } from "./session-fork.js";
 
 /** Global ref to the active AgentSession, usable by tools outside React hooks. */
 export const activeSessionRef = { current: null as AgentSession | null };
@@ -70,6 +73,8 @@ export interface KoiAgentState {
   saveCurrentState: () => void;
   deleteSession: (sessionId: string) => Promise<void>;
   addPlanMessage: (content: string) => Promise<void>;
+  /** Sync agent mode changes to session state (called when mode changes externally) */
+  syncAgentMode: (mode: "build" | "ask" | "plan") => void;
 }
 
 /**
@@ -680,6 +685,21 @@ export function useKoiAgent(): KoiAgentState {
   const localFollowUpQueueRef = useRef<string[]>([]);
   const hasToolCallsRef = useRef(false);
 
+  // Refs for session state that needs to be persisted with KoiSessionState
+  const sessionStateRef = useRef<{
+    forkedFrom: string | null;
+    forkBranchId: string | null;
+    forkedAt: number | null;
+    agentMode: "build" | "ask" | "plan";
+    activeTools: string[];
+  }>({
+    forkedFrom: null,
+    forkBranchId: null,
+    forkedAt: null,
+    agentMode: "build",
+    activeTools: getActiveToolNamesForMode("build"),
+  });
+
   // Keep refs in sync with latest state for cleanup handlers (unmount, switch, delete).
   // These refs avoid stale closures without adding every state to dependency arrays.
   useEffect(() => { 
@@ -703,6 +723,15 @@ export function useKoiAgent(): KoiAgentState {
           messages: msgs,
           createdAt: Date.now(),
           updatedAt: Date.now(),
+          // Fork and agent mode state
+          forkedFrom: sessionStateRef.current.forkedFrom,
+          forkBranchId: sessionStateRef.current.forkBranchId,
+          forkedAt: sessionStateRef.current.forkedAt,
+          agentMode: sessionStateRef.current.agentMode,
+          activeTools: sessionStateRef.current.activeTools,
+          // UI state (empty, will be populated by actual UI interactions)
+          expandedMessages: [],
+          collapsedMessages: [],
         };
         saveKoiState(sessionId, state);
         globalTaskManager.save(sessionId);
@@ -763,6 +792,22 @@ export function useKoiAgent(): KoiAgentState {
     }
     if (koiState?.currentModel) currentModelRef.current = koiState.currentModel;
     if (koiState?.auxiliaryModel) auxiliaryModelRef.current = koiState.auxiliaryModel;
+
+    // Restore fork-related and agent mode state
+    if (koiState) {
+      sessionStateRef.current = {
+        forkedFrom: koiState.forkedFrom ?? null,
+        forkBranchId: koiState.forkBranchId ?? null,
+        forkedAt: koiState.forkedAt ?? null,
+        agentMode: koiState.agentMode ?? "build",
+        activeTools: koiState.activeTools ?? getActiveToolNamesForMode(koiState.agentMode ?? "build"),
+      };
+
+      // Restore agent mode for the session
+      setAgentMode(sessionStateRef.current.agentMode);
+      s.setActiveToolsByName(sessionStateRef.current.activeTools);
+      injectModeIntoSystemPrompt(s, sessionStateRef.current.agentMode);
+    }
   }, []);
 
   // Orchestrates the full session boot sequence (subscribe → restore state → refresh list).
@@ -790,6 +835,15 @@ export function useKoiAgent(): KoiAgentState {
       messages: msgs,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      // Fork and agent mode state
+      forkedFrom: sessionStateRef.current.forkedFrom,
+      forkBranchId: sessionStateRef.current.forkBranchId,
+      forkedAt: sessionStateRef.current.forkedAt,
+      agentMode: sessionStateRef.current.agentMode,
+      activeTools: sessionStateRef.current.activeTools,
+      // UI state
+      expandedMessages: [],
+      collapsedMessages: [],
     }),
     []
   );
@@ -948,16 +1002,87 @@ export function useKoiAgent(): KoiAgentState {
   const forkSession = useCallback(
     async (entryId: string) => {
       if (!session) return;
+
+      // 1. Calculate branch point
       const forwardPath = computeForwardPath(session, entryId);
       const branchFromId = findBranchPoint(forwardPath, entryId);
+      const branchPath = session.sessionManager.getBranch();
 
+      // 2. Get current state before forking
+      const currentAgentMode = getAgentMode();
+      const currentActiveTools = getActiveToolNamesForMode(currentAgentMode);
+      const currentPendingPlan = getCurrentPlanText();
+      const currentTasks = globalTaskManager.listTasks();
+      const currentKoiState = loadKoiState(session.sessionId);
+
+      // 3. Execute session branching
       session.sessionManager.branch(branchFromId);
       const context = session.sessionManager.buildSessionContext();
       session.state.messages = context.messages;
+
+      // 4. Fork all tasks (creates new IDs, preserves all task data)
+      globalTaskManager.forkTasks();
+
+      // 5. Create and save fork metadata
+      const forkMetadata = {
+        forkId: session.sessionId,
+        sourceSessionId: session.sessionId,
+        sourceBranchId: branchPath.find(e => e.id === branchFromId)?.id ?? '',
+        forkPoint: branchFromId,
+        forkedAt: Date.now(),
+        tasksSnapshot: currentTasks,
+        agentMode: currentAgentMode,
+        activeTools: currentActiveTools,
+        pendingPlanText: currentPendingPlan,
+      };
+      forkManager.saveForkMetadata(session.sessionId, forkMetadata);
+
+      // 6. Update KoiSessionState with fork-related info
+      const now = Date.now();
+      const forkedState: KoiSessionState = {
+        ...(currentKoiState ?? {
+          sessionId: session.sessionId,
+          title: session.sessionName || "Forked Session",
+          currentModel: getCurrentModel(),
+          auxiliaryModel: getAuxiliaryModel(),
+          messages: [],
+          createdAt: now,
+          updatedAt: now,
+        }),
+        forkedFrom: session.sessionId,
+        forkBranchId: branchFromId,
+        forkedAt: now,
+        agentMode: currentAgentMode,
+        activeTools: currentActiveTools,
+        expandedMessages: [],
+        collapsedMessages: [],
+      };
+      saveKoiState(session.sessionId, forkedState);
+
+      // Update sessionStateRef for future saves
+      sessionStateRef.current = {
+        forkedFrom: session.sessionId,
+        forkBranchId: branchFromId,
+        forkedAt: Date.now(),
+        agentMode: currentAgentMode,
+        activeTools: currentActiveTools,
+      };
+
+      // 7. Rebuild UI messages from the new branch context
       setMessages(buildUIMessagesFromAgentSession(session));
+
+      // 8. Restore agent mode state for the new branch
+      setAgentMode(currentAgentMode);
+      session.setActiveToolsByName(currentActiveTools);
+      injectModeIntoSystemPrompt(session, currentAgentMode);
+
+      // 9. Clear streaming state
       streamingMsgIdRef.current = null;
       pendingToolsRef.current.clear();
+
+      // 10. Save all state
       saveCurrentState();
+      globalTaskManager.saveActive();
     },
     [session, computeForwardPath, findBranchPoint, saveCurrentState]
   );
@@ -1147,6 +1272,22 @@ export function useKoiAgent(): KoiAgentState {
     [session]
   );
 
+  // Sync agent mode changes to sessionStateRef for persistence
+  const syncAgentMode = useCallback(
+    (mode: "build" | "ask" | "plan") => {
+      sessionStateRef.current = {
+        ...sessionStateRef.current,
+        agentMode: mode,
+        activeTools: getActiveToolNamesForMode(mode),
+      };
+      if (session) {
+        session.setActiveToolsByName(sessionStateRef.current.activeTools);
+        injectModeIntoSystemPrompt(session, mode);
+      }
+    },
+    [session]
+  );
+
   return {
     session,
     messages,
@@ -1176,5 +1317,6 @@ export function useKoiAgent(): KoiAgentState {
     setSessionTitle: setSessionTitleWrapper,
     deleteSession,
     addPlanMessage,
+    syncAgentMode,
   };
 }

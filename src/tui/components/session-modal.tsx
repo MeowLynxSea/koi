@@ -171,6 +171,13 @@ export function SessionModal({
             const flatIndex = scrollOffset + idx;
             const isSelected = flatIndex === safeIndex;
             const isCurrent = s.id === currentSessionId;
+            const isForked = s.forkedFrom !== null;
+            const forkDepth = s.forkDepth ?? 0;
+
+            // Build fork prefix: "├─ " repeated for each depth level
+            const forkPrefix = isForked
+              ? "│ ".repeat(Math.min(forkDepth, 5)) + "├─ "
+              : "";
 
             return (
               <box
@@ -184,13 +191,14 @@ export function SessionModal({
                 }}
               >
                 <text
-                  fg={isSelected ? "#ff79c6" : isCurrent ? "#00f5ff" : "#f8f8f2"}
+                  fg={isSelected ? "#ff79c6" : isCurrent ? "#00f5ff" : isForked ? "#bd93f9" : "#f8f8f2"}
                   attributes={createTextAttributes({ bold: isCurrent })}
                   width={Math.max(1, panelWidth - 24)}
                   truncate={true}
                 >
                   {isCurrent ? "● " : "  "}
-                  {s.title}
+                  {forkPrefix}{s.title}
+                  {isForked && <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}> ↱</text>}
                 </text>
                 <box flexDirection="row" gap={1}>
                   <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
