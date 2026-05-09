@@ -77,6 +77,13 @@ const TASK_STATUS_COLORS: Record<string, string> = {
   completed: "#00ff99",
 };
 
+const SUBAGENT_STATUS_COLORS: Record<string, string> = {
+  running: "#00d9ff",
+  completed: "#00ff99",
+  failed: "#ff6b6b",
+  killed: "#fbbf24",
+};
+
 function Divider({
   width,
   char = "─",
@@ -100,6 +107,12 @@ interface TaskItem {
   status: "pending" | "in_progress" | "completed";
 }
 
+interface SubagentItem {
+  id: string;
+  description: string;
+  status: "running" | "completed" | "failed" | "killed";
+}
+
 interface SideBarProps {
   width?: number;
   workingDir?: string;
@@ -110,6 +123,7 @@ interface SideBarProps {
   tokenCount?: string;
   cost?: string;
   tasks?: TaskItem[];
+  subagents?: SubagentItem[];
 }
 
 export function SideBar({
@@ -122,11 +136,15 @@ export function SideBar({
   tokenCount = "(0)",
   cost = "$0.00",
   tasks = [],
+  subagents = [],
 }: SideBarProps) {
   const usableWidth = Math.max(1, width - 1);
 
   const visibleTasks = tasks.slice(0, 12);
   const hasMoreTasks = tasks.length > visibleTasks.length;
+
+  const visibleSubagents = subagents.slice(0, 8);
+  const hasMoreSubagents = subagents.length > visibleSubagents.length;
 
   return (
     <box width={width} flexDirection="column" paddingLeft={1}>
@@ -183,6 +201,34 @@ export function SideBar({
 
       {/* Context usage + cost */}
       <text fg="#8a9aaa">{`${contextUsage} ${tokenCount} ${cost}`}</text>
+
+      {/* Subagents section */}
+      {visibleSubagents.length > 0 && (
+        <>
+          <text> </text>
+          <text attributes={createTextAttributes({ bold: true })} fg="#5a6a7a">
+            Subagents ({subagents.length})
+          </text>
+          {visibleSubagents.map((sa) => {
+            const color = SUBAGENT_STATUS_COLORS[sa.status] ?? "#fbbf24";
+            return (
+              <box key={sa.id} flexDirection="row" gap={1}>
+                <text fg={color}>●</text>
+                <FixedWidthText
+                  text={sa.description}
+                  width={Math.max(1, usableWidth - 4)}
+                  fg="#8a9aaa"
+                />
+              </box>
+            );
+          })}
+          {hasMoreSubagents && (
+            <text fg="#9aa5b0">
+              {`… and ${subagents.length - visibleSubagents.length} more`}
+            </text>
+          )}
+        </>
+      )}
 
       {/* Tasks section */}
       {visibleTasks.length > 0 && (

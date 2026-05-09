@@ -45,6 +45,7 @@ import {
 import { useKoiAgent } from "../agent/hooks.js";
 import type { SessionMeta } from "../agent/session-store.js";
 import { globalTaskManager, type Task } from "../agent/session-tasks.js";
+import { subagentRegistry, type AsyncSubagentEntry } from "../agent/subagent-registry.js";
 import {
   subscribePermissions,
   getPermissionQueue,
@@ -196,6 +197,7 @@ export function App({ onExit }: AppProps) {
   const [sidebarTokenCount, setSidebarTokenCount] = useState("(0)");
   const [sidebarCost, setSidebarCost] = useState("$0.00");
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [subagents, setSubagents] = useState<AsyncSubagentEntry[]>([]);
   const [yoloMode, setYoloMode] = useState(false);
   const [agentMode, setAgentMode] = useState<AgentMode>(getAgentMode());
 
@@ -266,6 +268,14 @@ export function App({ onExit }: AppProps) {
     injectModeIntoSystemPrompt(session, agentMode);
   }, [agentMode, session]);
 
+  // Subscribe to subagent registry changes for live sidebar updates.
+  useEffect(() => {
+    const unsubscribe = subagentRegistry.subscribe(() => {
+      setSubagents(subagentRegistry.getAll());
+    });
+    return unsubscribe;
+  }, []);
+
   // Polls session stats (token count, cost, context usage) every 2s for the sidebar.
   // Falls back to zeroed values when no session is active.
   useEffect(() => {
@@ -275,6 +285,7 @@ export function App({ onExit }: AppProps) {
         setSidebarTokenCount("(0)");
         setSidebarCost("$0.00");
         setTasks([]);
+        setSubagents([]);
         return;
       }
 
@@ -301,6 +312,7 @@ export function App({ onExit }: AppProps) {
       setSidebarTokenCount(tokenStr);
       setSidebarCost(costStr);
       setTasks(globalTaskManager.listTasks());
+      setSubagents(subagentRegistry.getAll());
     };
 
     update();
@@ -935,6 +947,7 @@ export function App({ onExit }: AppProps) {
             tokenCount={sidebarTokenCount}
             cost={sidebarCost}
             tasks={tasks}
+            subagents={subagents}
           />
         </box>
       </box>

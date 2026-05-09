@@ -23,6 +23,24 @@ export interface AsyncSubagentEntry {
 class SubagentRegistry {
   private entries = new Map<string, AsyncSubagentEntry>();
   private runningAgents = new Map<string, Agent>();
+  private listeners: (() => void)[] = [];
+
+  private emit() {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
 
   get(id: string): AsyncSubagentEntry | undefined {
     return this.entries.get(id);
@@ -50,6 +68,7 @@ class SubagentRegistry {
 
     // Fire-and-forget — do not await
     void this.runInBackground(id, config);
+    this.emit();
 
     return id;
   }
@@ -71,6 +90,7 @@ class SubagentRegistry {
       entry.status = "completed";
       entry.result = result;
       entry.endTime = Date.now();
+      this.emit();
       this.notifyParent(id, "completed", result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -78,11 +98,13 @@ class SubagentRegistry {
       if (entry.status === "killed") {
         entry.error = message;
         entry.endTime = Date.now();
+        this.emit();
         this.notifyParent(id, "killed", message);
       } else {
         entry.status = "failed";
         entry.error = message;
         entry.endTime = Date.now();
+        this.emit();
         this.notifyParent(id, "failed", message);
       }
     } finally {
