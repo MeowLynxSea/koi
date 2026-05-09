@@ -292,8 +292,32 @@ export function buildUIMessagesFromAgentSession(session: AgentSession): UIMessag
         thinking: thinking || undefined,
         thinkingCollapsed: true,
       });
+    } else if (msg.role === "custom" && (msg as unknown as Record<string, unknown>)["customType"] === "plan") {
+      const rawContent = (msg as unknown as Record<string, unknown>)["content"];
+      const content = typeof rawContent === "string"
+        ? rawContent
+        : extractUserContent(rawContent);
+      uiMessages.push({
+        id: `plan-${msg.timestamp}`,
+        type: "plan",
+        content,
+      });
     }
     // tool_result messages are skipped in fallback reconstruction
+  }
+
+  // Ensure only the latest plan message is kept (old plans are replaced by new ones).
+  const planIndices: number[] = [];
+  for (let i = 0; i < uiMessages.length; i++) {
+    if (uiMessages[i]!.type === "plan") {
+      planIndices.push(i);
+    }
+  }
+  if (planIndices.length > 1) {
+    // Remove all but the last plan message.
+    for (let i = planIndices.length - 2; i >= 0; i--) {
+      uiMessages.splice(planIndices[i]!, 1);
+    }
   }
 
   return uiMessages;

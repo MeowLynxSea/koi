@@ -61,7 +61,7 @@ export interface KoiAgentState {
   currentSessionId: string | null;
   saveCurrentState: () => void;
   deleteSession: (sessionId: string) => Promise<void>;
-  addPlanMessage: (content: string) => void;
+  addPlanMessage: (content: string) => Promise<void>;
 }
 
 /**
@@ -110,6 +110,30 @@ interface ThinkingBlock {
 
 function isThinkingBlock(block: { type: string }): block is ThinkingBlock {
   return block.type === "thinking" && "thinking" in block;
+}
+
+function isCustomPlanMessage(msg: unknown): msg is { role: "custom"; customType: "plan"; content: string | unknown[]; display: boolean; timestamp: number } {
+  return (
+    typeof msg === "object" &&
+    msg !== null &&
+    "role" in msg &&
+    (msg as unknown as Record<string, unknown>)["role"] === "custom" &&
+    "customType" in msg &&
+    (msg as unknown as Record<string, unknown>)["customType"] === "plan"
+  );
+}
+
+function extractCustomPlanContent(msg: { content: string | unknown[] }): string {
+  if (typeof msg.content === "string") return msg.content;
+  if (Array.isArray(msg.content)) {
+    return msg.content
+      .filter((c): c is { type: "text"; text: string } =>
+        typeof c === "object" && c !== null && "type" in c && (c as unknown as Record<string, unknown>)["type"] === "text"
+      )
+      .map((c) => c.text)
+      .join("");
+  }
+  return "";
 }
 
 function extractTextAndThinking(msg: AssistantMessage): {
@@ -289,6 +313,21 @@ function rebuildMessagesFromHistory(
           thinkingCollapsed: true,
         });
       }
+    } else if (isCustomPlanMessage(histMsg)) {
+      const content = extractCustomPlanContent(histMsg);
+      const idx = currentMessages.findIndex(
+        (m, i) => !usedIndices.has(i) && m.type === "plan"
+      );
+      if (idx >= 0) {
+        usedIndices.add(idx);
+        reordered.push(currentMessages[idx]!);
+      } else {
+        reordered.push({
+          id: generateId("plan"),
+          type: "plan",
+          content,
+        });
+      }
     }
   }
 
@@ -296,6 +335,19 @@ function rebuildMessagesFromHistory(
   for (let i = 0; i < currentMessages.length; i++) {
     if (!usedIndices.has(i)) {
       reordered.push(currentMessages[i]!);
+    }
+  }
+
+  // Deduplicate plan messages: only the latest plan is kept.
+  const planIndices: number[] = [];
+  for (let i = 0; i < reordered.length; i++) {
+    if (reordered[i]!.type === "plan") {
+      planIndices.push(i);
+    }
+  }
+  if (planIndices.length > 1) {
+    for (let i = planIndices.length - 2; i >= 0; i--) {
+      reordered.splice(planIndices[i]!, 1);
     }
   }
 
@@ -670,7 +722,21 @@ export function useKoiAgent(): KoiAgentState {
   // On session load: prefer persisted koi-state.json; fall back to rebuilding from AgentSession.messages.
   const restoreSessionState = useCallback((s: AgentSession) => {
     const koiState = loadKoiState(s.sessionId);
-    setMessages(koiState?.messages.length ? koiState.messages : buildUIMessagesFromAgentSession(s));
+    let restoredMessages = koiState?.messages.length ? koiState.messages : buildUIMessagesFromAgentSession(s);
+
+    // Deduplicate plan messages: only the latest plan is kept.
+    const planIndices: number[] = [];
+    for (let i = 0; i < restoredMessages.length; i++) {
+      if (restoredMessages[i]!.type === "plan") {
+        planIndices.push(i);
+      }
+    }
+    if (planIndices.length > 1) {
+      const filtered = restoredMessages.filter((_, i) => !planIndices.slice(0, -1).includes(i));
+      restoredMessages = filtered;
+    }
+
+    setMessages(restoredMessages);
 
     const title = koiState?.title ?? s.sessionName;
     if (title) {
@@ -1042,15 +1108,26 @@ export function useKoiAgent(): KoiAgentState {
     return retractedText;
   }, []);
 
-  const addPlanMessage = useCallback((content: string) => {
-    setMessages((prev) =>
-      prev.concat({
-        id: generateId("plan"),
-        type: "plan",
-        content,
-      })
-    );
-  }, []);
+  const addPlanMessage = useCallback(
+    async (content: string) => {
+      if (!session) return;
+      // Remove any existing plan custom messages from the session so the new plan replaces the old one.
+      const filtered = session.state.messages.filter((m) => !isCustomPlanMessage(m));
+      if (filtered.length !== session.state.messages.length) {
+        session.state.messages = filtered;
+      }
+      await session.sendCustomMessage(
+        { customType: "plan", content, display: true },
+        { triggerTurn: false }
+      );
+      // Update React state: replace any existing plan UI messages with the new one.
+      setMessages((prev) => {
+        const withoutOldPlan = prev.filter((m) => m.type !== "plan");
+        return [...withoutOldPlan, { id: generateId("plan"), type: "plan", content }] as UIMessage[];
+      });
+    },
+    [session]
+  );
 
   return {
     session,

@@ -642,7 +642,7 @@ export function App({ onExit }: AppProps) {
 
       resolvePlanApproval(request.id, approvalResult);
       if (approvalResult.approved) {
-        addPlanMessage(request.plan);
+        await addPlanMessage(request.plan);
         applyAgentMode("build");
       }
       processingPlanApprovalRef.current = false;
