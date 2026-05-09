@@ -8,7 +8,7 @@
 
 import { useMemo, useImperativeHandle, forwardRef, useRef, useState, useEffect } from "react";
 import stringWidth from "string-width";
-import { SyntaxStyle, createTextAttributes, type ScrollBoxRenderable, type MouseEvent } from "@opentui/core";
+import { SyntaxStyle, createTextAttributes, type ScrollBoxRenderable, type MouseEvent, RGBA } from "@opentui/core";
 import { imageToHalfBlocks, type ImageRow } from "./image-utils.js";
 
 export type UIMessage =
@@ -553,6 +553,10 @@ function StatusMessage({ msg, marginTop }: { msg: UIMessage & { type: "status" }
   );
 }
 
+// Terminal default background color - uses INTENT_DEFAULT to tell the terminal
+// to use its actual default background instead of a hardcoded color
+const DEFAULT_BG = RGBA.defaultBackground();
+
 function DiffToolContent({
   diff,
   contentWidth,
@@ -573,12 +577,12 @@ function DiffToolContent({
         removedSignColor="#ff5555"
         addedBg="#1d3b2a"
         removedBg="#3b1d1d"
-        contextBg="transparent"
+        contextBg={DEFAULT_BG}
         addedContentBg="#1d3b2a"
         removedContentBg="#3b1d1d"
-        contextContentBg="transparent"
+        contextContentBg={DEFAULT_BG}
         lineNumberFg="#6c6c7c"
-        lineNumberBg="transparent"
+        lineNumberBg={DEFAULT_BG}
         fg="#f8f8f2"
       />
     </box>
