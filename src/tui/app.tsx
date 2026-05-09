@@ -58,6 +58,7 @@ import {
   cycleAgentMode,
   getActiveToolNamesForMode,
   subscribeModeChanges,
+  injectModeIntoSystemPrompt,
   type AgentMode,
 } from "../agent/mode.js";
 import {
@@ -257,30 +258,11 @@ export function App({ onExit }: AppProps) {
     });
   }, []);
 
-  function injectModeIntoSystemPrompt(currentMode: AgentMode) {
-    if (!session) return;
-    const modeNotice =
-      currentMode === "plan"
-        ? "\n\n[AGENT MODE: Plan Mode. Write/edit/bash tools are DISABLED. You must NOT modify any files. Your task is to research, analyze, and formulate a detailed step-by-step plan. Use read-only tools to gather information. Once your plan is ready, you MUST call exitPlanMode with the complete plan to return to Build Mode.]"
-        : currentMode === "ask"
-          ? "\n\n[AGENT MODE: Ask Mode. Only read-only tools are available. You cannot modify files or execute commands.]"
-          : "\n\n[AGENT MODE: Build Mode. All tools are available.]";
-
-    // Pi resets systemPrompt from _baseSystemPrompt on every turn start,
-    // so we must patch _baseSystemPrompt directly.
-    const basePrompt = (session as unknown as Record<string, string>)["_baseSystemPrompt"] ?? "";
-    const modePattern = /\n\n\[AGENT MODE:.*?\]/s;
-    const cleanPrompt = basePrompt.replace(modePattern, "");
-    const patchedPrompt = cleanPrompt + modeNotice;
-    (session as unknown as Record<string, string>)["_baseSystemPrompt"] = patchedPrompt;
-    session.state.systemPrompt = patchedPrompt;
-  }
-
   // Apply tool restrictions and inject mode awareness into system prompt
   useEffect(() => {
     if (!session) return;
     session.setActiveToolsByName(getActiveToolNamesForMode(agentMode));
-    injectModeIntoSystemPrompt(agentMode);
+    injectModeIntoSystemPrompt(session, agentMode);
   }, [agentMode, session]);
 
   // Polls session stats (token count, cost, context usage) every 2s for the sidebar.

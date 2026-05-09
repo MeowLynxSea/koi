@@ -32,6 +32,14 @@ import {
   type KoiSessionState,
 } from "./session-store.js";
 import { globalTaskManager } from "./session-tasks.js";
+import {
+  getAgentMode,
+  getActiveToolNamesForMode,
+  injectModeIntoSystemPrompt,
+} from "./mode.js";
+
+/** Global ref to the active AgentSession, usable by tools outside React hooks. */
+export const activeSessionRef = { current: null as AgentSession | null };
 
 export interface KoiAgentState {
   session: AgentSession | null;
@@ -173,6 +181,7 @@ interface EventHandlerContext {
   localSteerQueueRef: React.MutableRefObject<string[]>;
   localFollowUpQueueRef: React.MutableRefObject<string[]>;
   hasToolCallsRef: React.MutableRefObject<boolean>;
+  sessionRef: React.MutableRefObject<AgentSession | null>;
 }
 
 /**
@@ -546,6 +555,15 @@ function handleCompactionEnd(event: Extract<AgentSessionEvent, { type: "compacti
         : m
     )
   );
+
+  // Re-apply mode-specific tool restrictions and system prompt after compaction,
+  // in case the compaction process reset any session state.
+  const session = ctx.sessionRef.current;
+  if (session && !event.aborted) {
+    const mode = getAgentMode();
+    session.setActiveToolsByName(getActiveToolNamesForMode(mode));
+    injectModeIntoSystemPrompt(session, mode);
+  }
 }
 
 /** Shows a retry banner when the agent encounters a transient error and retries automatically. */
@@ -668,7 +686,10 @@ export function useKoiAgent(): KoiAgentState {
 
   // Keep refs in sync with latest state for cleanup handlers (unmount, switch, delete).
   // These refs avoid stale closures without adding every state to dependency arrays.
-  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { 
+    sessionRef.current = session;
+    activeSessionRef.current = session;
+  }, [session]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
 
@@ -715,6 +736,7 @@ export function useKoiAgent(): KoiAgentState {
       localSteerQueueRef,
       localFollowUpQueueRef,
       hasToolCallsRef,
+      sessionRef,
     };
     return s.subscribe((event: AgentSessionEvent) => handleEvent(event, ctx));
   }, []);

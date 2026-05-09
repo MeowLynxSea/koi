@@ -10,6 +10,8 @@
  * used with AgentSession.setActiveToolsByName().
  */
 
+import type { AgentSession } from "@mariozechner/pi-coding-agent";
+
 export type AgentMode = "build" | "ask" | "plan";
 
 let currentMode: AgentMode = "build";
@@ -50,6 +52,28 @@ export function cycleAgentMode(): AgentMode {
   emit();
   return next;
 }
+
+/**
+ * Inject mode awareness into the session's system prompt.
+ * Patches _baseSystemPrompt directly because Pi resets systemPrompt from it on every turn.
+ */
+export function injectModeIntoSystemPrompt(session: AgentSession, mode: AgentMode): void {
+  const modeNotice =
+    mode === "plan"
+      ? "\n\n[AGENT MODE: Plan Mode. Write/edit/bash tools are DISABLED. You must NOT modify any files. Your task is to research, analyze, and formulate a detailed step-by-step plan. Use read-only tools to gather information. Once your plan is ready, you MUST call exitPlanMode with the complete plan to return to Build Mode.]"
+      : mode === "ask"
+        ? "\n\n[AGENT MODE: Ask Mode. Only read-only tools are available. You cannot modify files or execute commands.]"
+        : "\n\n[AGENT MODE: Build Mode. All tools are available.]";
+
+  const basePrompt = (session as unknown as Record<string, string>)["_baseSystemPrompt"] ?? "";
+  const modePattern = /\n\n\[AGENT MODE:.*?\]/s;
+  const cleanPrompt = basePrompt.replace(modePattern, "");
+  const patchedPrompt = cleanPrompt + modeNotice;
+  (session as unknown as Record<string, string>)["_baseSystemPrompt"] = patchedPrompt;
+  session.state.systemPrompt = patchedPrompt;
+}
+
+
 
 const ALL_TOOLS = [
   "read",

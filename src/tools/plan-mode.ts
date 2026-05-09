@@ -7,7 +7,13 @@
 
 import { Type } from "typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { setAgentMode, getAgentMode } from "../agent/mode.js";
+import {
+  setAgentMode,
+  getAgentMode,
+  getActiveToolNamesForMode,
+  injectModeIntoSystemPrompt,
+} from "../agent/mode.js";
+import { activeSessionRef } from "../agent/hooks.js";
 import { submitPlanForApproval } from "../agent/plan-ui.js";
 
 export const enterPlanModeSchema = Type.Object({});
@@ -43,6 +49,14 @@ export function createEnterPlanModeToolDefinition(): ToolDefinition {
         };
       }
       setAgentMode("plan");
+      const session = activeSessionRef.current;
+      if (session) {
+        session.setActiveToolsByName(getActiveToolNamesForMode("plan"));
+        injectModeIntoSystemPrompt(session, "plan");
+        setTimeout(() => {
+          void session.compact();
+        }, 0);
+      }
       return {
         content: [
           {
@@ -80,6 +94,17 @@ export function createExitPlanModeToolDefinition(): ToolDefinition {
       const result = await submitPlanForApproval({ plan: input.plan });
       if (result.approved) {
         setAgentMode("build");
+        const session = activeSessionRef.current;
+        if (session) {
+          session.setActiveToolsByName(getActiveToolNamesForMode("build"));
+          injectModeIntoSystemPrompt(session, "build");
+          setTimeout(() => {
+            void session
+              .compact()
+              .catch(() => {})
+              .then(() => session.agent.continue());
+          }, 0);
+        }
         return {
           content: [
             {
