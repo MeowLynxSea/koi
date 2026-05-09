@@ -42,7 +42,7 @@ import {
   setAuxiliaryModel,
   resolvePiModel,
 } from "../config/settings.js";
-import { useKoiAgent } from "../agent/hooks.js";
+import { useKoiAgent, isInternalNotification } from "../agent/hooks.js";
 import type { SessionMeta } from "../agent/session-store.js";
 import { globalTaskManager, type Task } from "../agent/session-tasks.js";
 import { subagentRegistry, type AsyncSubagentEntry } from "../agent/subagent-registry.js";
@@ -653,6 +653,14 @@ export function App({ onExit }: AppProps) {
   const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1 - pendingHeight);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
+  // Filter out internal subagent notifications from the chat display.
+  // These messages are still present in the session state (so the LLM sees
+  // them), but we don't want to clutter the UI with XML task notifications.
+  const visibleMessages = useMemo(
+    () => messages.filter((m) => !(m.type === "user" && isInternalNotification(m.content))),
+    [messages]
+  );
+
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
     showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal;
@@ -909,7 +917,7 @@ export function App({ onExit }: AppProps) {
               <text fg="#ff5555">Error: {error}</text>
             </box>
           )}
-          <ChatPanel ref={chatPanelRef} messages={messages} width={leftWidth} height={chatPanelHeight} isStreaming={isStreaming} onToggleCollapse={toggleCollapse} onImageClick={handleImageClick} />
+          <ChatPanel ref={chatPanelRef} messages={visibleMessages} width={leftWidth} height={chatPanelHeight} isStreaming={isStreaming} onToggleCollapse={toggleCollapse} onImageClick={handleImageClick} />
           {pendingCount > 0 && (
             <PendingArea
               steering={steeringMessages}

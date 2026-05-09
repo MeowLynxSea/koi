@@ -264,7 +264,7 @@ function removeAgentMessageIfEmpty(
  * preserving existing UI state (thinkingCollapsed, expanded, etc.) for matched messages.
  * Unmatched messages from the current UI (e.g. tool_call, tool_result) are appended at the end.
  */
-function isInternalNotification(text: string): boolean {
+export function isInternalNotification(text: string): boolean {
   return text.trimStart().startsWith("<task-notification>");
 }
 
@@ -279,9 +279,6 @@ function rebuildMessagesFromHistory(
   for (const histMsg of historyMessages) {
     if (isUserMessage(histMsg)) {
       const content = getUserMessageContent(histMsg);
-      // Skip system-internal subagent notifications — they are meant for the
-      // LLM context only and should not appear in the UI message list.
-      if (isInternalNotification(content)) continue;
       const idx = currentMessages.findIndex(
         (m, i) => !usedIndices.has(i) && m.type === "user" && m.content === content
       );
@@ -399,32 +396,37 @@ function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>
   ctx.setMessages((prev) => {
     let next: UIMessage[] = prev.filter((m) => m.type !== "status");
 
+    // AgentSessionEvent.agent_end.messages only contains messages from the
+    // CURRENT run (newMessages), not the full session history. We must use
+    // sessionRef.current.messages for any history-reconstruction logic.
+    const fullHistory = ctx.sessionRef.current?.messages ?? event.messages;
+
     // Check whether Pi's session history already contains user messages
     // that are not yet in our UI (e.g. queued/followUp messages delivered
-    // by Pi before agent_end fired). If so, rebuild from event.messages
+    // by Pi before agent_end fired). If so, rebuild from full history
     // to get the correct order instead of blindly appending to the end.
-    const historyUserTexts = event.messages
+    const historyUserTexts = fullHistory
       .filter(isUserMessage)
       .map(getUserMessageContent);
     const uiUserTexts = new Set(next.filter((m) => m.type === "user").map((m) => m.content));
     const hasNewUserMessages = historyUserTexts.some((text) => !uiUserTexts.has(text));
 
-    if (hasNewUserMessages && event.messages.length > 0) {
+    if (hasNewUserMessages && fullHistory.length > 0) {
       // Finalise the pending streaming placeholder first
       if (pendingMsgId) {
-        const lastAssistant = [...event.messages].reverse().find(isAssistantMessage);
+        const lastAssistant = [...fullHistory].reverse().find(isAssistantMessage);
         if (lastAssistant) {
           const { text, thinking } = extractTextAndThinking(lastAssistant);
           next = removeAgentMessageIfEmpty(next, pendingMsgId, text, thinking);
         }
       }
-      return rebuildMessagesFromHistory(next, event.messages, pendingMsgId);
+      return rebuildMessagesFromHistory(next, fullHistory, pendingMsgId);
     }
 
     // Fallback: old append logic for cases where Pi hasn't yet added
     // the queued messages to its history snapshot.
-    if (pendingMsgId && event.messages.length > 0) {
-      const lastAssistant = [...event.messages].reverse().find(isAssistantMessage);
+    if (pendingMsgId && fullHistory.length > 0) {
+      const lastAssistant = [...fullHistory].reverse().find(isAssistantMessage);
       if (lastAssistant) {
         const { text, thinking } = extractTextAndThinking(lastAssistant);
         next = removeAgentMessageIfEmpty(next, pendingMsgId, text, thinking);
@@ -432,12 +434,8 @@ function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>
     }
 
     const inserts = [
-      ...steerToInsert
-        .filter((text) => !isInternalNotification(text))
-        .map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
-      ...followUpToInsert
-        .filter((text) => !isInternalNotification(text))
-        .map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
+      ...steerToInsert.map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
+      ...followUpToInsert.map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
     ];
     if (inserts.length > 0) {
       return next.concat(inserts);
@@ -462,11 +460,10 @@ function handleMessageStart(event: Extract<AgentSessionEvent, { type: "message_s
   }
   const msgId = generateId("agent");
   ctx.streamingMsgIdRef.current = msgId;
-  const visibleSteer = steerToInsert.filter((text) => !isInternalNotification(text));
   ctx.setMessages((prev) => [
     ...prev.filter((m) => m.type !== "status"),
-    ...(visibleSteer.length > 0
-      ? visibleSteer.map((text) => ({ id: generateId("user"), type: "user" as const, content: text }))
+    ...(steerToInsert.length > 0
+      ? steerToInsert.map((text) => ({ id: generateId("user"), type: "user" as const, content: text }))
       : []),
     { id: msgId, type: "agent", content: "", thinkingCollapsed: true },
   ]);
@@ -782,6 +779,12 @@ export function useKoiAgent(): KoiAgentState {
   const restoreSessionState = useCallback((s: AgentSession) => {
     const koiState = loadKoiState(s.sessionId);
     let restoredMessages = koiState?.messages.length ? koiState.messages : buildUIMessagesFromAgentSession(s);
+
+    // Strip internal subagent notifications from restored messages — they are
+    // meant for the LLM context only and should not clutter the UI.
+    restoredMessages = restoredMessages.filter(
+      (m) => !(m.type === "user" && isInternalNotification(m.content))
+    );
 
     // Deduplicate plan messages: only the latest plan is kept.
     const planIndices: number[] = [];
