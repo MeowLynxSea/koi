@@ -20,6 +20,8 @@ import {
   isToolForceExpanded,
 } from "./components/chat-panel.js";
 import { InputBox } from "./components/input-box.js";
+import { PendingArea } from "./components/pending-area.js";
+import { EditPendingModal } from "./components/edit-pending-modal.js";
 import { InfoBar } from "./components/info-bar.js";
 import { SideBar } from "./components/side-bar.js";
 import { ExitModal } from "./components/exit-modal.js";
@@ -100,6 +102,10 @@ export function App({ onExit }: AppProps) {
   const [sessionToDelete, setSessionToDelete] = useState<SessionMeta | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [imageModalUrl, setImageModalUrl] = useState("");
+  const [showEditPendingModal, setShowEditPendingModal] = useState(false);
+  const [editPendingType, setEditPendingType] = useState<"sheer" | "queued" | null>(null);
+  const [editPendingIndex, setEditPendingIndex] = useState(-1);
+  const [editPendingText, setEditPendingText] = useState("");
   const [currentModel, setCurrentModelState] = useState(getCurrentModel);
   const [, setAuxiliaryModelState] = useState(getAuxiliaryModel);
 
@@ -116,11 +122,16 @@ export function App({ onExit }: AppProps) {
     isStreaming,
     isReady,
     error,
+    steeringMessages,
+    followUpMessages,
     prompt,
+    steer,
+    followUp,
     abort,
     toggleCollapse,
     expandAll,
     collapseAll,
+    removePendingMessage,
     switchSession,
     newSession,
     forkSession,
@@ -263,22 +274,40 @@ export function App({ onExit }: AppProps) {
 
   // Responsive layout: left column fills remaining width; sidebar is fixed at SIDEBAR_WIDTH.
   const leftWidth = Math.max(1, width - SIDEBAR_WIDTH - 2);
-  const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1);
+  const pendingCount = steeringMessages.length + followUpMessages.length;
+  const pendingHeight = pendingCount > 0 ? Math.min(pendingCount, 3) + (pendingCount > 3 ? 1 : 0) : 0;
+  const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1 - pendingHeight);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
-    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal;
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal;
 
   // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
     (text: string) => {
-      if (text.trim() && isReady && !isStreaming) {
+      if (!text.trim() || !isReady) return;
+      if (isStreaming) {
+        void steer(text);
+      } else {
         void prompt(text);
-        setInputText("");
       }
+      setInputText("");
     },
-    [isReady, isStreaming, prompt]
+    [isReady, isStreaming, steer, prompt]
+  );
+
+  const handleQueueSubmit = useCallback(
+    (text: string) => {
+      if (!text.trim() || !isReady) return;
+      if (isStreaming) {
+        void followUp(text);
+      } else {
+        void prompt(text);
+      }
+      setInputText("");
+    },
+    [isReady, isStreaming, followUp, prompt]
   );
 
   const handleRename = useCallback((newTitle: string) => {
@@ -332,6 +361,32 @@ export function App({ onExit }: AppProps) {
     setImageModalUrl(url);
     setShowImageModal(true);
   }, []);
+
+  const handleEditPending = useCallback(
+    (type: "sheer" | "queued", index: number) => {
+      const text = type === "sheer" ? steeringMessages[index] : followUpMessages[index];
+      if (text === undefined) return;
+      setEditPendingType(type);
+      setEditPendingIndex(index);
+      setEditPendingText(text);
+      setShowEditPendingModal(true);
+    },
+    [steeringMessages, followUpMessages]
+  );
+
+  const handleConfirmEditPending = useCallback(
+    (text: string) => {
+      if (!editPendingType || editPendingIndex < 0) return;
+      removePendingMessage(editPendingType, editPendingIndex);
+      if (editPendingType === "sheer") {
+        void steer(text);
+      } else {
+        void followUp(text);
+      }
+      setShowEditPendingModal(false);
+    },
+    [editPendingType, editPendingIndex, removePendingMessage, steer, followUp]
+  );
 
   const handleCloseImageModal = useCallback(() => {
     setShowImageModal(false);
@@ -455,13 +510,23 @@ export function App({ onExit }: AppProps) {
             </box>
           )}
           <ChatPanel ref={chatPanelRef} messages={messages} width={leftWidth} height={chatPanelHeight} isStreaming={isStreaming} onToggleCollapse={toggleCollapse} onImageClick={handleImageClick} />
+          {pendingCount > 0 && (
+            <PendingArea
+              steering={steeringMessages}
+              followUp={followUpMessages}
+              width={leftWidth}
+              onRemove={removePendingMessage}
+              onEdit={handleEditPending}
+            />
+          )}
           <InputBox
             value={inputText}
             onChange={setInputText}
             onSubmit={handleSubmit}
+            onQueueSubmit={handleQueueSubmit}
             onSlashEmpty={handleSlashEmpty}
-            focused={!anyModalOpen && !isStreaming}
-            disabled={isStreaming || !isReady}
+            focused={!anyModalOpen}
+            disabled={!isReady}
             width={leftWidth}
           />
           <InfoBar width={leftWidth} exitMode={showExitModal} />
@@ -521,6 +586,14 @@ export function App({ onExit }: AppProps) {
       )}
       <ForkModal isActive={showForkModal} onClose={() => setShowForkModal(false)} session={session} onFork={handleFork} />
       <ImagePreviewModal isActive={showImageModal} url={imageModalUrl} onClose={handleCloseImageModal} terminalWidth={width} terminalHeight={height} />
+      <EditPendingModal
+        isActive={showEditPendingModal}
+        initialText={editPendingText}
+        type={editPendingType ?? "sheer"}
+        onConfirm={handleConfirmEditPending}
+        onCancel={() => setShowEditPendingModal(false)}
+        width={Math.min(70, leftWidth)}
+      />
     </box>
   );
 }

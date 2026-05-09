@@ -13,7 +13,7 @@ import type {
 
 type SessionManagerType = AgentSession["sessionManager"];
 type SessionTreeNode = ReturnType<SessionManagerType["getTree"]>[number];
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, UserMessage, AgentMessage } from "@mariozechner/pi-ai";
 import type { UIMessage } from "../tui/components/chat-panel.js";
 import { isToolExpandable, isToolForceExpanded, getToolDefaultCollapsed } from "../tui/components/chat-panel.js";
 import type { ModelRef } from "../config/settings.js";
@@ -39,12 +39,18 @@ export interface KoiAgentState {
   isReady: boolean;
   error: string | null;
   sessionTitle: string;
+  steeringMessages: readonly string[];
+  followUpMessages: readonly string[];
   prompt: (text: string) => Promise<void>;
+  steer: (text: string) => Promise<void>;
+  followUp: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   toggleCollapse: (id: string) => void;
   expandAll: () => void;
   collapseAll: () => void;
   clearMessages: () => void;
+  removePendingMessage: (type: "sheer" | "queued", index: number) => string | null;
+  retractMessage: (id: string) => string | null;
   switchSession: (sessionFile: string) => Promise<void>;
   newSession: () => Promise<void>;
   forkSession: (entryId: string) => Promise<void>;
@@ -74,6 +80,25 @@ function isAssistantMessage(msg: unknown): msg is AssistantMessage {
     "role" in msg &&
     (msg as Record<string, unknown>)["role"] === "assistant"
   );
+}
+
+function isUserMessage(msg: unknown): msg is UserMessage {
+  return (
+    typeof msg === "object" &&
+    msg !== null &&
+    "role" in msg &&
+    (msg as Record<string, unknown>)["role"] === "user"
+  );
+}
+
+function getUserMessageContent(msg: UserMessage): string {
+  if (typeof msg.content === "string") {
+    return msg.content;
+  }
+  return msg.content
+    .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")
+    .map((b) => b.text)
+    .join("");
 }
 
 interface ThinkingBlock {
@@ -117,6 +142,11 @@ interface EventHandlerContext {
   setSessionTitleState: React.Dispatch<React.SetStateAction<string>>;
   setSessionTitle: (title: string) => void;
   allExpandedRef: React.MutableRefObject<boolean>;
+  setSteeringMessages: React.Dispatch<React.SetStateAction<readonly string[]>>;
+  setFollowUpMessages: React.Dispatch<React.SetStateAction<readonly string[]>>;
+  localSteerQueueRef: React.MutableRefObject<string[]>;
+  localFollowUpQueueRef: React.MutableRefObject<string[]>;
+  hasToolCallsRef: React.MutableRefObject<boolean>;
 }
 
 /**
@@ -189,6 +219,86 @@ function removeAgentMessageIfEmpty(
   return next;
 }
 
+/**
+ * Rebuilds the UI message list from Pi's session history (`event.messages`),
+ * preserving existing UI state (thinkingCollapsed, expanded, etc.) for matched messages.
+ * Unmatched messages from the current UI (e.g. tool_call, tool_result) are appended at the end.
+ */
+function rebuildMessagesFromHistory(
+  currentMessages: UIMessage[],
+  historyMessages: AgentMessage[],
+  pendingMsgId?: string | null
+): UIMessage[] {
+  const reordered: UIMessage[] = [];
+  const usedIndices = new Set<number>();
+
+  for (const histMsg of historyMessages) {
+    if (isUserMessage(histMsg)) {
+      const content = getUserMessageContent(histMsg);
+      const idx = currentMessages.findIndex(
+        (m, i) => !usedIndices.has(i) && m.type === "user" && m.content === content
+      );
+      if (idx >= 0) {
+        usedIndices.add(idx);
+        reordered.push(currentMessages[idx]);
+      } else {
+        reordered.push({ id: generateId("user"), type: "user", content });
+      }
+    } else if (isAssistantMessage(histMsg)) {
+      const { text, thinking } = extractTextAndThinking(histMsg);
+
+      // If the pending streaming agent message ended up empty, skip it
+      // so we don't resurrect a removed placeholder.
+      const pendingIdx = currentMessages.findIndex(
+        (m, i) => !usedIndices.has(i) && m.type === "agent" && m.id === pendingMsgId
+      );
+      const isEmptyPending = pendingIdx >= 0 && text.length === 0 && thinking.length === 0;
+      if (isEmptyPending) {
+        usedIndices.add(pendingIdx);
+        continue;
+      }
+
+      const idx = currentMessages.findIndex(
+        (m, i) => !usedIndices.has(i) && m.type === "agent" && m.content === text
+      );
+      if (idx >= 0) {
+        usedIndices.add(idx);
+        reordered.push(currentMessages[idx]);
+
+        // Pull any trailing tool_call / tool_result messages that immediately
+        // followed this agent message in the old UI order so they stay together.
+        for (let i = idx + 1; i < currentMessages.length; i++) {
+          if (usedIndices.has(i)) break;
+          const m = currentMessages[i];
+          if (m.type === "tool_call" || m.type === "tool_result") {
+            usedIndices.add(i);
+            reordered.push(m);
+          } else {
+            break;
+          }
+        }
+      } else {
+        reordered.push({
+          id: generateId("agent"),
+          type: "agent",
+          content: text,
+          thinking: thinking || undefined,
+          thinkingCollapsed: true,
+        });
+      }
+    }
+  }
+
+  // Append any unmatched current messages (tool_call, tool_result, etc.)
+  for (let i = 0; i < currentMessages.length; i++) {
+    if (!usedIndices.has(i)) {
+      reordered.push(currentMessages[i]);
+    }
+  }
+
+  return reordered;
+}
+
 /** Fired when the LLM begins generating a response. Shows a status indicator. */
 function handleAgentStart(ctx: EventHandlerContext) {
   ctx.setIsStreaming(true);
@@ -201,29 +311,86 @@ function handleAgentStart(ctx: EventHandlerContext) {
 /**
  * Fired when the LLM finishes a full turn.
  * Replaces the streaming placeholder with the final assistant text (or removes it if empty).
+ * Also inserts any pending followUp messages and remaining steer messages at turn end.
  */
 function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>, ctx: EventHandlerContext) {
   ctx.setIsStreaming(false);
+
+  // Deliver any remaining steer messages (turn had no tool calls) and all followUp messages
+  const steerToInsert = ctx.localSteerQueueRef.current;
+  ctx.localSteerQueueRef.current = [];
+  const followUpToInsert = ctx.localFollowUpQueueRef.current;
+  ctx.localFollowUpQueueRef.current = [];
+
   const pendingMsgId = ctx.streamingMsgIdRef.current;
-  if (pendingMsgId && event.messages.length > 0) {
-    const lastAssistant = [...event.messages].reverse().find(isAssistantMessage);
-    if (lastAssistant) {
-      const { text, thinking } = extractTextAndThinking(lastAssistant);
-      ctx.setMessages((prev) => removeAgentMessageIfEmpty(prev, pendingMsgId, text, thinking));
+
+  ctx.setMessages((prev) => {
+    let next = prev.filter((m) => m.type !== "status");
+
+    // Check whether Pi's session history already contains user messages
+    // that are not yet in our UI (e.g. queued/followUp messages delivered
+    // by Pi before agent_end fired). If so, rebuild from event.messages
+    // to get the correct order instead of blindly appending to the end.
+    const historyUserTexts = event.messages
+      .filter(isUserMessage)
+      .map(getUserMessageContent);
+    const uiUserTexts = new Set(next.filter((m) => m.type === "user").map((m) => m.content));
+    const hasNewUserMessages = historyUserTexts.some((text) => !uiUserTexts.has(text));
+
+    if (hasNewUserMessages && event.messages.length > 0) {
+      // Finalise the pending streaming placeholder first
+      if (pendingMsgId) {
+        const lastAssistant = [...event.messages].reverse().find(isAssistantMessage);
+        if (lastAssistant) {
+          const { text, thinking } = extractTextAndThinking(lastAssistant);
+          next = removeAgentMessageIfEmpty(next, pendingMsgId, text, thinking);
+        }
+      }
+      return rebuildMessagesFromHistory(next, event.messages, pendingMsgId);
     }
-  }
-  ctx.setMessages((prev) => prev.filter((m) => m.type !== "status"));
+
+    // Fallback: old append logic for cases where Pi hasn't yet added
+    // the queued messages to its history snapshot.
+    if (pendingMsgId && event.messages.length > 0) {
+      const lastAssistant = [...event.messages].reverse().find(isAssistantMessage);
+      if (lastAssistant) {
+        const { text, thinking } = extractTextAndThinking(lastAssistant);
+        next = removeAgentMessageIfEmpty(next, pendingMsgId, text, thinking);
+      }
+    }
+
+    const inserts = [
+      ...steerToInsert.map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
+      ...followUpToInsert.map((text) => ({ id: generateId("user"), type: "user" as const, content: text })),
+    ];
+    if (inserts.length > 0) {
+      return next.concat(inserts);
+    }
+    return next;
+  });
+
   ctx.streamingMsgIdRef.current = null;
   ctx.pendingToolsRef.current.clear();
+  ctx.hasToolCallsRef.current = false;
 }
 
-/** Creates a blank streaming placeholder for the incoming assistant message. */
+/** Creates a blank streaming placeholder for the incoming assistant message.
+ *  If there were tool calls in this turn, any pending steer messages are delivered
+ *  right before the new assistant message (after tools finish, before next LLM call).
+ */
 function handleMessageStart(event: Extract<AgentSessionEvent, { type: "message_start" }>, ctx: EventHandlerContext) {
   if (!isAssistantMessage(event.message)) return;
+  const steerToInsert = ctx.hasToolCallsRef.current ? ctx.localSteerQueueRef.current : [];
+  if (ctx.hasToolCallsRef.current) {
+    ctx.localSteerQueueRef.current = [];
+  }
   const msgId = generateId("agent");
   ctx.streamingMsgIdRef.current = msgId;
   ctx.setMessages((prev) => [
     ...prev.filter((m) => m.type !== "status"),
+    ...(steerToInsert.length > 0
+      ? steerToInsert.map((text) => ({ id: generateId("user"), type: "user" as const, content: text }))
+      : []),
     { id: msgId, type: "agent", content: "", thinkingCollapsed: true },
   ]);
 }
@@ -261,6 +428,7 @@ function handleMessageEnd(event: Extract<AgentSessionEvent, { type: "message_end
 
 /** Adds a pending tool_call message to the UI so the user sees live execution. */
 function handleToolExecutionStart(event: Extract<AgentSessionEvent, { type: "tool_execution_start" }>, ctx: EventHandlerContext) {
+  ctx.hasToolCallsRef.current = true;
   const toolMsgId = generateId("tool");
   ctx.pendingToolsRef.current.set(event.toolCallId, toolMsgId);
   ctx.setMessages((prev) =>
@@ -353,6 +521,15 @@ function handleSessionInfoChanged(event: Extract<AgentSessionEvent, { type: "ses
   }
 }
 
+/** Syncs the pending steer/followUp queues from the agent session to React state.
+ *  Delivery detection is handled manually via local queues and event boundaries
+ *  (steer after tool calls, followUp at agent_end), so this only updates the UI state.
+ */
+function handleQueueUpdate(event: Extract<AgentSessionEvent, { type: "queue_update" }>, ctx: EventHandlerContext) {
+  ctx.setSteeringMessages(event.steering);
+  ctx.setFollowUpMessages(event.followUp);
+}
+
 /**
  * Central dispatcher for all AgentSession events.
  * Uses a switch so TypeScript can narrow the event type for each handler.
@@ -372,6 +549,7 @@ function handleEvent(event: AgentSessionEvent, ctx: EventHandlerContext) {
     case "auto_retry_start": handleAutoRetryStart(event, ctx); break;
     case "auto_retry_end": handleAutoRetryEnd(event, ctx); break;
     case "session_info_changed": handleSessionInfoChanged(event, ctx); break;
+    case "queue_update": handleQueueUpdate(event, ctx); break;
     default: break;
   }
 }
@@ -417,6 +595,8 @@ export function useKoiAgent(): KoiAgentState {
   const [sessionList, setSessionList] = useState<SessionMeta[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitleState] = useState<string>(getSessionTitle());
+  const [steeringMessages, setSteeringMessages] = useState<readonly string[]>([]);
+  const [followUpMessages, setFollowUpMessages] = useState<readonly string[]>([]);
 
   const streamingMsgIdRef = useRef<string | null>(null);
   const pendingToolsRef = useRef<Map<string, string>>(new Map());
@@ -427,6 +607,9 @@ export function useKoiAgent(): KoiAgentState {
   const messagesRef = useRef<UIMessage[]>([]);
   const currentSessionIdRef = useRef<string | null>(null);
   const allExpandedRef = useRef<boolean>(false);
+  const localSteerQueueRef = useRef<string[]>([]);
+  const localFollowUpQueueRef = useRef<string[]>([]);
+  const hasToolCallsRef = useRef(false);
 
   // Keep refs in sync with latest state for cleanup handlers (unmount, switch, delete).
   // These refs avoid stale closures without adding every state to dependency arrays.
@@ -472,6 +655,11 @@ export function useKoiAgent(): KoiAgentState {
       setSessionTitleState,
       setSessionTitle,
       allExpandedRef,
+      setSteeringMessages,
+      setFollowUpMessages,
+      localSteerQueueRef,
+      localFollowUpQueueRef,
+      hasToolCallsRef,
     };
     return s.subscribe((event: AgentSessionEvent) => handleEvent(event, ctx));
   }, []);
@@ -567,6 +755,11 @@ export function useKoiAgent(): KoiAgentState {
     setError(null);
     streamingMsgIdRef.current = null;
     pendingToolsRef.current.clear();
+    setSteeringMessages([]);
+    setFollowUpMessages([]);
+    localSteerQueueRef.current = [];
+    localFollowUpQueueRef.current = [];
+    hasToolCallsRef.current = false;
   }, []);
 
   // -- Session Actions --
@@ -741,6 +934,24 @@ export function useKoiAgent(): KoiAgentState {
     [session]
   );
 
+  const steer = useCallback(
+    async (text: string) => {
+      if (!session) return;
+      localSteerQueueRef.current.push(text);
+      await session.steer(text);
+    },
+    [session]
+  );
+
+  const followUp = useCallback(
+    async (text: string) => {
+      if (!session) return;
+      localFollowUpQueueRef.current.push(text);
+      await session.followUp(text);
+    },
+    [session]
+  );
+
   const abort = useCallback(async () => {
     await session?.abort();
   }, [session]);
@@ -785,18 +996,67 @@ export function useKoiAgent(): KoiAgentState {
     pendingToolsRef.current.clear();
   }, []);
 
+  const removePendingMessage = useCallback(
+    (type: "sheer" | "queued", index: number) => {
+      if (!session) return null;
+      const cleared = session.clearQueue();
+      const newSteering = [...cleared.steering];
+      const newFollowUp = [...cleared.followUp];
+
+      let removedText: string | null = null;
+      if (type === "sheer") {
+        removedText = newSteering.splice(index, 1)[0] ?? null;
+        localSteerQueueRef.current.splice(index, 1);
+      } else {
+        removedText = newFollowUp.splice(index, 1)[0] ?? null;
+        localFollowUpQueueRef.current.splice(index, 1);
+      }
+
+      // Re-add remaining messages to Pi's queue
+      for (const text of newSteering) {
+        void session.steer(text);
+      }
+      for (const text of newFollowUp) {
+        void session.followUp(text);
+      }
+
+      return removedText;
+    },
+    [session]
+  );
+
+  const retractMessage = useCallback((id: string) => {
+    let retractedText: string | null = null;
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === id && m.type === "user");
+      if (idx < 0) return prev;
+      const msg = prev[idx];
+      if (msg && msg.type === "user") {
+        retractedText = msg.content;
+      }
+      return [...prev.slice(0, idx), ...prev.slice(idx + 1)];
+    });
+    return retractedText;
+  }, []);
+
   return {
     session,
     messages,
     isStreaming,
     isReady,
     error,
+    steeringMessages,
+    followUpMessages,
     prompt,
+    steer,
+    followUp,
     abort,
     toggleCollapse,
     expandAll,
     collapseAll,
     clearMessages,
+    removePendingMessage,
+    retractMessage,
     switchSession,
     newSession,
     forkSession,
