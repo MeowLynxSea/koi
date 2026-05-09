@@ -560,13 +560,18 @@ const DEFAULT_BG = RGBA.defaultBackground();
 function DiffToolContent({
   diff,
   contentWidth,
+  filePath,
 }: {
   diff: string;
   contentWidth: number;
+  filePath?: string;
 }) {
   const syntaxStyle = useMemo(() => buildSyntaxStyle(), []);
   return (
     <box marginTop={1} flexDirection="column" width={contentWidth - 4}>
+      {filePath && (
+        <text fg="#8be9fd" marginBottom={1}>{filePath}</text>
+      )}
       <diff
         diff={diff}
         view="unified"
@@ -678,11 +683,12 @@ function ToolCallMessage({
   // Force-expanded tools (write/edit) always render expanded with diff
   if (forceExpanded) {
     const diff = extractDiffFromResult(msg.result);
+    const filePath = String(msg.args["path"] ?? msg.args["file"] ?? "");
     return (
       <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
         <box flexDirection="row">
           <text fg={statusColor}>{margin}• </text>
-          <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>{msg.toolName}</text>
+          <text fg={msg.isError ? "#ff5555" : "#6c6c7c"}>{msg.toolName} {filePath}</text>
         </box>
         {msg.result !== undefined && diff ? (
           <DiffToolContent diff={diff} contentWidth={contentWidth} />
