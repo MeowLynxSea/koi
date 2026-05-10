@@ -368,20 +368,24 @@ export async function callAuxiliaryModel(
       {
         apiKey: auth.apiKey,
         headers: auth.headers,
-        maxTokens: 50,
+        maxTokens: 1024,
         maxRetries: 1,
         timeoutMs: 30000,
       }
     );
 
+    fs.appendFileSync("/tmp/koi-debug.log", `[callAuxiliaryModel] result.stopReason: ${result.stopReason}, content: ${JSON.stringify(result.content)}\n`);
+
     if (result.stopReason === "error" || result.stopReason === "aborted") {
       return null;
     }
 
-    return result.content
+    const text = result.content
       .filter((block): block is { type: "text"; text: string } => block.type === "text")
       .map((block) => block.text)
       .join("");
+    fs.appendFileSync("/tmp/koi-debug.log", `[callAuxiliaryModel] joined text: "${text}"\n`);
+    return text;
   } catch {
     return null;
   }

@@ -77,11 +77,7 @@ function parseSessionName(response: string): string | null {
   // Try to extract content from <name>...</name> tags
   const tagMatch = response.match(/<name>(.*?)<\/name>/s);
   if (tagMatch && tagMatch[1]) {
-    const name = tagMatch[1].trim();
-    // Validate name length
-    if (name.length >= 5 && name.length <= 20) {
-      return name;
-    }
+    return tagMatch[1].trim();
   }
   return null;
 }
@@ -94,6 +90,7 @@ async function generateSessionNameFromMessages(
   userMessages: string[]
 ): Promise<string | null> {
   if (userMessages.length === 0) {
+    fs.appendFileSync("/tmp/koi-debug.log", "[generateSessionNameFromMessages] No user messages\n");
     return null;
   }
 
@@ -102,16 +99,23 @@ async function generateSessionNameFromMessages(
     .map((msg, i) => `[Message ${i + 1}]\n${msg}`)
     .join("\n\n");
 
+  fs.appendFileSync("/tmp/koi-debug.log", `[generateSessionNameFromMessages] Calling auxiliary model with context: ${userContext.slice(0, 200)}\n`);
+
   const result = await callAuxiliaryModel(
     NAMING_SYSTEM_PROMPT,
     [{ role: "user", content: userContext, timestamp: Date.now() }]
   );
 
+  fs.appendFileSync("/tmp/koi-debug.log", `[generateSessionNameFromMessages] Result: ${result}\n`);
+
   if (!result) {
+    fs.appendFileSync("/tmp/koi-debug.log", "[generateSessionNameFromMessages] No result from auxiliary model\n");
     return null;
   }
 
-  return parseSessionName(result);
+  const parsed = parseSessionName(result);
+  fs.appendFileSync("/tmp/koi-debug.log", `[generateSessionNameFromMessages] Parsed name: ${parsed}\n`);
+  return parsed;
 }
 
 export interface KoiAgentState {
@@ -1288,6 +1292,7 @@ export function useKoiAgent(): KoiAgentState {
       // 1. Session hasn't been named yet
       // 2. Current title is the default "New Session"
       // 3. There are user messages to base the name on
+      fs.appendFileSync("/tmp/koi-debug.log", `[triggerSessionNaming] sessionNamedRef: ${sessionNamedRef.current}, sessionTitle: "${sessionTitle}", equals: ${sessionTitle === "New Session"}\n`);
       if (sessionNamedRef.current) return;
       if (sessionTitle !== "New Session") return;
 
