@@ -13,6 +13,7 @@ import type { TextContent } from "@mariozechner/pi-ai";
 import { checkPermission } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
 import { monitorRegistry } from "../agent/monitor-registry.js";
+import { activeSessionRef } from "../agent/hooks.js";
 import type { ToolResultWithError } from "./types.js";
 
 // ─── CreateMonitor ────────────────────────────────────────────────────────────
@@ -93,7 +94,8 @@ export function createMonitorToolDefinition(): ToolDefinition<
         }
       }
 
-      const monitorId = monitorRegistry.launch(params.command, params.description ?? "");
+      const sessionId = activeSessionRef.current?.sessionId ?? "unknown";
+      const monitorId = monitorRegistry.launch(sessionId, params.command, params.description ?? "");
 
       return {
         content: [

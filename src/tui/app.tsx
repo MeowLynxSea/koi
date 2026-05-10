@@ -279,12 +279,20 @@ export function App({ onExit }: AppProps) {
   }, []);
 
   // Subscribe to monitor registry changes for live sidebar updates.
+  // Filters to show only monitors for the current session.
   useEffect(() => {
     const unsubscribe = monitorRegistry.subscribe(() => {
-      setMonitors(monitorRegistry.getAll());
+      // Only show monitors belonging to the current session
+      if (currentSessionId) {
+        setMonitors(monitorRegistry.getBySession(currentSessionId));
+      }
     });
+    // Re-filter when session changes
+    if (currentSessionId) {
+      setMonitors(monitorRegistry.getBySession(currentSessionId));
+    }
     return unsubscribe;
-  }, []);
+  }, [currentSessionId]);
 
   // Polls session stats (token count, cost, context usage) every 2s for the sidebar.
   // Falls back to zeroed values when no session is active.
@@ -323,13 +331,14 @@ export function App({ onExit }: AppProps) {
       setSidebarCost(costStr);
       setTasks(globalTaskManager.listTasks());
       setSubagents(subagentRegistry.getAll());
-      setMonitors(monitorRegistry.getAll());
+      // Only show monitors for the current session
+      setMonitors(currentSessionId ? monitorRegistry.getBySession(currentSessionId) : []);
     };
 
     update();
     const interval = setInterval(update, 2000);
     return () => clearInterval(interval);
-  }, [session]);
+  }, [session, currentSessionId]);
 
   // Processes the permission-request queue one item at a time.
   // Shows a styled confirm modal; keyboard y/n also works while the modal is open.

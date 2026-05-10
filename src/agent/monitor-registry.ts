@@ -17,6 +17,7 @@ export type MonitorStatus = "running" | "completed" | "killed" | "error";
 
 export interface MonitorEntry {
   id: string;
+  sessionId: string;
   description: string;
   command: string;
   status: MonitorStatus;
@@ -66,11 +67,12 @@ class MonitorRegistryImpl extends EventEmitter {
    * Launch a new background monitor.
    * Returns the monitor ID.
    */
-  launch(command: string, description: string = ""): string {
+  launch(sessionId: string, command: string, description: string = ""): string {
     const id = generateMonitorId();
 
     const entry: MonitorEntry = {
       id,
+      sessionId,
       description: description || `Monitor: ${command.slice(0, 40)}${command.length > 40 ? "…" : ""}`,
       command,
       status: "running",
@@ -223,10 +225,24 @@ class MonitorRegistryImpl extends EventEmitter {
   }
 
   /**
+   * Get monitor entries for a specific session.
+   */
+  getBySession(sessionId: string): MonitorEntry[] {
+    return this.getAll().filter((m) => m.sessionId === sessionId);
+  }
+
+  /**
    * Get only running monitors.
    */
   getRunning(): MonitorEntry[] {
     return this.getAll().filter((m) => m.status === "running");
+  }
+
+  /**
+   * Get only running monitors for a specific session.
+   */
+  getRunningBySession(sessionId: string): MonitorEntry[] {
+    return this.getBySession(sessionId).filter((m) => m.status === "running");
   }
 
   /**
