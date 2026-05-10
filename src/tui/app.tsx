@@ -768,9 +768,10 @@ export function App({ onExit }: AppProps) {
         return;
       }
 
-      // Handle /exit and /quit commands
+      // Handle /exit and /quit commands - exit directly without confirmation
       if (text.trim() === "/exit" || text.trim() === "/quit") {
-        setShowExitModal(true);
+        saveCurrentState();
+        onExit();
         return;
       }
 
@@ -917,8 +918,8 @@ export function App({ onExit }: AppProps) {
       { id: "/sessions", label: "Browse sessions", section: "Session", action: async () => { await refreshSessionList(); setShowSessionModal(true); } },
       { id: "/compact", label: "Compact current session", section: "Session", action: () => { session?.compact().catch(() => {}); } },
       { id: "/rename", label: "Rename session", section: "Session", action: () => setShowRenameModal(true) },
-      { id: "/exit", label: "Exit Koi", section: "Session", action: () => setShowExitModal(true) },
-      { id: "/quit", label: "Exit Koi (alias)", section: "Session", action: () => setShowExitModal(true) },
+      { id: "/exit", label: "Exit Koi", section: "Session", action: () => { saveCurrentState(); onExit(); } },
+      { id: "/quit", label: "Exit Koi (alias)", section: "Session", action: () => { saveCurrentState(); onExit(); } },
       { id: "/yolo", label: "Toggle YOLO mode (auto-approve all permissions)", section: "Mode", action: () => setYoloMode((prev) => !prev) },
       { id: "/mode", label: `Cycle agent mode (${agentMode})`, section: "Mode", action: () => handleModeSwitch() },
       { id: "/plan", label: "Switch to plan mode (read-only, no file modifications)", section: "Mode", action: () => applyAgentMode("plan") },
