@@ -5,13 +5,12 @@
  * Re-exports all public types and functions.
  * 
  * Features:
- * - Load skills from ~/.config/koi/skills and .claude/skills
+ * - Load skills from ~/.config/koi/skills, ~/.claude/skills, and .claude/skills
  * - SKILL.md format with YAML frontmatter
- * - Built-in bundled skills (Review, Test, Explain, etc.)
+ * - Built-in bundled skills
  * - Conditional skills (path-based activation)
  * - Dynamic skill discovery
  * - Argument substitution ({{skill.args}}, <arg>)
- * - Shell command execution in prompts
  */
 
 // Types
@@ -38,7 +37,6 @@ export {
   hasSkill,
   getSkillsBySource,
   getSkillsPath,
-  getCommandsPath,
   onSkillsLoaded,
   discoverSkillDirsForPaths,
   addSkillDirectories,
@@ -52,9 +50,7 @@ export {
 export {
   registerBundledSkill,
   getBundledSkillDefinitions,
-  registerCommonBundledSkills,
-  createSimpleBundledSkill,
-  createBundledSkillWithArgs,
+  initBundledSkills,
 } from "./bundled.js";
 
 // Skill invocation

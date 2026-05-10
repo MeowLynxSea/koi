@@ -2,7 +2,7 @@
  * Skills Loader
  *
  * Full implementation of Claude Code's skill loading system:
- * - Loads skills from ~/.config/koi/skills and .claude/skills
+ * - Loads skills from ~/.config/koi/skills, ~/.claude/skills, and .claude/skills
  * - Supports SKILL.md format with YAML frontmatter
  * - Conditional skills (path-filtered activation)
  * - Dynamic skill discovery based on file paths
@@ -31,7 +31,7 @@ const __dirname = path.dirname(__filename);
 
 // Default skills directories
 const USER_SKILLS_DIR = path.join(os.homedir(), ".config", "koi", "skills");
-const LEGACY_COMMANDS_DIR = path.join(os.homedir(), ".config", "koi", "commands");
+const USER_CLAUDE_SKILLS_DIR = path.join(os.homedir(), ".claude", "skills");
 
 /**
  * Skill state tracking
@@ -80,20 +80,6 @@ export function getSkillsPath(source: SkillSource, cwd?: string): string {
       return path.join(__dirname, "bundled");
     default:
       return USER_SKILLS_DIR;
-  }
-}
-
-/**
- * Get the commands directory path (legacy location)
- */
-export function getCommandsPath(source: SkillSource, cwd?: string): string {
-  switch (source) {
-    case "userSettings":
-      return LEGACY_COMMANDS_DIR;
-    case "projectSettings":
-      return cwd ? path.join(cwd, ".claude", "commands") : ".claude/commands";
-    default:
-      return LEGACY_COMMANDS_DIR;
   }
 }
 
@@ -480,7 +466,7 @@ export async function loadAllSkills(cwd?: string): Promise<SkillCommand[]> {
   const seenPaths = new Set<string>();
   const allSkills: SkillCommand[] = [];
 
-  // Load from user settings directory
+  // Load from user settings directory (~/.config/koi/skills)
   const userSkills = await loadSkillsFromSkillsDir(USER_SKILLS_DIR, "userSettings");
   for (const { skill, filePath } of userSkills) {
     const resolvedPath = await realPath(filePath);
@@ -489,6 +475,22 @@ export async function loadAllSkills(cwd?: string): Promise<SkillCommand[]> {
       allSkills.push(skill);
       
       // Separate conditional and unconditional skills
+      if (skill.paths && skill.paths.length > 0) {
+        skillState.conditional.set(skill.name, skill);
+      } else {
+        skillState.unconditional.set(skill.name, skill);
+      }
+    }
+  }
+
+  // Load from user Claude skills directory (~/.claude/skills)
+  const userClaudeSkills = await loadSkillsFromSkillsDir(USER_CLAUDE_SKILLS_DIR, "userSettings");
+  for (const { skill, filePath } of userClaudeSkills) {
+    const resolvedPath = await realPath(filePath);
+    if (!seenPaths.has(resolvedPath)) {
+      seenPaths.add(resolvedPath);
+      allSkills.push(skill);
+      
       if (skill.paths && skill.paths.length > 0) {
         skillState.conditional.set(skill.name, skill);
       } else {

@@ -41,7 +41,7 @@ import {
   invokeSkill, 
   loadAllSkills,
   getSkillCountBySource,
-  registerCommonBundledSkills,
+  initBundledSkills,
 } from "../skills/index.js";
 import type { SkillCommand } from "../skills/types.js";
 import type { InputBoxHandle } from "./components/input-box.js";
@@ -240,7 +240,7 @@ export function App({ onExit }: AppProps) {
   useEffect(() => {
     void (async () => {
       // Register built-in bundled skills first
-      registerCommonBundledSkills();
+      initBundledSkills();
       
       // Load all skills from configured directories
       await loadAllSkills(process.cwd());
@@ -887,7 +887,7 @@ export function App({ onExit }: AppProps) {
     return skills
       .filter((skill) => skill.userInvocable && !skill.isHidden)
       .map((skill) => ({
-        id: `/${skill.source}:${skill.name}`,
+        id: `/${skill.name}`,
         label: skill.description || skill.name,
         section: "Skills",
         action: async () => {
