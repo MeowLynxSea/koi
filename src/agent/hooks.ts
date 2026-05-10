@@ -1042,13 +1042,32 @@ export function useKoiAgent(): KoiAgentState {
       saveCurrentState();
       await session.abort();
       session.dispose();
+      
+      // Start MCP connection progress tracking
+      setIsConnectingMcp(true);
+      setMcpConnectionProgress({
+        total: 0,
+        completed: 0,
+        currentServer: "Initializing...",
+        status: "connecting",
+      });
+      
       try {
-        const result = await loadSession(sessionFile, globalTaskManager);
+        const result = await loadSession(sessionFile, globalTaskManager, (progress) => {
+          setMcpConnectionProgress(progress);
+        });
+        
+        // Clear MCP connection progress
+        setIsConnectingMcp(false);
+        setMcpConnectionProgress(null);
+        
         resetSessionUI();
         await setupSession(result);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : String(err));
         setIsReady(true);
+        setIsConnectingMcp(false);
+        setMcpConnectionProgress(null);
       }
     },
     [session, saveCurrentState, setupSession, resetSessionUI]

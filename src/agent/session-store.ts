@@ -451,10 +451,11 @@ export async function createNewSession(
 
 export async function loadSession(
   filePath: string,
-  taskManager: SessionTaskManager
+  taskManager: SessionTaskManager,
+  onMcpProgress?: McpProgressCallback
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-  const config = await buildSessionConfig(taskManager);
+  const config = await buildSessionConfig(taskManager, onMcpProgress);
   const sessionManager = SessionManager.open(filePath, undefined, process.cwd());
   return createAgentSessionWithConfig(sessionManager, config);
 }
