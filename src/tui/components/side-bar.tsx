@@ -7,6 +7,7 @@
 
 import { createTextAttributes } from "@opentui/core";
 import { getMcpConnections, getMcpStatusSummary } from "../../services/mcp/index.js";
+import { VERSION } from "../../config/version.js";
 
 const KOI_LOGO = [
   "██   ███   ███████   ██████",
@@ -15,8 +16,6 @@ const KOI_LOGO = [
   "██  ██    ███    ██    ██   ",
   "██   ███   ███████   ██████",
 ];
-
-const VERSION = "v0.1.0";
 
 // 水墨风格渐变色：从淡蓝墨到浓墨
 const GRADIENT_STOPS = [
