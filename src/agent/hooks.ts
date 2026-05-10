@@ -38,7 +38,7 @@ import {
   getActiveToolNamesForMode,
   injectModeIntoSystemPrompt,
 } from "./mode.js";
-import { getCurrentPlanText, setCurrentPlanText } from "./plan-ui.js";
+import { getCurrentPlanText } from "./plan-ui.js";
 import { forkManager } from "./session-fork.js";
 import {
   saveSnapshotIfChanged,
@@ -1237,11 +1237,13 @@ export function useKoiAgent(): KoiAgentState {
       const sid = currentSessionIdRef.current;
       if (sid) {
         const koiState = loadKoiState(sid);
-        saveKoiState(sid, {
-          ...koiState,
-          title,
-          updatedAt: Date.now(),
-        });
+        if (koiState) {
+          saveKoiState(sid, {
+            ...koiState,
+            title,
+            updatedAt: Date.now(),
+          });
+        }
       }
     },
     [session]
@@ -1310,7 +1312,7 @@ export function useKoiAgent(): KoiAgentState {
         setSessionTitleWrapper(name);
       }
     },
-    [sessionTitle, session, setSessionTitleWrapper] // eslint-disable-line react-hooks/exhaustive-deps
+    [sessionTitle, session, setSessionTitleWrapper] // intentional: omit sessionTitle to avoid re-running
   );
 
   const prompt = useCallback(

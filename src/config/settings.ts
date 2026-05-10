@@ -340,7 +340,7 @@ export async function validateProviderCredential(
  */
 export async function callAuxiliaryModel(
   systemPrompt: string,
-  userMessages: Array<{ role: string; content: string; timestamp: number }>
+  userMessages: Array<{ role: "user"; content: string; timestamp: number }>
 ): Promise<string | null> {
   const ref = getAuxiliaryModel();
   if (!ref) {

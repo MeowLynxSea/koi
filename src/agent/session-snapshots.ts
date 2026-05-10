@@ -101,7 +101,7 @@ export function saveSnapshotIfChanged(
 export function findSnapshotBeforeEntry(
   session: AgentSession,
   targetEntryId: string
-): { entryId: string; data: KoiSnapshotData } | null {
+): { entryId: string; data: KoiSnapshotData | undefined } | null {
   const branch = session.sessionManager.getBranch(targetEntryId);
   const snapshotIds: string[] = [];
   for (let i = branch.length - 1; i >= 0; i--) {
@@ -115,9 +115,7 @@ export function findSnapshotBeforeEntry(
       fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] findSnapshotBeforeEntry target=${targetEntryId} found=${entry.id} tasks=${(entry as unknown as { data?: KoiSnapshotData }).data?.tasks?.length ?? 0} taskStatus=${(entry as unknown as { data?: KoiSnapshotData }).data?.tasks?.map(t => t.status).join(",") ?? "none"}\n`);
       return {
         entryId: entry.id,
-        data: (entry as unknown as { data?: KoiSnapshotData }).data as
-          | KoiSnapshotData
-          | undefined,
+        data: (entry as unknown as { data?: KoiSnapshotData }).data,
       };
     }
   }
@@ -134,7 +132,7 @@ export function findSnapshotBeforeEntry(
 export function findSnapshotAfterEntry(
   session: AgentSession,
   targetEntryId: string
-): { entryId: string; data: KoiSnapshotData } | null {
+): { entryId: string; data: KoiSnapshotData | undefined } | null {
   const allEntries = session.sessionManager.getEntries();
   const byId = new Map<string, SessionEntry>();
   const children = new Map<string, string[]>();
@@ -167,9 +165,7 @@ export function findSnapshotAfterEntry(
       fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] findSnapshotAfterEntry target=${targetEntryId} found=${entry.id} tasks=${(entry as unknown as { data?: KoiSnapshotData }).data?.tasks?.length ?? 0} taskStatus=${(entry as unknown as { data?: KoiSnapshotData }).data?.tasks?.map(t => t.status).join(",") ?? "none"} visitedSnapshots=[${visitedSnapshots.join(",")}]\n`);
       return {
         entryId: entry.id,
-        data: (entry as unknown as { data?: KoiSnapshotData }).data as
-          | KoiSnapshotData
-          | undefined,
+        data: (entry as unknown as { data?: KoiSnapshotData }).data,
       };
     }
 

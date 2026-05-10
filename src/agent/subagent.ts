@@ -56,8 +56,10 @@ const PLAN_TOOL_NAMES = new Set([
 ]);
 
 function filterTools(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parentTools: AgentTool<any>[],
   subagentType?: SubagentType
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): AgentTool<any>[] {
   let allowedNames: Set<string> | null = null;
   if (subagentType === "explore") {

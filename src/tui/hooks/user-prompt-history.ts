@@ -30,12 +30,12 @@ function loadHistory(): string[] {
   try {
     if (fs.existsSync(HISTORY_FILE)) {
       const data = fs.readFileSync(HISTORY_FILE, "utf-8");
-      const parsed = JSON.parse(data);
+      const parsed = JSON.parse(data) as unknown;
       if (Array.isArray(parsed)) {
-        return parsed.slice(0, MAX_HISTORY_SIZE);
+        return parsed.slice(0, MAX_HISTORY_SIZE) as string[];
       }
     }
-  } catch (err) {
+  } catch (_err) {
     // Ignore errors, return empty array
   }
   return [];
@@ -51,7 +51,7 @@ function saveHistory(history: string[]): void {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2), "utf-8");
-  } catch (err) {
+  } catch (_err) {
     // Ignore write errors
   }
 }
