@@ -6,20 +6,30 @@
  * Deeply customized coding agent built on top of Pi SDK.
  * TUI + Bun runtime.
  * 
- * Uses createRequire to correctly locate the package regardless of
- * whether it's installed globally or locally.
+ * Locates the package by walking up directories from this script
+ * until we find dist/main.js. This works for both local dev and global install.
  */
 
-import { createRequire } from "module";
+import { existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
-// Find the package directory correctly in both dev and release modes
-const require = createRequire(import.meta.url);
-const packageJsonPath = require.resolve("@meowlynxsea/koi/package.json");
-const packageDir = dirname(dirname(packageJsonPath));
+// Get the directory where this script actually lives
+const scriptDir = dirname(fileURLToPath(import.meta.url));
 
-// Import main from the package's dist directory
-const { main } = await import(join(packageDir, "dist/main.js"));
+// Walk up directories until we find dist/main.js
+// In dev: scriptDir = .../koi/bin, packageRoot = .../koi
+// In global install: scriptDir = .../node_modules/.bin, packageRoot = .../node_modules/@meowlynxsea/koi
+let packageRoot = scriptDir;
+while (!existsSync(join(packageRoot, "dist/main.js"))) {
+  const parent = dirname(packageRoot);
+  if (parent === packageRoot) {
+    console.error("Could not find koi package");
+    process.exit(1);
+  }
+  packageRoot = parent;
+}
 
+// Import and run main
+const { main } = await import(join(packageRoot, "dist/main.js"));
 await main();
