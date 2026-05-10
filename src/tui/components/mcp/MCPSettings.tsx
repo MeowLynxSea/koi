@@ -4,8 +4,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { createTextAttributes } from "@opentui/core";
-import type { TextareaRenderable } from "@opentui/core";
+import { createTextAttributes, type TextareaRenderable } from "@opentui/core";
 import type { McpServerConfig } from "../../../services/mcp/types.js";
 import {
   getAllMcpConfigs,
@@ -13,16 +12,14 @@ import {
   setMcpConfig,
   removeMcpConfig,
   isMcpServerDisabled,
-  setMcpServerEnabled,
   validateMcpConfig,
   loadMcpConfigs,
 } from "../../../services/mcp/config.js";
-import { connectMcpServer, disconnectMcpServer, getMcpConnections } from "../../../services/mcp/connection-manager.js";
+import { connectMcpServer, disconnectMcpServer, toggleMcpServer, getMcpConnections } from "../../../services/mcp/connection-manager.js";
 
 interface MCPSettingsProps {
   isActive: boolean;
   onClose: () => void;
-  /** Callback when MCP configuration changes (connect/disconnect/add/remove) */
   onMcpChange?: () => void;
 }
 
@@ -54,7 +51,6 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
   const panelWidth = Math.min(75, Math.max(50, Math.floor(width * 0.8)));
 
   const refreshServers = useCallback(() => {
-    // Ensure configs are loaded from disk first
     loadMcpConfigs();
     const configs = getAllMcpConfigs();
     setServers(Array.from(configs.keys()));
@@ -69,52 +65,52 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
     }
   }, [isActive, refreshServers]);
 
-  const getServerStatus = useCallback((name: string) => {
+  const getServerStatus = (name: string) => {
     const connection = getMcpConnections().get(name);
     if (connection) return connection.status;
     if (isMcpServerDisabled(name)) return "disabled";
     return "disconnected";
-  }, []);
+  };
 
-  const getServerType = useCallback((name: string) => {
+  const getServerType = (name: string) => {
     const config = getMcpConfig(name);
-    if (!config) return "unknown";
-    return config.type ?? "unknown";
-  }, []);
+    return config?.type ?? "unknown";
+  };
 
-  const handleConnect = useCallback(async (name: string) => {
+  const handleConnect = async (name: string) => {
     setMessage(`Connecting to ${name}...`);
     const result = await connectMcpServer(name);
-    if (result.success) setMessage(`Connected to ${name}`);
-    else setMessage(`Failed: ${result.error}`);
+    setMessage(result.success ? `Connected to ${name}` : `Failed: ${result.error}`);
     refreshServers();
     onMcpChange?.();
-  }, [refreshServers, onMcpChange]);
+  };
 
-  const handleDisconnect = useCallback(async (name: string) => {
-    await disconnectMcpServer(name);
-    setMessage(`Disconnected from ${name}`);
-    refreshServers();
-    onMcpChange?.();
-  }, [refreshServers, onMcpChange]);
+  const handleToggle = (name: string) => {
+    const connection = getMcpConnections().get(name);
+    const status = connection?.status ?? "disconnected";
 
-  const handleToggle = useCallback(async (name: string) => {
-    const disabled = isMcpServerDisabled(name);
-    setMcpServerEnabled(name, !disabled);
-    setMessage(`${disabled ? "Enabled" : "Disabled"} ${name}`);
-    refreshServers();
-    onMcpChange?.();
-  }, [refreshServers, onMcpChange]);
+    if (status === "connected" || status === "failed") {
+      toggleMcpServer(name, false);
+      setMessage(`Disabled ${name}`);
+      refreshServers();
+      onMcpChange?.();
+    } else {
+      toggleMcpServer(name, true);
+      setMessage(`Enabled ${name}`);
+      refreshServers();
+      onMcpChange?.();
+    }
+  };
 
-  const handleDelete = useCallback((name: string) => {
+  const handleDelete = (name: string) => {
     removeMcpConfig(name);
     disconnectMcpServer(name).catch(() => {});
     setMessage(`Removed ${name}`);
     refreshServers();
     onMcpChange?.();
-  }, [refreshServers, onMcpChange]);
+  };
 
-  const handleAddNew = useCallback(() => {
+  const handleAddNew = () => {
     setEditName("");
     setEditType("stdio");
     setEditCommand("");
@@ -122,11 +118,14 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
     setEditUrl("");
     setEditHeaders("");
     setView("add");
-  }, []);
+  };
 
-  const handleEdit = useCallback((name: string) => {
+  const handleEdit = (name: string) => {
     const config = getMcpConfig(name);
-    if (!config) return;
+    if (!config) {
+      setMessage(`Config not found for ${name}`);
+      return;
+    }
 
     setEditName(name);
     if (config.type === "stdio" && config.command) {
@@ -139,9 +138,9 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
       setEditHeaders(Object.entries(config.headers ?? {}).map(([k, v]) => `${k}:${v}`).join("\n"));
     }
     setView("edit");
-  }, []);
+  };
 
-  const handleSave = useCallback(() => {
+  const handleSave = () => {
     let config: McpServerConfig;
 
     if (editType === "stdio") {
@@ -173,33 +172,36 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
     // Auto-connect after saving
     void (async () => {
       const result = await connectMcpServer(nameToUse);
-      if (result.success) {
-        setMessage(`Connected to ${nameToUse}`);
-      } else {
-        setMessage(`Saved but failed to connect: ${result.error}`);
-      }
+      setMessage(result.success ? `Connected to ${nameToUse}` : `Saved but failed to connect: ${result.error}`);
       refreshServers();
       onMcpChange?.();
     })();
-  }, [view, editName, editType, editCommand, editArgs, editUrl, editHeaders, refreshServers, onMcpChange]);
+  };
 
-  const handleBack = useCallback(() => { setView("list"); setMessage(null); }, []);
+  const handleBack = () => { setView("list"); setMessage(null); };
 
   useKeyboard((key) => {
     if (!isActive) return;
-    if (key.name === "escape") { 
+
+    if (key.name === "escape") {
       if (view !== "list") { handleBack(); } else { onClose(); }
-      return; 
+      return;
     }
+
     if (view === "list") {
       if (key.name === "up") { setSelectedIndex(i => Math.max(0, i - 1)); return; }
       if (key.name === "down") { setSelectedIndex(i => Math.min(servers.length - 1, i + 1)); return; }
-      if (key.name === "return") { 
+      if (key.name === "return") {
         const selectedServer = servers[selectedIndex];
-        if (selectedServer) { handleEdit(selectedServer); } else if (servers.length === 0) { handleAddNew(); }
-        return; 
+        if (selectedServer) { handleEdit(selectedServer); }
+        else if (servers.length === 0) { handleAddNew(); }
+        return;
       }
       if (key.name === "n" || key.name === "N") { handleAddNew(); return; }
+    }
+
+    if (view === "edit" || view === "add") {
+      if (key.name === "return") { handleSave(); return; }
     }
   });
 
@@ -209,49 +211,50 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
     connected: "#00ff99", failed: "#ff6b6b", disabled: "#fbbf24", disconnected: "#6c6c7c", pending: "#00d9ff",
   };
 
-  // Button style constants (YOLO style)
   const TYPE_BUTTON_ENABLED_BG = "#ff6b9d";
   const TYPE_BUTTON_DISABLED_BG = "#4a4a5a";
 
-  const handleTextChange = (ref: React.RefObject<TextareaRenderable | null>, setter: (v: string) => void) => () => {
-    const text = ref.current?.editBuffer.getText() ?? "";
-    setter(text);
-  };
-
-  // Server row component
-  const ServerRow = ({ name, index }: { name: string; index: number }) => {
-    const status = getServerStatus(name);
-    const type = getServerType(name);
-    const color = statusColors[status] ?? "#6c6c7c";
-    const isSelected = index === selectedIndex;
-    
-    return (
-      <box height={1} backgroundColor={isSelected ? "#44475a" : undefined} paddingLeft={2} flexDirection="row" onMouseUp={() => { setSelectedIndex(index); }}>
-        <text fg={color}>●</text>
-        <text width={20} fg={isSelected ? "#ff79c6" : "#f8f8f2"}>{name}</text>
-        <text width={8} fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>[{type}]</text>
-        <text fg={color}>{status}</text>
-        <box flexGrow={1} />
-        {status === "connected" ? <text fg="#ff79c6" onMouseUp={(e) => { e.stopPropagation?.(); void handleDisconnect(name); }}>Disconnect</text> :
-         (status === "disconnected" || status === "failed") ? <text fg="#2dd4bf" onMouseUp={(e) => { e.stopPropagation?.(); void handleConnect(name); }}>Connect</text> : null}
-        <text fg="#fbbf24" marginLeft={1} onMouseUp={(e) => { e.stopPropagation?.(); void handleToggle(name); }}>{status === "disabled" ? "Enable" : "Disable"}</text>
-        <text fg="#f43f5e" marginLeft={1} onMouseUp={(e) => { e.stopPropagation?.(); handleDelete(name); }}>Remove</text>
-      </box>
-    );
-  };
-
+  // List View
   if (view === "list") {
     return (
       <box position="absolute" top={0} left={0} width="100%" height="100%" backgroundColor="#00000080" alignItems="center" justifyContent="center">
         <box width={panelWidth} flexDirection="column" borderStyle="rounded" borderColor="#4a4a5a" backgroundColor="#1a1a2e" paddingX={2} paddingY={1}>
           <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">MCP Servers</text>
+
           <box flexDirection="column" flexGrow={1} overflow="hidden" marginTop={1}>
             {servers.length === 0 ? (
               <box height={1}><text fg="#6c6c7c">No MCP servers configured. Press N to add one.</text></box>
-            ) : servers.map((name, index) => (
-              <ServerRow key={name} name={name} index={index} />
-            ))}
+            ) : servers.map((name, index) => {
+              const status = getServerStatus(name);
+              const type = getServerType(name);
+              const color = statusColors[status] ?? "#6c6c7c";
+              const isSelected = index === selectedIndex;
+
+              return (
+                <box
+                  key={name}
+                  height={1}
+                  backgroundColor={isSelected ? "#44475a" : undefined}
+                  paddingLeft={2}
+                  flexDirection="row"
+                >
+                  <text fg={color}>● </text>
+                  <text width={20} fg={isSelected ? "#ff79c6" : "#f8f8f2"}>{name}</text>
+                  <text width={8} fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>[{type}]</text>
+                  <text fg={color}>{status}</text>
+                  <box flexGrow={1} />
+                  {(status === "disconnected" || status === "failed") ? (
+                    <text fg="#2dd4bf" onMouseUp={() => void handleConnect(name)}>Connect</text>
+                  ) : null}
+                  <text fg="#fbbf24" marginLeft={1} onMouseUp={() => handleToggle(name)}>
+                    {status === "disabled" ? "Enable" : "Disable"}
+                  </text>
+                  <text fg="#f43f5e" marginLeft={1} onMouseUp={() => handleDelete(name)}>Remove</text>
+                </box>
+              );
+            })}
           </box>
+
           <box marginTop={1} flexDirection="row" justifyContent="space-between">
             <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>[N] Add  [Enter] Edit  [Esc] Close</text>
             {message ? <text fg="#fbbf24">{message}</text> : null}
@@ -261,66 +264,111 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
     );
   }
 
+  // Edit/Add View
   return (
     <box position="absolute" top={0} left={0} width="100%" height="100%" backgroundColor="#00000080" alignItems="center" justifyContent="center">
       <box width={panelWidth} flexDirection="column" borderStyle="rounded" borderColor="#4a4a5a" backgroundColor="#1a1a2e" paddingX={2} paddingY={1}>
-        <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">{view === "add" ? "Add MCP Server" : `Edit: ${editName}`}</text>
+        <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">
+          {view === "add" ? "Add MCP Server" : `Edit: ${editName}`}
+        </text>
+
         <box flexDirection="column" flexGrow={1} marginTop={1} gap={1}>
           {view === "add" && (
             <box height={1} flexDirection="row" alignItems="center">
               <text width={12} fg="#f8f8f2">Name:</text>
-              <textarea ref={nameRef} initialValue={editName} focused={true} height={1} width={30} onContentChange={handleTextChange(nameRef, setEditName)} />
+              <textarea
+                ref={nameRef}
+                initialValue={editName}
+                height={1}
+                width={30}
+                onContentChange={() => {
+                  const text = nameRef.current?.editBuffer.getText() ?? "";
+                  setEditName(text);
+                }}
+              />
             </box>
           )}
+
           <box height={1} flexDirection="row" alignItems="center">
             <text width={12} fg="#f8f8f2">Type:</text>
             <box flexDirection="row" gap={1}>
-              {(["stdio", "sse", "http", "ws"] as ServerType[]).map((t) => {
-                const isActive = editType === t;
-                return (
-                  <box
-                    key={t}
-                    paddingLeft={1}
-                    paddingRight={1}
-                    backgroundColor={isActive ? TYPE_BUTTON_ENABLED_BG : TYPE_BUTTON_DISABLED_BG}
-                    justifyContent="center"
-                    onMouseUp={() => setEditType(t)}
-                  >
-                    <text
-                      fg={isActive ? "#ffffff" : "#a0a0b0"}
-                      attributes={createTextAttributes({ bold: true })}
-                    >
-                      {t.toUpperCase()}
-                    </text>
-                  </box>
-                );
-              })}
+              {(["stdio", "sse", "http", "ws"] as ServerType[]).map((t) => (
+                <box
+                  key={t}
+                  paddingLeft={1}
+                  paddingRight={1}
+                  backgroundColor={editType === t ? TYPE_BUTTON_ENABLED_BG : TYPE_BUTTON_DISABLED_BG}
+                  onMouseUp={() => setEditType(t)}
+                >
+                  <text fg={editType === t ? "#ffffff" : "#a0a0b0"} attributes={createTextAttributes({ bold: true })}>
+                    {t.toUpperCase()}
+                  </text>
+                </box>
+              ))}
             </box>
           </box>
+
           {editType === "stdio" ? (
             <>
               <box height={1} flexDirection="row" alignItems="center">
                 <text width={12} fg="#f8f8f2">Command:</text>
-                <textarea ref={commandRef} initialValue={editCommand} height={1} width={40} onContentChange={handleTextChange(commandRef, setEditCommand)} />
+                <textarea
+                  ref={commandRef}
+                  initialValue={editCommand}
+                  height={1}
+                  width={40}
+                  onContentChange={() => {
+                    const text = commandRef.current?.editBuffer.getText() ?? "";
+                    setEditCommand(text);
+                  }}
+                />
               </box>
               <box height={1} flexDirection="row" alignItems="center">
                 <text width={12} fg="#f8f8f2">Args:</text>
-                <textarea ref={argsRef} initialValue={editArgs} height={1} width={40} placeholder="arg1 arg2 arg3" onContentChange={handleTextChange(argsRef, setEditArgs)} />
+                <textarea
+                  ref={argsRef}
+                  initialValue={editArgs}
+                  height={1}
+                  width={40}
+                  onContentChange={() => {
+                    const text = argsRef.current?.editBuffer.getText() ?? "";
+                    setEditArgs(text);
+                  }}
+                />
               </box>
             </>
           ) : (
             <>
               <box height={1} flexDirection="row" alignItems="center">
                 <text width={12} fg="#f8f8f2">URL:</text>
-                <textarea ref={urlRef} initialValue={editUrl} height={1} width={50} placeholder="https://..." onContentChange={handleTextChange(urlRef, setEditUrl)} />
+                <textarea
+                  ref={urlRef}
+                  initialValue={editUrl}
+                  height={1}
+                  width={50}
+                  onContentChange={() => {
+                    const text = urlRef.current?.editBuffer.getText() ?? "";
+                    setEditUrl(text);
+                  }}
+                />
               </box>
               <box height={2} flexDirection="row" alignItems="flex-start">
                 <text width={12} fg="#f8f8f2">Headers:</text>
-                <textarea ref={headersRef} initialValue={editHeaders} height={2} width={50} placeholder="Key1:Value1" onContentChange={handleTextChange(headersRef, setEditHeaders)} />
+                <textarea
+                  ref={headersRef}
+                  initialValue={editHeaders}
+                  height={2}
+                  width={50}
+                  onContentChange={() => {
+                    const text = headersRef.current?.editBuffer.getText() ?? "";
+                    setEditHeaders(text);
+                  }}
+                />
               </box>
             </>
           )}
         </box>
+
         <box marginTop={1} flexDirection="row" justifyContent="space-between" alignItems="center">
           <box flexDirection="row" gap={2}>
             <box paddingX={2} backgroundColor="#2dd4bf" onMouseUp={handleSave}>

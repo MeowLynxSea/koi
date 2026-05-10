@@ -194,15 +194,16 @@ export async function createKoiSession(): Promise<CreateAgentSessionResult> {
  */
 export async function refreshMcpTools(session: AgentSession | null): Promise<void> {
   if (!session) return;
-  
+
   // Re-initialize MCP connections
   await disconnectAllMcpServers();
   await initializeMcpConnections();
-  
+
   // Get current mode and update active tools
   const mode = getAgentMode();
   const { getActiveToolNamesForMode } = await import("./mode.js");
   const activeTools = getActiveToolNamesForMode(mode);
+
   session.setActiveToolsByName(activeTools);
 }
 

@@ -87,6 +87,16 @@ export async function toggleMcpServer(name: string, enabled: boolean): Promise<v
   const connection = connectionManager.connections.get(name);
 
   if (enabled) {
+    // 启用服务器
+    setMcpServerEnabled(name, true);
+    if (connection && connection.status === "disabled") {
+      connectionManager.connections.set(name, {
+        ...connection,
+        status: "disconnected",
+      });
+    }
+  } else {
+    // 禁用服务器
     setMcpServerEnabled(name, false);
     if (connection && connection.status === "connected") {
       await disconnectFromServer(connection);
@@ -96,8 +106,6 @@ export async function toggleMcpServer(name: string, enabled: boolean): Promise<v
       status: "disabled",
       config: connection?.config ?? getAllMcpConfigs().get(name)!,
     });
-  } else {
-    setMcpServerEnabled(name, false);
   }
 }
 
