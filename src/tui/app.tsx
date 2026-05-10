@@ -33,6 +33,7 @@ import { SessionModal } from "./components/session-modal.js";
 import { ConfirmModal } from "./components/confirm-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
 import { ImagePreviewModal } from "./components/image-preview-modal.js";
+import { MCPSettings } from "./components/mcp/MCPSettings.js";
 
 /* ───────── Agent & Config ───────── */
 import {
@@ -202,6 +203,7 @@ export function App({ onExit }: AppProps) {
   const [monitors, setMonitors] = useState<MonitorEntry[]>([]);
   const [yoloMode, setYoloMode] = useState(false);
   const [agentMode, setAgentMode] = useState<AgentMode>(getAgentMode());
+  const [showMCPSettings, setShowMCPSettings] = useState(false);
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -695,7 +697,7 @@ export function App({ onExit }: AppProps) {
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
-    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal;
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings;
 
   // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
@@ -824,6 +826,7 @@ export function App({ onExit }: AppProps) {
       { id: "/plan", label: "Switch to plan mode (read-only, no file modifications)", section: "Mode", action: () => applyAgentMode("plan") },
       { id: "/connect", label: "Connect to a provider", section: "Model", action: () => setShowConnectModal(true) },
       { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true) },
+      { id: "/mcp", label: "Open MCP settings", section: "MCP", action: () => setShowMCPSettings(true) },
     ],
     [session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode]
   );
@@ -1049,6 +1052,10 @@ export function App({ onExit }: AppProps) {
         onConfirm={handleConfirmEditPending}
         onCancel={() => setShowEditPendingModal(false)}
         width={Math.min(70, leftWidth)}
+      />
+      <MCPSettings
+        isActive={showMCPSettings}
+        onClose={() => setShowMCPSettings(false)}
       />
     </box>
   );
