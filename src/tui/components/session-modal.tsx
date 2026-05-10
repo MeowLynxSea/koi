@@ -176,21 +176,14 @@ export function SessionModal({
             const flatIndex = scrollOffset + idx;
             const isSelected = flatIndex === safeIndex;
             const isCurrent = s.id === currentSessionId;
-            const isForked = s.forkedFrom !== null;
-            const forkDepth = s.forkDepth ?? 0;
 
-            // Ensure safe values for rendering to prevent TextNodeRenderable errors
-            const safeTitle = s.title ?? "Untitled Session";
+            // Ensure safe string values for rendering
+            const safeTitle = String(s.title ?? "Untitled Session");
             const safeMessageCount = typeof s.messageCount === "number" ? s.messageCount : 0;
             const safeUpdatedAt =
               s.updatedAt instanceof Date && !isNaN(s.updatedAt.getTime())
                 ? s.updatedAt
                 : new Date();
-
-            // Build fork prefix: "├─ " repeated for each depth level
-            const forkPrefix = isForked
-              ? "│ ".repeat(Math.min(forkDepth, 5)) + "├─ "
-              : "";
 
             return (
               <box
@@ -204,18 +197,17 @@ export function SessionModal({
                 }}
               >
                 <text
-                  fg={isSelected ? "#ff79c6" : isCurrent ? "#00f5ff" : isForked ? "#bd93f9" : "#f8f8f2"}
+                  fg={isSelected ? "#ff79c6" : isCurrent ? "#00f5ff" : "#f8f8f2"}
                   attributes={createTextAttributes({ bold: isCurrent })}
                   width={Math.max(1, panelWidth - 24)}
                   truncate={true}
                 >
                   {isCurrent ? "● " : "  "}
-                  {forkPrefix}{safeTitle}
-                  {isForked && <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}> ↱</text>}
+                  {safeTitle}
                 </text>
                 <box flexDirection="row" gap={1}>
                   <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-                    {safeMessageCount}msg
+                    {String(safeMessageCount)}msg
                   </text>
                   <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })} width={8}>
                     {formatRelativeTime(safeUpdatedAt)}
