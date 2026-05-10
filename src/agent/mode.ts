@@ -95,6 +95,7 @@ const ALL_TOOLS = [
   "agent",
   "CreateMonitor",
   "CancelMonitor",
+  "SendToMonitor"
 ];
 
 const READONLY_TOOLS = [

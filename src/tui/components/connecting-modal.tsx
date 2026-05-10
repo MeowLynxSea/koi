@@ -6,7 +6,8 @@
  */
 
 import { useState, useEffect } from "react";
-import { createTextAttributes, type SpinnerVariant } from "@opentui/core";
+import { createTextAttributes } from "@opentui/core";
+type SpinnerVariant = "dots" | "arc" | "circle" | "line";
 import type { McpConnectionProgress } from "../../services/mcp/index.js";
 
 interface ConnectingModalProps {

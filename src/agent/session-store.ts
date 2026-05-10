@@ -376,7 +376,7 @@ class ToolAbortError extends Error {
 }
 
 /** Wraps a tool definition to support abort signal checking. */
-function wrapToolWithAbortSupport<TParams, TDetails>(
+function wrapToolWithAbortSupport<TParams extends Type.TSchema, TDetails>(
   tool: ToolDefinition<TParams, TDetails>
 ): ToolDefinition<TParams, TDetails> {
   return {

@@ -16,7 +16,7 @@ const WORKER_INSTRUCTIONS = `After implementing the change:
 3. **Commit** — Commit changes with a clear message
 4. **Report** — End with a summary of what was done`;
 
-const NOT_A_GIT_REPO_MESSAGE = `This is not a git repository. The \`/batch\` command requires a git repo. Initialize a repo first, or run this from inside an existing one.`;
+
 
 const MISSING_INSTRUCTION_MESSAGE = `Provide an instruction describing the batch change you want to make.
 

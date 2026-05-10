@@ -7,7 +7,7 @@
 
 import { registerBundledSkill } from "../bundled.js";
 
-const DEFAULT_DEBUG_LINES_READ = 30;
+
 
 export function registerDebugSkill(): void {
   registerBundledSkill({

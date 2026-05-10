@@ -9,7 +9,7 @@
  * - Output notifications to parent agent
  */
 
-import { spawnPty, PtySession, generatePtyId } from "../tools/pty.js";
+import { spawnPty, PtySession, type PtyData } from "../tools/pty.js";
 import { EventEmitter } from "events";
 import { activeSessionRef } from "./hooks.js";
 

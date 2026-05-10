@@ -64,15 +64,21 @@ async function execBashWithPty(
   transferredMonitorId?: string;
   session?: PtySession;
 }> {
+  type ExecBashResult = {
+    exitCode?: number;
+    output: string;
+    timedOut: boolean;
+    transferredMonitorId?: string;
+    session?: PtySession;
+  };
   const sessionId = activeSessionRef.current?.sessionId ?? "unknown";
   const ptyId = generatePtyId();
 
   let output = "";
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
-  let transferredMonitorId: string | undefined;
   let ptySession: PtySession | undefined;
-  let resolvePromise: ((value: ReturnType<typeof execBashWithPty>) => void) | undefined;
+  let resolvePromise: ((value: ExecBashResult) => void) | undefined;
 
   // Create PTY
   const ptyProcess = spawnPty({
@@ -103,8 +109,6 @@ async function execBashWithPty(
       
       // Clean up the old session's listeners so only monitor receives events
       ptySession!.cleanup();
-      
-      transferredMonitorId = monitorId;
 
       // Notify caller about the timeout
       onTimeout?.(monitorId);
@@ -223,7 +227,7 @@ export function createBashToolDefinition(_cwd: string): ToolDefinition<typeof ba
     promptSnippet: "Bash: execute shell commands with PTY isolation (last resort — prefer dedicated tools)",
     parameters: bashSchema,
     executionMode: "parallel",
-    async execute(_toolCallId, params, signal, _onUpdate) {
+    async execute(_toolCallId, params, _signal, _onUpdate) {
       return withWriteLock(async () => {
         const perm = checkPermission("bash", params);
         if (perm.decision === "deny") {

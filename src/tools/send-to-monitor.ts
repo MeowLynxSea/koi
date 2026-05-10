@@ -9,7 +9,6 @@ import { Type } from "typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { TextContent } from "@mariozechner/pi-ai";
 import { monitorRegistry } from "../agent/monitor-registry.js";
-import type { ToolResultWithError } from "./types.js";
 
 export const sendToMonitorSchema = Type.Object({
   monitorId: Type.String({
@@ -70,11 +69,12 @@ export function createSendToMonitorToolDefinition(): ToolDefinition<
     ): Promise<{
       content: TextContent[];
       details: { success: boolean; monitorId: string };
+      isError?: boolean;
     }> {
       const monitor = monitorRegistry.get(params.monitorId);
 
       if (!monitor) {
-        const result: ToolResultWithError<{ success: boolean; monitorId: string }> = {
+        return {
           content: [
             {
               type: "text",
@@ -84,11 +84,10 @@ export function createSendToMonitorToolDefinition(): ToolDefinition<
           details: { success: false, monitorId: params.monitorId },
           isError: true,
         };
-        return result;
       }
 
       if (monitor.status !== "running") {
-        const result: ToolResultWithError<{ success: boolean; monitorId: string }> = {
+        return {
           content: [
             {
               type: "text",
@@ -98,12 +97,11 @@ export function createSendToMonitorToolDefinition(): ToolDefinition<
           details: { success: false, monitorId: params.monitorId },
           isError: true,
         };
-        return result;
       }
 
       const session = monitorRegistry.getSession(params.monitorId);
       if (!session) {
-        const result: ToolResultWithError<{ success: boolean; monitorId: string }> = {
+        return {
           content: [
             {
               type: "text",
@@ -113,7 +111,6 @@ export function createSendToMonitorToolDefinition(): ToolDefinition<
           details: { success: false, monitorId: params.monitorId },
           isError: true,
         };
-        return result;
       }
 
       let success = false;

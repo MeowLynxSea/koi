@@ -18,6 +18,7 @@ export interface McpServerConfig {
   url?: string;
   headers?: Record<string, string>;
   authToken?: string;
+  enabled?: boolean;
 }
 
 // Config Scope

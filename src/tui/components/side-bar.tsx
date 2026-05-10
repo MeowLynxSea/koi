@@ -131,7 +131,7 @@ interface SubagentItem {
 interface MonitorItem {
   id: string;
   description: string;
-  status: "running" | "completed" | "killed" | "error";
+  status: "running" | "completed" | "killed" | "error" | "detached";
   lastOutput?: string;
 }
 

@@ -1,5 +1,5 @@
 /**
- * PTY Utilities — NodePTY 封装
+ * PTY Utilities — Bun.spawn terminal 封装
  *
  * 提供跨平台 PTY (Pseudo-Terminal) 功能，用于:
  * - 完全隔离输入输出流
@@ -7,10 +7,7 @@
  * - 支持 monitor 内的进程输入
  */
 
-import * as pty from "node-pty";
 import { EventEmitter } from "events";
-import * as fs from "fs";
-import { dirname, join } from "path";
 
 export interface PtyOptions {
   command?: string;
@@ -22,7 +19,7 @@ export interface PtyOptions {
   name?: string;
 }
 
-interface PtyData {
+export interface PtyData {
   type: "data" | "exit" | "error";
   data?: string;
   exitCode?: number;
@@ -35,27 +32,85 @@ const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 30;
 
 /**
- * Fix node-pty spawn-helper executable permissions.
- * Bun/npm installs may strip +x from prebuilt binaries, causing
- * "posix_spawnp failed" on macOS/Linux.
+ * IPty 兼容接口 — 与 node-pty 的 IPty 保持一致
  */
-function fixNodePtyPermissions(): void {
-  try {
-    const nodePtyUrl = import.meta.resolve("node-pty");
-    const nodePtyPath = nodePtyUrl.replace("file://", "");
-    const prebuildsDir = join(dirname(nodePtyPath), "..", "prebuilds");
-    const platformArch = `${process.platform}-${process.arch}`;
-    const helperPath = join(prebuildsDir, platformArch, "spawn-helper");
+export interface IPty {
+  pid: number;
+  onData(handler: (data: string) => void): void;
+  onExit(handler: (exit: { exitCode: number; signal: string }) => void): void;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(signal?: string): void;
+}
 
-    if (fs.existsSync(helperPath)) {
-      const stat = fs.statSync(helperPath);
-      const isExecutable = (stat.mode & 0o111) !== 0;
-      if (!isExecutable) {
-        fs.chmodSync(helperPath, stat.mode | 0o755);
-      }
+/**
+ * Bun PTY 适配器 — 使用 Bun.spawn 的 terminal 选项
+ */
+class BunPty extends EventEmitter implements IPty {
+  readonly pid: number;
+  private proc: ReturnType<typeof Bun.spawn>;
+  private textDecoder = new TextDecoder();
+
+  constructor(options: PtyOptions) {
+    super();
+    const shell = process.platform === "win32" ? "powershell.exe" : "bash";
+    const args = process.platform === "win32" ? [] : ["--login"];
+
+    const command = options.command ?? shell;
+    const commandArgs = options.args ?? args;
+
+    const self = this;
+
+    this.proc = Bun.spawn([command, ...commandArgs], {
+      cwd: options.cwd ?? process.cwd(),
+      env: {
+        ...process.env,
+        ...options.env,
+        CLAUDECODE: "1",
+        TERM: "xterm-256color",
+      } as Record<string, string>,
+      terminal: {
+        name: options.name ?? "xterm-256color",
+        cols: options.cols ?? DEFAULT_COLS,
+        rows: options.rows ?? DEFAULT_ROWS,
+        data(_terminal, data) {
+          self.emit("data", self.textDecoder.decode(data));
+        },
+      },
+      onExit(_subprocess, exitCode, signalCode) {
+        self.emit("exit", { exitCode: exitCode ?? 0, signal: signalCode ?? "" });
+      },
+    });
+
+    this.pid = this.proc.pid;
+  }
+
+  onData(handler: (data: string) => void): void {
+    this.on("data", handler);
+  }
+
+  onExit(handler: (exit: { exitCode: number; signal: string }) => void): void {
+    this.on("exit", handler);
+  }
+
+  write(data: string): void {
+    this.proc.terminal?.write(data);
+  }
+
+  resize(cols: number, rows: number): void {
+    try {
+      this.proc.terminal?.resize(cols, rows);
+    } catch {
+      // 忽略调整大小失败
     }
-  } catch {
-    // ignore resolution/permission errors
+  }
+
+  kill(signal?: string): void {
+    try {
+      this.proc.kill(signal as number | NodeJS.Signals);
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -65,32 +120,8 @@ function fixNodePtyPermissions(): void {
  * 1. 直接使用 pty.onData/pty.onExit 设置监听器
  * 2. 或者用 PtySession 包装（它会自动设置监听器）
  */
-export function spawnPty(options: PtyOptions): pty.IPty {
-  const shell = process.platform === "win32" ? "powershell.exe" : "bash";
-  const args = process.platform === "win32" ? [] : ["--login"];
-
-  const spawnOpts = {
-    name: options.name ?? "xterm-color",
-    cols: options.cols ?? DEFAULT_COLS,
-    rows: options.rows ?? DEFAULT_ROWS,
-    cwd: options.cwd ?? process.cwd(),
-    env: {
-      ...process.env,
-      ...options.env,
-      CLAUDECODE: "1",
-      TERM: "xterm-256color",
-    } as { [key: string]: string },
-  };
-
-  try {
-    return pty.spawn(options.command ?? shell, options.args ?? args, spawnOpts);
-  } catch (err: any) {
-    if (err?.message?.includes("posix_spawnp failed")) {
-      fixNodePtyPermissions();
-      return pty.spawn(options.command ?? shell, options.args ?? args, spawnOpts);
-    }
-    throw err;
-  }
+export function spawnPty(options: PtyOptions): IPty {
+  return new BunPty(options);
 }
 
 /**
@@ -103,8 +134,8 @@ export class PtySession extends EventEmitter {
   readonly startTime: number;
 
   /** 暴露底层 PTY 对象，用于清理监听器 */
-  readonly pty: pty.IPty;
-  
+  readonly pty: IPty;
+
   private outputBuffer: string[] = [];
   private lastOutput: string = "";
   private _exitCode?: number;
@@ -112,7 +143,7 @@ export class PtySession extends EventEmitter {
   private _dataHandler: (data: string) => void;
   private _exitHandler: (exit: { exitCode: number; signal: string }) => void;
 
-  constructor(id: string, pty: pty.IPty, command: string) {
+  constructor(id: string, pty: IPty, command: string) {
     super();
     this.id = id;
     this.pty = pty;
@@ -210,8 +241,7 @@ export class PtySession extends EventEmitter {
    * 调用后此 PtySession 将不再接收 PTY 事件
    */
   cleanup(): void {
-    // node-pty's IPty interface doesn't expose removeListener,
-    // but the underlying EventEmitter supports it
+    // BunPty extends EventEmitter, so removeListener works
     try {
       const ptyAsEmitter = this.pty as unknown as EventEmitter;
       if (typeof ptyAsEmitter.removeListener === "function") {
