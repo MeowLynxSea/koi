@@ -6,6 +6,7 @@
  */
 
 import stringWidth from "string-width";
+import { isInternalNotification } from "../../agent/hooks.js";
 
 interface PendingAreaProps {
   steering: readonly string[];
@@ -35,8 +36,14 @@ function truncateText(text: string, maxWidth: number): string {
 
 export function PendingArea({ steering, followUp, width = 80, onRemove, onEdit }: PendingAreaProps) {
   const contentWidth = Math.max(1, width - 2);
+
+  // Filter out internal subagent task notifications from the steer list.
+  // When a background agent completes while the main agent is busy, it sends
+  // a <task-notification> via steer(). We don't want to show these in the UI.
+  const filteredSteering = steering.filter((t) => !isInternalNotification(t));
+
   const all: { type: "sheer" | "queued"; text: string; index: number }[] = [
-    ...steering.map((t, i) => ({ type: "sheer" as const, text: t, index: i })),
+    ...filteredSteering.map((t, i) => ({ type: "sheer" as const, text: t, index: i })),
     ...followUp.map((t, i) => ({ type: "queued" as const, text: t, index: i })),
   ];
 
