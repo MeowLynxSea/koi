@@ -191,7 +191,7 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
     if (view === "list") {
       if (key.name === "up") { setSelectedIndex(i => Math.max(0, i - 1)); return; }
       if (key.name === "down") { setSelectedIndex(i => Math.min(servers.length - 1, i + 1)); return; }
-      if (key.name === "enter") { servers[selectedIndex] ? handleEdit(servers[selectedIndex]!) : (servers.length === 0 ? handleAddNew() : null); return; }
+      if (key.name === "return") { servers[selectedIndex] ? handleEdit(servers[selectedIndex]!) : (servers.length === 0 ? handleAddNew() : null); return; }
       if (key.name === "n" || key.name === "N") { handleAddNew(); return; }
     }
   });
