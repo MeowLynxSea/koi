@@ -1,8 +1,15 @@
 {
-  "name": "koi",
+  "name": "@meowlynxsea/koi",
+  "version": "0.1.0",
+  "description": "A coding agent built on Pi SDK with TUI + Bun runtime",
   "module": "src/main.tsx",
   "type": "module",
-  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/meowlynxsea/koi"
+  },
+  "files": ["dist", "bin", "src"],
   "scripts": {
     "dev": "bun run src/main.tsx",
     "build": "bun build src/main.tsx --outdir dist --target bun",
