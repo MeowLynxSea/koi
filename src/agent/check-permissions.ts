@@ -163,7 +163,9 @@ const checkLargeFileRead: ToolChecker = (toolName, args) => {
       return { decision: "ask", reason: `File is very large (${(stats.size / 1024 / 1024).toFixed(0)} MiB). Confirm to read.` };
     }
   } catch {
-    return { decision: "ask", reason: `Unable to verify file size for ${path}. Confirm to read.` };
+    // Don't trigger permission prompt for stat failures (e.g., file not found).
+    // The read tool itself will handle file-not-found errors with a proper error message.
+    return null;
   }
   return null;
 };
