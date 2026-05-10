@@ -30,7 +30,7 @@ type View = "list" | "add" | "edit";
 type ServerType = "stdio" | "sse" | "http" | "ws";
 
 export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps) {
-  const { width, height } = useTerminalDimensions();
+  const { width } = useTerminalDimensions();
   const [view, setView] = useState<View>("list");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [servers, setServers] = useState<string[]>([]);
@@ -98,7 +98,7 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
     onMcpChange?.();
   }, [refreshServers, onMcpChange]);
 
-  const handleToggle = useCallback((name: string) => {
+  const handleToggle = useCallback(async (name: string) => {
     const disabled = isMcpServerDisabled(name);
     setMcpServerEnabled(name, !disabled);
     setMessage(`${disabled ? "Enabled" : "Disabled"} ${name}`);
@@ -187,11 +187,18 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
 
   useKeyboard((key) => {
     if (!isActive) return;
-    if (key.name === "escape") { view !== "list" ? handleBack() : onClose(); return; }
+    if (key.name === "escape") { 
+      if (view !== "list") { handleBack(); } else { onClose(); }
+      return; 
+    }
     if (view === "list") {
       if (key.name === "up") { setSelectedIndex(i => Math.max(0, i - 1)); return; }
       if (key.name === "down") { setSelectedIndex(i => Math.min(servers.length - 1, i + 1)); return; }
-      if (key.name === "return") { servers[selectedIndex] ? handleEdit(servers[selectedIndex]!) : (servers.length === 0 ? handleAddNew() : null); return; }
+      if (key.name === "return") { 
+        const selectedServer = servers[selectedIndex];
+        if (selectedServer) { handleEdit(selectedServer); } else if (servers.length === 0) { handleAddNew(); }
+        return; 
+      }
       if (key.name === "n" || key.name === "N") { handleAddNew(); return; }
     }
   });
@@ -219,15 +226,15 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
     const isSelected = index === selectedIndex;
     
     return (
-      <box height={1} backgroundColor={isSelected ? "#44475a" : undefined} paddingLeft={2} flexDirection="row" onMouseUp={() => setSelectedIndex(index)} onDblClick={() => handleEdit(name)}>
+      <box height={1} backgroundColor={isSelected ? "#44475a" : undefined} paddingLeft={2} flexDirection="row" onMouseUp={() => { setSelectedIndex(index); }}>
         <text fg={color}>●</text>
         <text width={20} fg={isSelected ? "#ff79c6" : "#f8f8f2"}>{name}</text>
         <text width={8} fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>[{type}]</text>
         <text fg={color}>{status}</text>
         <box flexGrow={1} />
-        {status === "connected" ? <text fg="#ff79c6" onMouseUp={(e) => { e.stopPropagation?.(); handleDisconnect(name); }}>Disconnect</text> :
-         (status === "disconnected" || status === "failed") ? <text fg="#2dd4bf" onMouseUp={(e) => { e.stopPropagation?.(); handleConnect(name); }}>Connect</text> : null}
-        <text fg="#fbbf24" marginLeft={1} onMouseUp={(e) => { e.stopPropagation?.(); handleToggle(name); }}>{status === "disabled" ? "Enable" : "Disable"}</text>
+        {status === "connected" ? <text fg="#ff79c6" onMouseUp={(e) => { e.stopPropagation?.(); void handleDisconnect(name); }}>Disconnect</text> :
+         (status === "disconnected" || status === "failed") ? <text fg="#2dd4bf" onMouseUp={(e) => { e.stopPropagation?.(); void handleConnect(name); }}>Connect</text> : null}
+        <text fg="#fbbf24" marginLeft={1} onMouseUp={(e) => { e.stopPropagation?.(); void handleToggle(name); }}>{status === "disabled" ? "Enable" : "Disable"}</text>
         <text fg="#f43f5e" marginLeft={1} onMouseUp={(e) => { e.stopPropagation?.(); handleDelete(name); }}>Remove</text>
       </box>
     );
@@ -247,7 +254,7 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
           </box>
           <box marginTop={1} flexDirection="row" justifyContent="space-between">
             <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>[N] Add  [Enter] Edit  [Esc] Close</text>
-            {message ? <text fg="#fbbf24" textAlign="right">{message}</text> : null}
+            {message ? <text fg="#fbbf24">{message}</text> : null}
           </box>
         </box>
       </box>
@@ -323,7 +330,7 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
               <text fg="white" attributes={createTextAttributes({ bold: true })}>[Cancel]</text>
             </box>
           </box>
-          {message ? <text fg="#fbbf24" textAlign="right">{message}</text> : null}
+          {message ? <text fg="#fbbf24">{message}</text> : null}
         </box>
       </box>
     </box>

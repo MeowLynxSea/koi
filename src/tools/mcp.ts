@@ -61,7 +61,7 @@ export async function executeMcpToolCall(toolName: string, args: Record<string, 
 }
 
 export function createMcpToolDefinitions(): KoiMcpTool[] {
-  const { getAllMcpTools } = require("../services/mcp/index.js");
+  const { getAllMcpTools } = require("../services/mcp/index.js") as { getAllMcpTools: () => SerializedTool[] };
   const mcpTools = getAllMcpTools();
   return mcpTools.map((tool: SerializedTool) => createMcpToolDefinition(tool));
 }

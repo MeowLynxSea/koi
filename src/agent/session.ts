@@ -30,8 +30,7 @@ import {
   getMcpConnection,
 } from "../services/mcp/index.js";
 import { getAgentMode } from "./mode.js";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { AgentToolResult } from "@mariozechner/pi-coding-agent";
+
 
 const PI_AGENT_DIR = path.join(os.homedir(), ".config", "koi", "pi");
 
@@ -42,8 +41,8 @@ const PI_AGENT_DIR = path.join(os.homedir(), ".config", "koi", "pi");
 function createMcpToolDefinitions(): ToolDefinition[] {
   const mcpTools = getAllMcpTools();
   return mcpTools.map((tool) => {
-    const serverName = tool.serverName;
-    const originalToolName = tool.originalToolName;
+    const serverName: string = tool.serverName ?? "";
+    const toolName: string = tool.originalToolName ?? tool.name;
     
     // Create a TypeBox schema from the input schema
     const inputSchema = tool.inputSchema || {};
@@ -53,28 +52,30 @@ function createMcpToolDefinitions(): ToolDefinition[] {
     if (typeof inputSchema === "object" && inputSchema !== null) {
       const schema = inputSchema as Record<string, unknown>;
       
-      if (schema.properties && typeof schema.properties === "object") {
-        const props = schema.properties as Record<string, unknown>;
+      if (schema["properties"] && typeof schema["properties"] === "object") {
+        const props = schema["properties"] as Record<string, unknown>;
         for (const [key, value] of Object.entries(props)) {
           properties[key] = convertJsonSchemaToTypeBox(value);
         }
       }
       
-      if (Array.isArray(schema.required)) {
-        required.push(...schema.required);
+      if (Array.isArray(schema["required"])) {
+        required.push(...(schema["required"] as string[]));
       }
     }
     
+    // @ts-expect-error - TypeBox TProperties type is too strict for dynamic schemas
     const typeboxSchema = Type.Object(properties, {
       additionalProperties: true,
     });
     
     return defineTool({
       name: tool.name,
-      label: `${serverName}: ${originalToolName}`,
+      label: `${serverName}: ${toolName}`,
       description: tool.description || `MCP tool from ${serverName}`,
       parameters: typeboxSchema,
-      execute: async (toolCallId, params, signal, _onUpdate, _ctx) => {
+      // @ts-expect-error - execute signature compatibility with dynamic tools
+      execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
         try {
           const connection = getMcpConnection(serverName);
           if (!connection || connection.status !== "connected") {
@@ -85,12 +86,12 @@ function createMcpToolDefinitions(): ToolDefinition[] {
           }
           
           const result = await connection.client.callTool({
-            name: originalToolName,
+            name: toolName,
             arguments: params as Record<string, unknown>,
           });
           
           return {
-            content: result.content as Array<{ type: string; text?: string; [key: string]: unknown }>,
+            content: (result.content ?? []) as Array<{ type: string; text?: string; [key: string]: unknown }>,
           };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -114,21 +115,24 @@ function convertJsonSchemaToTypeBox(schema: unknown): unknown {
   
   const s = schema as Record<string, unknown>;
   
-  if (s.type === "string") return Type.String();
-  if (s.type === "number" || s.type === "integer") return Type.Number();
-  if (s.type === "boolean") return Type.Boolean();
-  if (s.type === "array") {
-    const items = s.items ? convertJsonSchemaToTypeBox(s.items) : Type.String();
-    return Type.Array(items as Parameters<typeof Type.Array>[0]);
+  const type = s["type"] as string | undefined;
+  if (type === "string") return Type.String();
+  if (type === "number" || type === "integer") return Type.Number();
+  if (type === "boolean") return Type.Boolean();
+  if (type === "array") {
+    const items = s["items"] ? convertJsonSchemaToTypeBox(s["items"]) : Type.String();
+    // @ts-expect-error - TypeBox TSchema type is too strict for dynamic schemas
+    return Type.Array(items);
   }
-  if (s.type === "object") {
+  if (type === "object") {
     const properties: Record<string, unknown> = {};
-    const props = s.properties as Record<string, unknown> | undefined;
+    const props = s["properties"] as Record<string, unknown> | undefined;
     if (props) {
       for (const [key, value] of Object.entries(props)) {
         properties[key] = convertJsonSchemaToTypeBox(value);
       }
     }
+    // @ts-expect-error - TypeBox TProperties type is too strict for dynamic schemas
     return Type.Object(properties);
   }
   

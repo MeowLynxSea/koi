@@ -83,13 +83,13 @@ export async function disconnectMcpServer(name: string): Promise<void> {
   }
 }
 
-export function toggleMcpServer(name: string, enabled: boolean): void {
+export async function toggleMcpServer(name: string, enabled: boolean): Promise<void> {
   const connection = connectionManager.connections.get(name);
 
   if (enabled) {
     setMcpServerEnabled(name, false);
     if (connection && connection.status === "connected") {
-      disconnectFromServer(connection);
+      await disconnectFromServer(connection);
     }
     connectionManager.connections.set(name, {
       name,

@@ -144,35 +144,38 @@ function safeDeleteDir(dir: string): void {
  * allowing MCP tools to be registered with the agent session.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function convertJsonSchemaToTypeBox(schema: unknown): any {
+import type { TSchema } from "typebox";
+
+// TypeBox schema builder that properly handles dynamic schemas
+function convertJsonSchemaToTypeBox(schema: unknown): TSchema {
   if (!schema || typeof schema !== "object") {
     return Type.String();
   }
   
   const s = schema as Record<string, unknown>;
-  
   const type = s["type"] as string | undefined;
-  if (type === "string") return Type.String();
-  if (type === "number" || type === "integer") return Type.Number();
-  if (type === "boolean") return Type.Boolean();
+  
+  if (type === "string") return Type.String() as TSchema;
+  if (type === "number" || type === "integer") return Type.Number() as TSchema;
+  if (type === "boolean") return Type.Boolean() as TSchema;
+  
   if (type === "array") {
-    const items = s["items"] ? convertJsonSchemaToTypeBox(s["items"]) : Type.String();
-    return Type.Array(items);
+    const itemsSchema = s["items"] ? convertJsonSchemaToTypeBox(s["items"]) : Type.String();
+    return Type.Array([itemsSchema]) as TSchema;
   }
+  
   if (type === "object") {
-    const properties: Record<string, unknown> = {};
+    const properties: Record<string, TSchema> = {};
     const props = s["properties"] as Record<string, unknown> | undefined;
-    if (props) {
+    if (props && typeof props === "object") {
       for (const [key, value] of Object.entries(props)) {
         properties[key] = convertJsonSchemaToTypeBox(value);
       }
     }
-    // @ts-expect-error - TypeBox TProperties type is too strict
-    return Type.Object(properties);
+    return Type.Object(properties) as TSchema;
   }
   
-  return Type.String();
+  return Type.String() as TSchema;
 }
 
 function createMcpToolDefinitions(): ToolDefinition[] {
@@ -183,7 +186,7 @@ function createMcpToolDefinitions(): ToolDefinition[] {
     
     // Create a TypeBox schema from the input schema
     const inputSchema = tool.inputSchema || {};
-    const properties: Record<string, unknown> = {};
+    const properties: Record<string, TSchema> = {};
     
     if (typeof inputSchema === "object" && inputSchema !== null) {
       const schema = inputSchema as Record<string, unknown>;
@@ -196,7 +199,6 @@ function createMcpToolDefinitions(): ToolDefinition[] {
       }
     }
     
-    // @ts-expect-error - TypeBox TProperties type is too strict
     const typeboxSchema = Type.Object(properties, {
       additionalProperties: true,
     });
@@ -206,8 +208,8 @@ function createMcpToolDefinitions(): ToolDefinition[] {
       label: `${serverName}: ${originalToolName}`,
       description: tool.description || `MCP tool from ${serverName}`,
       parameters: typeboxSchema,
-      // @ts-expect-error - execute signature compatibility
-      execute: async (toolCallId, params, signal, onUpdate, ctx) => {
+      // @ts-expect-error - execute signature compatibility with dynamic tools
+      execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
         try {
           const connection = getMcpConnection(serverName);
           if (!connection || connection.status !== "connected") {

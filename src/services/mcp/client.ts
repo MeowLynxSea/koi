@@ -3,7 +3,6 @@
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool, Resource, ServerCapabilities } from "@modelcontextprotocol/sdk/types.js";
@@ -73,28 +72,36 @@ export async function connectToServer(
       // Make these optional - not all MCP servers support all methods
       let serverInfo: Record<string, unknown> = { name: "unknown", version: "0.0.0" };
       try {
-        serverInfo = await client.getServerVersion() as Record<string, unknown>;
+        const versionResult = client.getServerVersion();
+        // Handle both sync and async versions
+        if (versionResult instanceof Promise) {
+          serverInfo = await versionResult as Record<string, unknown>;
+        } else {
+          serverInfo = versionResult as Record<string, unknown>;
+        }
       } catch {
         // Server may not support getServerVersion
       }
 
       let toolsResponse = { tools: [] as Tool[] };
       try {
-        toolsResponse = await client.listTools();
+        const result = client.listTools();
+        toolsResponse = "then" in result ? await result : result;
       } catch {
         // Server may not support tools
       }
 
       let resourcesResponse = { resources: [] as Resource[] };
       try {
-        resourcesResponse = await client.listResources();
+        const result = client.listResources();
+        resourcesResponse = "then" in result ? await result : result;
       } catch {
         // Server may not support resources
       }
 
       let instructions: string | undefined;
       try {
-        instructions = await client.getInstructions();
+        instructions = client.getInstructions();
       } catch {
         // Instructions not available
       }

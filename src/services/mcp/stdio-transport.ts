@@ -9,7 +9,18 @@ import spawn from "cross-spawn";
 import process from "node:process";
 import { getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
-import type { JSONRPCMessage, Transport } from "@modelcontextprotocol/sdk/types.js";
+import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
+
+// Transport interface for FilteredStdioClientTransport
+interface Transport {
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  onmessage?: (message: JSONRPCMessage) => void;
+  start(): Promise<void>;
+  send(message: JSONRPCMessage): Promise<void>;
+  close(): Promise<void>;
+  readonly pid?: number | null;
+}
 
 // Inline serializeMessage to avoid internal path imports
 function serializeMessage(message: JSONRPCMessage): string {
@@ -51,8 +62,8 @@ function isValidJsonRpc(line: string): boolean {
     return false;
   }
   try {
-    const parsed = JSON.parse(trimmed);
-    return typeof parsed === "object" && parsed !== null && "jsonrpc" in parsed;
+    const parsed: unknown = JSON.parse(trimmed);
+    return typeof parsed === "object" && parsed !== null && "jsonrpc" in (parsed as Record<string, unknown>);
   } catch {
     return false;
   }
@@ -83,9 +94,10 @@ export class FilteredStdioClientTransport implements Transport {
     return new Promise((resolve, reject) => {
       // Always pipe stderr so we can capture and suppress startup messages
       // Only inherit stderr explicitly if user requests it
-      const stderrMode = this._serverParams.stderr && this._serverParams.stderr !== "inherit" 
-        ? this._serverParams.stderr 
-        : "pipe";
+      const stderrMode: "pipe" | "inherit" | "ignore" = 
+        this._serverParams.stderr === "inherit" ? "inherit" :
+        this._serverParams.stderr === "ignore" ? "ignore" :
+        "pipe";
 
       this._process = spawn(this._serverParams.command, this._serverParams.args ?? [], {
         env: {
@@ -98,7 +110,7 @@ export class FilteredStdioClientTransport implements Transport {
         cwd: this._serverParams.cwd,
       });
 
-      this._process.on("error", (error) => {
+      this._process.on("error", (error: Error) => {
         reject(error);
         this.onerror?.(error);
       });
@@ -107,12 +119,12 @@ export class FilteredStdioClientTransport implements Transport {
         resolve();
       });
 
-      this._process.on("close", (_code) => {
+      this._process.on("close", (_code: number) => {
         this._process = undefined;
         this.onclose?.();
       });
 
-      this._process.stdin?.on("error", (error) => {
+      this._process.stdin?.on("error", (error: Error) => {
         this.onerror?.(error);
       });
 
@@ -121,7 +133,7 @@ export class FilteredStdioClientTransport implements Transport {
         this.processReadBuffer();
       });
 
-      this._process.stdout?.on("error", (error) => {
+      this._process.stdout?.on("error", (error: Error) => {
         this.onerror?.(error);
       });
 
@@ -166,7 +178,7 @@ export class FilteredStdioClientTransport implements Transport {
       try {
         const message = JSON.parse(line) as JSONRPCMessage;
         this.onmessage?.(message);
-      } catch (error) {
+      } catch {
         // Skip invalid JSON-RPC messages
         continue;
       }

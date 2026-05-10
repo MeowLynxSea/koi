@@ -10,8 +10,8 @@ import type { McpJsonConfig, ScopedMcpConfig, McpServerConfig, ConnectionStatus 
 const KOI_CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
 const MCP_CONFIG_FILE = path.join(KOI_CONFIG_DIR, "mcp.json");
 
-let mcpConfigs: Map<string, ScopedMcpConfig> = new Map();
-let disabledServers: Set<string> = new Set();
+const mcpConfigs: Map<string, ScopedMcpConfig> = new Map();
+const disabledServers: Set<string> = new Set();
 let configsLoaded = false;
 
 function ensureConfigDir(): void {
@@ -137,7 +137,7 @@ export function getMcpServerNames(): string[] {
   return Array.from(mcpConfigs.keys());
 }
 
-let serverStatuses: Map<string, ConnectionStatus> = new Map();
+const serverStatuses: Map<string, ConnectionStatus> = new Map();
 
 export function updateServerStatus(name: string, status: ConnectionStatus): void {
   serverStatuses.set(name, status);
