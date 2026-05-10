@@ -331,3 +331,58 @@ export async function validateProviderCredential(
     return { valid: false, error: getErrorMessage(err) };
   }
 }
+
+/* ───────── Auxiliary model call ───────── */
+
+/**
+ * Call the auxiliary model with a system prompt and user messages.
+ * Returns the model's text response or null if the model is not configured or call fails.
+ */
+export async function callAuxiliaryModel(
+  systemPrompt: string,
+  userMessages: Array<{ role: string; content: string; timestamp: number }>
+): Promise<string | null> {
+  const ref = getAuxiliaryModel();
+  if (!ref) {
+    return null;
+  }
+
+  const model = resolvePiModel(ref);
+  if (!model) {
+    return null;
+  }
+
+  const registry = getPiModelRegistry();
+  const auth = await registry.getApiKeyAndHeaders(model);
+  if (!auth.ok) {
+    return null;
+  }
+
+  try {
+    const result = await completeSimple(
+      model,
+      {
+        systemPrompt,
+        messages: userMessages,
+      },
+      {
+        apiKey: auth.apiKey,
+        headers: auth.headers,
+        maxTokens: 50,
+        maxRetries: 1,
+        timeoutMs: 30000,
+      }
+    );
+
+    if (result.stopReason === "error" || result.stopReason === "aborted") {
+      return null;
+    }
+
+    return result.content
+      .filter((block): block is { type: "text"; text: string } => block.type === "text")
+      .map((block) => block.text)
+      .join("");
+  } catch {
+    return null;
+  }
+}

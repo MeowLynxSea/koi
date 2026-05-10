@@ -351,92 +351,104 @@ export function App({ onExit }: AppProps) {
   const questionResolveRef = useRef<((value: string) => void) | null>(null);
   const questionOptionsRef = useRef<string[]>([]);
 
-  useEffect(() => {
-    const unsubscribe = subscribePermissions(async () => {
-      if (processingPermissionRef.current) return;
-      const queue = getPermissionQueue();
-      if (queue.length === 0) return;
+  // Process the next permission in the queue (if any).
+  // This function is called both when new permissions are added and when
+  // a permission is resolved, to ensure multiple pending permissions are handled.
+  const processPermissionQueue = useCallback(async () => {
+    if (processingPermissionRef.current) return;
+    const queue = getPermissionQueue();
+    if (queue.length === 0) return;
 
-      const request = queue[0];
-      if (!request) {
-        processingPermissionRef.current = false;
-        return;
-      }
+    const request = queue[0];
+    if (!request) {
+      processingPermissionRef.current = false;
+      return;
+    }
 
-      // In YOLO mode, auto-approve all permissions
-      if (isYoloMode()) {
-        resolvePermission(request.id, true);
-        return;
-      }
+    // In YOLO mode, auto-approve all permissions
+    if (isYoloMode()) {
+      resolvePermission(request.id, true);
+      // Use setTimeout to allow the queue to be processed recursively
+      setTimeout(() => { void processPermissionQueue(); }, 0);
+      return;
+    }
 
-      processingPermissionRef.current = true;
-      setPermissionModalOpen(true);
+    processingPermissionRef.current = true;
+    setPermissionModalOpen(true);
 
-      const allowed = await dialog.confirm({
-        backdropColor: "#000000",
-        backdropOpacity: "50%",
-        closeOnEscape: true,
-        unstyled: true,
-        content: ({ resolve }) => {
-          permissionResolveRef.current = resolve;
-          const contentWidth = Math.min(70, Math.max(20, width - 8));
-          const textWidth = Math.max(1, contentWidth - 6);
-          const toolLines = wrapText(`Tool: ${request.toolName}`, textWidth, 0);
-          const argsLines = wrapText(formatPermissionArgs(request.toolName, request.args), textWidth, 0);
-          const reasonLines = wrapText(`Reason: ${request.reason}`, textWidth, 0);
-          return (
-            <box
-              flexDirection="column"
-              alignSelf="center"
-              borderStyle="rounded"
-              borderColor="#4a4a5a"
-              backgroundColor="#1a1a2e"
-              paddingX={2}
-              paddingY={1}
-              width={contentWidth}
-              maxHeight={Math.max(10, height - 6)}
-            >
-              <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#fbbf24">
-                Permission Request
-              </text>
-              <box flexDirection="column" gap={1}>
-                <box flexDirection="column">
-                  {toolLines.map((line, i) => (
-                    <text key={`t-${i}`} wrapMode="none" fg="#00f5ff">{line}</text>
-                  ))}
-                </box>
-                <box flexDirection="column">
-                  {argsLines.map((line, i) => (
-                    <text key={`a-${i}`} wrapMode="none" fg="#a5b4fc">{line}</text>
-                  ))}
-                </box>
-                <box flexDirection="column">
-                  {reasonLines.map((line, i) => (
-                    <text key={`r-${i}`} wrapMode="none" fg="#ff79c6">{line}</text>
-                  ))}
-                </box>
+    const allowed = await dialog.confirm({
+      backdropColor: "#000000",
+      backdropOpacity: "50%",
+      closeOnEscape: true,
+      unstyled: true,
+      content: ({ resolve }) => {
+        permissionResolveRef.current = resolve;
+        const contentWidth = Math.min(70, Math.max(20, width - 8));
+        const textWidth = Math.max(1, contentWidth - 6);
+        const toolLines = wrapText(`Tool: ${request.toolName}`, textWidth, 0);
+        const argsLines = wrapText(formatPermissionArgs(request.toolName, request.args), textWidth, 0);
+        const reasonLines = wrapText(`Reason: ${request.reason}`, textWidth, 0);
+        return (
+          <box
+            flexDirection="column"
+            alignSelf="center"
+            borderStyle="rounded"
+            borderColor="#4a4a5a"
+            backgroundColor="#1a1a2e"
+            paddingX={2}
+            paddingY={1}
+            width={contentWidth}
+            maxHeight={Math.max(10, height - 6)}
+          >
+            <text alignSelf="center" wrapMode="none" attributes={createTextAttributes({ bold: true })} fg="#fbbf24">
+              Permission Request
+            </text>
+            <box flexDirection="column" gap={1}>
+              <box flexDirection="column">
+                {toolLines.map((line, i) => (
+                  <text key={`t-${i}`} wrapMode="none" fg="#00f5ff">{line}</text>
+                ))}
               </box>
-              <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
-                <box paddingX={2} backgroundColor="#2dd4bf" onMouseUp={() => resolve(true)}>
-                  <text fg="white" attributes={createTextAttributes({ bold: true })}>Yes</text>
-                </box>
-                <box paddingX={2} backgroundColor="#f43f5e" onMouseUp={() => resolve(false)}>
-                  <text fg="white" attributes={createTextAttributes({ bold: true })}>No!</text>
-                </box>
+              <box flexDirection="column">
+                {argsLines.map((line, i) => (
+                  <text key={`a-${i}`} wrapMode="none" fg="#a5b4fc">{line}</text>
+                ))}
+              </box>
+              <box flexDirection="column">
+                {reasonLines.map((line, i) => (
+                  <text key={`r-${i}`} wrapMode="none" fg="#ff79c6">{line}</text>
+                ))}
               </box>
             </box>
-          );
-        },
-      });
-
-      resolvePermission(request.id, allowed);
-      processingPermissionRef.current = false;
-      setPermissionModalOpen(false);
-      permissionResolveRef.current = null;
+            <box alignSelf="center" marginTop={1} flexDirection="row" gap={2}>
+              <box paddingX={2} backgroundColor="#2dd4bf" onMouseUp={() => resolve(true)}>
+                <text fg="white" attributes={createTextAttributes({ bold: true })}>Yes</text>
+              </box>
+              <box paddingX={2} backgroundColor="#f43f5e" onMouseUp={() => resolve(false)}>
+                <text fg="white" attributes={createTextAttributes({ bold: true })}>No!</text>
+              </box>
+            </box>
+          </box>
+        );
+      },
     });
 
-    return unsubscribe;
+    resolvePermission(request.id, allowed);
+    processingPermissionRef.current = false;
+    setPermissionModalOpen(false);
+    permissionResolveRef.current = null;
+
+    // After resolving, check if there are more permissions in the queue and process them.
+    // Use setTimeout to avoid blocking and allow the event loop to settle.
+    setTimeout(() => { void processPermissionQueue(); }, 0);
   }, [dialog, width, height]);
+
+  useEffect(() => {
+    const unsubscribe = subscribePermissions(() => {
+      void processPermissionQueue();
+    });
+    return unsubscribe;
+  }, [processPermissionQueue]);
 
   // Processes the askUserQuestion queue one item at a time.
   const processingQuestionRef = useRef(false);

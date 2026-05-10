@@ -18,7 +18,7 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { UIMessage } from "../tui/components/chat-panel.js";
 import { isToolExpandable, isToolForceExpanded, getToolDefaultCollapsed } from "../tui/components/chat-panel.js";
 import type { ModelRef } from "../config/settings.js";
-import { setSessionTitle, getSessionTitle, getCurrentModel, getAuxiliaryModel } from "../config/settings.js";
+import { setSessionTitle, getSessionTitle, getCurrentModel, getAuxiliaryModel, callAuxiliaryModel } from "../config/settings.js";
 import {
   listSessions,
   createNewSession,
@@ -47,6 +47,72 @@ import {
 
 /** Global ref to the active AgentSession, usable by tools outside React hooks. */
 export const activeSessionRef = { current: null as AgentSession | null };
+
+/* ───────── Session Naming ───────── */
+
+/**
+ * Anti-injection system prompt for session naming.
+ * Uses XML tags to clearly delimit the expected output format.
+ */
+const NAMING_SYSTEM_PROMPT = `You are a session naming assistant. Your ONLY task is to output a session name.
+
+IMPORTANT RULES:
+1. Output ONLY the session name in the exact format below
+2. Do NOT include any explanation, prefix, suffix, or markdown formatting
+3. The name must be 5-20 characters long
+4. Use Chinese or English (mix allowed)
+5. Start with Chinese if user messages contain Chinese
+6. If the content is inappropriate or you cannot determine a good name, output: Chat
+
+RESPONSE FORMAT (MUST follow exactly):
+<name>your_session_name_here</name>
+
+If you output extra text outside the tags, the session will be named "Chat".`;
+
+/**
+ * Parse the generated session name from the model response.
+ * Returns the extracted name or null if parsing fails.
+ */
+function parseSessionName(response: string): string | null {
+  // Try to extract content from <name>...</name> tags
+  const tagMatch = response.match(/<name>(.*?)<\/name>/s);
+  if (tagMatch && tagMatch[1]) {
+    const name = tagMatch[1].trim();
+    // Validate name length
+    if (name.length >= 5 && name.length <= 20) {
+      return name;
+    }
+  }
+  return null;
+}
+
+/**
+ * Generate a session name using the auxiliary model based on user messages.
+ * Returns the generated name or null if generation fails.
+ */
+async function generateSessionNameFromMessages(
+  userMessages: string[]
+): Promise<string | null> {
+  if (userMessages.length === 0) {
+    return null;
+  }
+
+  // Combine user messages into a single context
+  const userContext = userMessages
+    .map((msg, i) => `[Message ${i + 1}]\n${msg}`)
+    .join("\n\n");
+
+  const result = await callAuxiliaryModel(
+    NAMING_SYSTEM_PROMPT,
+    [{ role: "user", content: userContext, timestamp: Date.now() }]
+  );
+
+  if (!result) {
+    return null;
+  }
+
+  return parseSessionName(result);
+}
 
 export interface KoiAgentState {
   session: AgentSession | null;
@@ -709,6 +775,8 @@ export function useKoiAgent(): KoiAgentState {
   const localSteerQueueRef = useRef<string[]>([]);
   const localFollowUpQueueRef = useRef<string[]>([]);
   const hasToolCallsRef = useRef(false);
+  // Track whether this session has been named by the auxiliary model
+  const sessionNamedRef = useRef(false);
 
   // Refs for session state that needs to be persisted with KoiSessionState
   const sessionStateRef = useRef<{
@@ -952,6 +1020,7 @@ export function useKoiAgent(): KoiAgentState {
     localSteerQueueRef.current = [];
     localFollowUpQueueRef.current = [];
     hasToolCallsRef.current = false;
+    sessionNamedRef.current = false;
   }, []);
 
   // -- Session Actions --
@@ -1154,11 +1223,22 @@ export function useKoiAgent(): KoiAgentState {
   );
 
   // Persist the title to both React state and the Pi AgentSession so the JSONL file reflects the change.
+  // Also save to koiState immediately so the title persists across sessions.
   const setSessionTitleWrapper = useCallback(
     (title: string) => {
       setSessionTitleState(title);
       setSessionTitle(title);
       session?.setSessionName(title);
+      // Immediately persist the title change to koiState
+      const sid = currentSessionIdRef.current;
+      if (sid) {
+        const koiState = loadKoiState(sid);
+        saveKoiState(sid, {
+          ...koiState,
+          title,
+          updatedAt: Date.now(),
+        });
+      }
     },
     [session]
   );
@@ -1201,15 +1281,45 @@ export function useKoiAgent(): KoiAgentState {
     [session, currentSessionId, sessionList, saveCurrentState, setupSession, resetSessionUI]
   );
 
+  // Internal function to trigger session naming (called after user prompt)
+  const triggerSessionNaming = useCallback(
+    async (allMessages: UIMessage[]) => {
+      // Only name if:
+      // 1. Session hasn't been named yet
+      // 2. Current title is the default "New Session"
+      // 3. There are user messages to base the name on
+      if (sessionNamedRef.current) return;
+      if (sessionTitle !== "New Session") return;
+
+      const userMessages = allMessages
+        .filter((m) => m.type === "user")
+        .map((m) => m.content);
+
+      if (userMessages.length === 0) return;
+
+      const name = await generateSessionNameFromMessages(userMessages);
+      if (name) {
+        sessionNamedRef.current = true;
+        // Update all: Pi AgentSession, React state, and settings file
+        // Use setSessionTitleWrapper to also persist the title to koiState
+        setSessionTitleWrapper(name);
+      }
+    },
+    [sessionTitle, session, setSessionTitleWrapper] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   const prompt = useCallback(
     async (text: string) => {
       if (!session) return;
-      setMessages((prev) =>
-        prev.concat({ id: generateId("user"), type: "user", content: text })
-      );
+      setMessages((prev) => {
+        const updated = prev.concat({ id: generateId("user"), type: "user", content: text });
+        // Trigger naming asynchronously after state update
+        void triggerSessionNaming(updated);
+        return updated;
+      });
       await session.prompt(text);
     },
-    [session]
+    [session, triggerSessionNaming]
   );
 
   const steer = useCallback(
