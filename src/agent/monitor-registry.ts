@@ -102,18 +102,19 @@ class MonitorRegistryImpl extends EventEmitter {
 
     this.monitors.set(id, entry);
 
-    // Create PTY session
-    const pty = spawnPty(
-      {
-        command: "bash",
-        args: ["-c", command],
-      },
-      (data) => {
-        this.handlePtyData(id, data);
-      }
-    );
+    // Create PTY and session
+    const pty = spawnPty({
+      command: "bash",
+      args: ["-c", command],
+    });
 
     const session = new PtySession(id, pty, command);
+    
+    // Forward data to registry handlers
+    session.on("data", (data: string) => {
+      this.handlePtyData(id, { type: "data", data });
+    });
+    
     session.on("exit", ({ exitCode }) => {
       this.handlePtyExit(id, exitCode ?? 0);
     });
@@ -129,12 +130,17 @@ class MonitorRegistryImpl extends EventEmitter {
    * Used by bash tool when timeout occurs.
    */
   adopt(
-    session: PtySession,
+    oldSession: PtySession,
     sessionId: string,
     command: string,
     description?: string
   ): string {
-    const id = session.id;
+    const id = oldSession.id;
+    
+    // Create a new PtySession with the same pty process
+    // This sets up new listeners while old session's listeners are cleaned up by caller
+    const pty = oldSession.pty;
+    const newSession = new PtySession(id, pty, command);
 
     const entry: MonitorEntry = {
       id,
@@ -142,19 +148,19 @@ class MonitorRegistryImpl extends EventEmitter {
       description: description || `Monitor: ${command.slice(0, 40)}${command.length > 40 ? "…" : ""}`,
       command,
       status: "running",
-      startTime: session.startTime,
+      startTime: oldSession.startTime,
       outputLines: [],
     };
 
     this.monitors.set(id, entry);
-    this.sessions.set(id, session);
+    this.sessions.set(id, newSession);
 
-    // Forward data to registry
-    session.on("data", (data: string) => {
+    // Forward data to registry handlers
+    newSession.on("data", (data: string) => {
       this.handlePtyData(id, { type: "data", data });
     });
 
-    session.on("exit", ({ exitCode }) => {
+    newSession.on("exit", ({ exitCode }) => {
       this.handlePtyExit(id, exitCode ?? 0);
     });
 

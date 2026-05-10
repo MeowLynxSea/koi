@@ -55,12 +55,13 @@ async function execBashWithPty(
   command: string,
   timeoutSec: number = 60,
   onData?: (data: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onTimeout?: (monitorId: string) => void
 ): Promise<{
   exitCode?: number;
   output: string;
   timedOut: boolean;
-  monitorId?: string;
+  transferredMonitorId?: string;
   session?: PtySession;
 }> {
   const sessionId = activeSessionRef.current?.sessionId ?? "unknown";
@@ -69,22 +70,21 @@ async function execBashWithPty(
   let output = "";
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
-  let monitorId: string | undefined;
+  let transferredMonitorId: string | undefined;
   let ptySession: PtySession | undefined;
+  let resolvePromise: ((value: ReturnType<typeof execBashWithPty>) => void) | undefined;
 
   // Create PTY
-  const ptyProcess = spawnPty(
-    {
-      command: "bash",
-      args: ["-c", command],
-    },
-    (data) => {
-      if (data.type === "data" && data.data) {
-        output += data.data;
-        onData?.(data.data);
-      }
-    }
-  );
+  const ptyProcess = spawnPty({
+    command: "bash",
+    args: ["-c", command],
+  });
+
+  // Collect output directly from PTY (no PtySession wrapper)
+  ptyProcess.onData((data: string) => {
+    output += data;
+    onData?.(data);
+  });
 
   ptySession = new PtySession(ptyId, ptyProcess, command);
 
@@ -100,15 +100,26 @@ async function execBashWithPty(
         command,
         `Bash timeout transfer: ${command.slice(0, 50)}${command.length > 50 ? "…" : ""}`
       );
+      
+      // Clean up the old session's listeners so only monitor receives events
+      ptySession!.cleanup();
+      
+      transferredMonitorId = monitorId;
 
-      // Detach the session from here (monitor now owns it)
-      ptySession!.detach();
-      ptySession = undefined;
+      // Notify caller about the timeout
+      onTimeout?.(monitorId);
 
       // Notify via signal if available
       signal?.removeEventListener("abort", onAbort);
 
-      // Return the monitor info - process continues running
+      // Resolve the promise now
+      resolvePromise?.({
+        exitCode: undefined,
+        output,
+        timedOut: true,
+        transferredMonitorId: monitorId,
+        session: undefined,
+      });
     }, timeoutSec * 1000);
   }
 
@@ -122,37 +133,37 @@ async function execBashWithPty(
 
   // Wait for PTY exit
   return new Promise((resolve) => {
+    resolvePromise = resolve;
     ptyProcess.onExit(({ exitCode }) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
       signal?.removeEventListener("abort", onAbort);
 
-      if (timedOut && ptySession) {
-        // Already handled in timeout callback
-        resolve({
-          exitCode: undefined,
-          output,
-          timedOut: true,
-          monitorId: monitorRegistry.getRunningBySession(sessionId).slice(-1)[0]?.id,
-          session: undefined,
-        });
-      } else {
-        resolve({
-          exitCode: exitCode ?? 0,
-          output,
-          timedOut: false,
-          monitorId: undefined,
-          session: undefined,
-        });
-      }
+      resolve({
+        exitCode: exitCode ?? 0,
+        output,
+        timedOut: false,
+        transferredMonitorId: undefined,
+        session: undefined,
+      });
     });
   });
 }
 
 export async function executeBash(params: BashToolInput): Promise<BashResult> {
-  const { exitCode, output, timedOut, monitorId } = await execBashWithPty(
+  let monitorId: string | undefined;
+  
+  const { exitCode, output, timedOut, transferredMonitorId } = await execBashWithPty(
     params.command,
-    params.timeout
+    params.timeout,
+    undefined,
+    undefined,
+    (id) => { monitorId = id; }
   );
+  
+  // Use the monitorId from callback if available
+  if (timedOut && !monitorId) {
+    monitorId = transferredMonitorId;
+  }
 
   let displayOutput = output;
 

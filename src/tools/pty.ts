@@ -9,6 +9,8 @@
 
 import * as pty from "node-pty";
 import { EventEmitter } from "events";
+import * as fs from "fs";
+import { dirname, join } from "path";
 
 export interface PtyOptions {
   command?: string;
@@ -33,16 +35,41 @@ const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 30;
 
 /**
- * 创建并启动一个 PTY 进程
+ * Fix node-pty spawn-helper executable permissions.
+ * Bun/npm installs may strip +x from prebuilt binaries, causing
+ * "posix_spawnp failed" on macOS/Linux.
  */
-export function spawnPty(
-  options: PtyOptions,
-  onData?: PtyDataCallback
-): pty.IPty {
+function fixNodePtyPermissions(): void {
+  try {
+    const nodePtyUrl = import.meta.resolve("node-pty");
+    const nodePtyPath = nodePtyUrl.replace("file://", "");
+    const prebuildsDir = join(dirname(nodePtyPath), "..", "prebuilds");
+    const platformArch = `${process.platform}-${process.arch}`;
+    const helperPath = join(prebuildsDir, platformArch, "spawn-helper");
+
+    if (fs.existsSync(helperPath)) {
+      const stat = fs.statSync(helperPath);
+      const isExecutable = (stat.mode & 0o111) !== 0;
+      if (!isExecutable) {
+        fs.chmodSync(helperPath, stat.mode | 0o755);
+      }
+    }
+  } catch {
+    // ignore resolution/permission errors
+  }
+}
+
+/**
+ * 创建并启动一个 PTY 进程
+ * 注意：这个函数不设置任何监听器。调用者应该：
+ * 1. 直接使用 pty.onData/pty.onExit 设置监听器
+ * 2. 或者用 PtySession 包装（它会自动设置监听器）
+ */
+export function spawnPty(options: PtyOptions): pty.IPty {
   const shell = process.platform === "win32" ? "powershell.exe" : "bash";
   const args = process.platform === "win32" ? [] : ["--login"];
 
-  const ptyProcess = pty.spawn(options.command ?? shell, options.args ?? args, {
+  const spawnOpts = {
     name: options.name ?? "xterm-color",
     cols: options.cols ?? DEFAULT_COLS,
     rows: options.rows ?? DEFAULT_ROWS,
@@ -53,15 +80,17 @@ export function spawnPty(
       CLAUDECODE: "1",
       TERM: "xterm-256color",
     } as { [key: string]: string },
-  });
+  };
 
-  if (onData) {
-    ptyProcess.onData((data: string) => {
-      onData({ type: "data", data });
-    });
+  try {
+    return pty.spawn(options.command ?? shell, options.args ?? args, spawnOpts);
+  } catch (err: any) {
+    if (err?.message?.includes("posix_spawnp failed")) {
+      fixNodePtyPermissions();
+      return pty.spawn(options.command ?? shell, options.args ?? args, spawnOpts);
+    }
+    throw err;
   }
-
-  return ptyProcess;
 }
 
 /**
@@ -73,11 +102,15 @@ export class PtySession extends EventEmitter {
   readonly command: string;
   readonly startTime: number;
 
-  private pty: pty.IPty;
+  /** 暴露底层 PTY 对象，用于清理监听器 */
+  readonly pty: pty.IPty;
+  
   private outputBuffer: string[] = [];
   private lastOutput: string = "";
   private _exitCode?: number;
   private _isRunning: boolean = true;
+  private _dataHandler: (data: string) => void;
+  private _exitHandler: (exit: { exitCode: number; signal: string }) => void;
 
   constructor(id: string, pty: pty.IPty, command: string) {
     super();
@@ -86,18 +119,20 @@ export class PtySession extends EventEmitter {
     this.command = command;
     this.startTime = Date.now();
 
-    pty.onData((data: string) => {
+    this._dataHandler = (data: string) => {
       this.lastOutput = data;
-      // 不在这里 split lines，由调用者决定如何处理
       this.outputBuffer.push(data);
       this.emit("data", data);
-    });
+    };
 
-    pty.onExit(({ exitCode, signal }) => {
+    this._exitHandler = ({ exitCode, signal }) => {
       this._isRunning = false;
       this._exitCode = exitCode;
       this.emit("exit", { exitCode, signal });
-    });
+    };
+
+    pty.onData(this._dataHandler);
+    pty.onExit(this._exitHandler);
   }
 
   /**
@@ -171,16 +206,32 @@ export class PtySession extends EventEmitter {
   }
 
   /**
-   * 关闭 PTY（不杀进程）
+   * 清理 PTY 监听器（用于 adopt 场景）
+   * 调用后此 PtySession 将不再接收 PTY 事件
+   */
+  cleanup(): void {
+    // node-pty's IPty interface doesn't expose removeListener,
+    // but the underlying EventEmitter supports it
+    try {
+      const ptyAsEmitter = this.pty as unknown as EventEmitter;
+      if (typeof ptyAsEmitter.removeListener === "function") {
+        ptyAsEmitter.removeListener("data", this._dataHandler);
+        ptyAsEmitter.removeListener("exit", this._exitHandler);
+      }
+    } catch {
+      // ignore if removeListener fails
+    }
+    // 清理 PtySession 自身的事件监听器
+    this.removeAllListeners();
+    this._isRunning = false;
+  }
+
+  /**
+   * 关闭 PTY（不杀进程）- 已废弃，请使用 cleanup()
+   * @deprecated 使用 cleanup() 代替
    */
   detach(): void {
-    try {
-      this.pty.removeAllListeners();
-      // 不调用 kill，让进程继续运行
-    } catch {
-      // ignore
-    }
-    this._isRunning = false;
+    this.cleanup();
   }
 
   /**
