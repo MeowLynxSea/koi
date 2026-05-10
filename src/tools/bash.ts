@@ -18,7 +18,7 @@ import type { ToolResultWithError } from "./types.js";
 
 export const bashSchema = Type.Object({
   command: Type.String({ description: "Bash command to execute" }),
-  timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default: 60)", default: 60 })),
+  timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default: 60). For long-running tasks that exceed this limit, use CreateMonitor instead.", default: 60 })),
 });
 
 export type BashToolInput = {
