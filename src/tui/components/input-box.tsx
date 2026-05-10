@@ -6,7 +6,7 @@
  * Supports user message history navigation via ArrowUp/ArrowDown.
  */
 
-import { useRef, useMemo, useState, useEffect, useCallback } from "react";
+import { useRef, useMemo, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
 import type { KeyEvent } from "@opentui/core";
 import type { AgentMode } from "../../agent/mode.js";
@@ -47,6 +47,11 @@ const INK_WAVE_PHASES = [
   { phase: 3.75 },
 ];
 
+export interface InputBoxHandle {
+  clearInput: () => void;
+  isInputEmpty: () => boolean;
+}
+
 interface InputBoxProps {
   onSubmit: (value: string) => void;
   onQueueSubmit?: (value: string) => void;
@@ -59,7 +64,7 @@ interface InputBoxProps {
   onModeSwitch?: () => void;
 }
 
-export function InputBox({
+export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function InputBox({
   onSubmit,
   onQueueSubmit,
   onSlashEmpty,
@@ -69,7 +74,7 @@ export function InputBox({
   mode = "build",
   isBusy = false,
   onModeSwitch,
-}: InputBoxProps) {
+}: InputBoxProps, ref) {
   const textareaRef = useRef<TextareaRenderable | null>(null);
 
   // History navigation state
@@ -79,6 +84,16 @@ export function InputBox({
   const [savedInput, setSavedInput] = useState("");
 
   const getText = () => textareaRef.current?.editBuffer.getText() ?? "";
+
+  // Expose methods to parent via ref
+  useImperativeHandle(ref, () => ({
+    clearInput: () => {
+      textareaRef.current?.editBuffer.replaceText("");
+      setHistoryIndex(-1);
+      setSavedInput("");
+    },
+    isInputEmpty: () => getText().trim() === "",
+  }), []);
 
   // Navigate to previous history item (ArrowUp) - replaces input text
   const navigateToPreviousHistory = useCallback(() => {
@@ -140,20 +155,44 @@ export function InputBox({
     if (event.name === "up" && !event.ctrl && !event.meta && !event.option) {
       const history = getUserHistory();
       if (history.length > 0) {
-        event.preventDefault();
-        event.stopPropagation();
-        navigateToPreviousHistory();
-        return;
+        const editBuffer = textareaRef.current?.editBuffer;
+        if (editBuffer) {
+          const cursorPos = editBuffer.getCursorPosition();
+          // If cursor is on the first line, switch to previous history item
+          if (cursorPos.row <= 0) {
+            event.preventDefault();
+            event.stopPropagation();
+            navigateToPreviousHistory();
+            return;
+          }
+          // Otherwise, let textarea handle natural line navigation
+        } else {
+          // Fallback: if we can't get cursor position, navigate history anyway
+          event.preventDefault();
+          event.stopPropagation();
+          navigateToPreviousHistory();
+          return;
+        }
       }
     }
 
     // Handle ArrowDown for history navigation
     if (event.name === "down" && !event.ctrl && !event.meta && !event.option) {
+      // Only navigate to next history when cursor is on the last line
       if (historyIndex !== -1) {
-        event.preventDefault();
-        event.stopPropagation();
-        navigateToNextHistory();
-        return;
+        const editBuffer = textareaRef.current?.editBuffer;
+        if (editBuffer) {
+          const cursorPos = editBuffer.getCursorPosition();
+          const lineCount = editBuffer.getLineCount();
+          // If cursor is on the last line, switch to next history item
+          if (cursorPos.row >= lineCount - 1) {
+            event.preventDefault();
+            event.stopPropagation();
+            navigateToNextHistory();
+            return;
+          }
+          // Otherwise, let textarea handle natural line navigation
+        }
       }
     }
 
@@ -310,4 +349,4 @@ export function InputBox({
       </box>
     </box>
   );
-}
+});

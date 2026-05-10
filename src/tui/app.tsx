@@ -19,7 +19,7 @@ import {
   isToolExpandable,
   isToolForceExpanded,
 } from "./components/chat-panel.js";
-import { InputBox } from "./components/input-box.js";
+import { InputBox, type InputBoxHandle } from "./components/input-box.js";
 import { PendingArea } from "./components/pending-area.js";
 import { EditPendingModal } from "./components/edit-pending-modal.js";
 import { InfoBar } from "./components/info-bar.js";
@@ -687,6 +687,7 @@ export function App({ onExit }: AppProps) {
   const pendingHeight = pendingCount > 0 ? Math.min(pendingCount, 3) + (pendingCount > 3 ? 1 : 0) : 0;
   const chatPanelHeight = Math.max(1, height - (error ? 1 : 0) - 5 - 1 - pendingHeight);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
+  const inputBoxRef = useRef<InputBoxHandle>(null);
 
   // Filter out internal subagent notifications from the chat display.
   // These messages are still present in the session state (so the LLM sees
@@ -874,6 +875,8 @@ export function App({ onExit }: AppProps) {
     if (key.ctrl && key.name === "c") {
       if (isStreaming) {
         void abort();
+      } else if (inputBoxRef.current && !inputBoxRef.current.isInputEmpty()) {
+        inputBoxRef.current.clearInput();
       } else {
         setShowExitModal(true);
       }
@@ -972,6 +975,7 @@ export function App({ onExit }: AppProps) {
             />
           )}
           <InputBox
+            ref={inputBoxRef}
             onSubmit={handleSubmit}
             onQueueSubmit={handleQueueSubmit}
             onSlashEmpty={handleSlashEmpty}
