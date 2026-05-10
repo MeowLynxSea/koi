@@ -1,19 +1,22 @@
 /**
- * BashTool — Shell execution with safety controls
+ * BashTool — Shell execution with PTY isolation
  *
  * Features:
- * - Timeout with SIGTERM → SIGKILL escalation
- * - Output size limit (capped to prevent context overflow)
- * - Dangerous command warnings (displayed but not blocking)
+ * - PTY-based execution (full terminal isolation)
+ * - No I/O leakage to outer environment
+ * - Timeout handling: transfer to monitor instead of killing
+ * - Support for interactive commands (sudo, vim, etc.)
  */
 
 import { Type } from "typebox";
-import { spawn } from "child_process";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { TextContent } from "@mariozechner/pi-ai";
 import { checkPermission, isDangerousBashCommand } from "../agent/check-permissions.js";
 import { requestPermission } from "../agent/permission-ui.js";
 import { withWriteLock } from "../agent/tool-orchestration.js";
+import { monitorRegistry } from "../agent/monitor-registry.js";
+import { spawnPty, PtySession, generatePtyId } from "./pty.js";
+import { activeSessionRef } from "../agent/hooks.js";
 import type { ToolResultWithError } from "./types.js";
 
 export const bashSchema = Type.Object({
@@ -28,102 +31,192 @@ export type BashToolInput = {
 
 const MAX_OUTPUT_CHARS = 200_000;
 
-function execBash(command: string, timeoutSec?: number): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
-  return new Promise((resolve, reject) => {
-    const shell = process.platform === "win32" ? "cmd" : "bash";
-    const shellFlag = process.platform === "win32" ? "/c" : "-c";
-    const child = spawn(shell, [shellFlag, command], {
-      cwd: process.cwd(),
-      env: { ...process.env, CLAUDECODE: "1", GIT_EDITOR: "true" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+export interface BashResult {
+  content: TextContent[];
+  details: {
+    exitCode?: number;
+    timedOut: boolean;
+    monitorId?: string;
+  };
+}
 
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+/**
+ * Execute bash command with PTY and timeout handling.
+ * 
+ * If timeout occurs:
+ *   - Does NOT kill the process
+ *   - Transfers the PTY to a new monitor
+ *   - Returns the monitor ID for the agent to continue
+ * 
+ * This ensures complete I/O isolation - no password prompts or
+ * interactive input/output can leak to the outer environment.
+ */
+async function execBashWithPty(
+  command: string,
+  timeoutSec: number = 60,
+  onData?: (data: string) => void,
+  signal?: AbortSignal
+): Promise<{
+  exitCode?: number;
+  output: string;
+  timedOut: boolean;
+  monitorId?: string;
+  session?: PtySession;
+}> {
+  const sessionId = activeSessionRef.current?.sessionId ?? "unknown";
+  const ptyId = generatePtyId();
 
-    const effectiveTimeout = timeoutSec ?? 60;
-    if (effectiveTimeout > 0) {
-      timeoutHandle = setTimeout(() => {
-        timedOut = true;
-        child.kill("SIGTERM");
-        setTimeout(() => {
-          if (!child.killed) child.kill("SIGKILL");
-        }, 5000);
-      }, effectiveTimeout * 1000);
+  let output = "";
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  let monitorId: string | undefined;
+  let ptySession: PtySession | undefined;
+
+  // Create PTY
+  const ptyProcess = spawnPty(
+    {
+      command: "bash",
+      args: ["-c", command],
+    },
+    (data) => {
+      if (data.type === "data" && data.data) {
+        output += data.data;
+        onData?.(data.data);
+      }
     }
+  );
 
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf-8");
-      if (stdout.length + stderr.length > MAX_OUTPUT_CHARS * 2) {
-        child.kill("SIGKILL");
-      }
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf-8");
-      if (stdout.length + stderr.length > MAX_OUTPUT_CHARS * 2) {
-        child.kill("SIGKILL");
-      }
-    });
+  ptySession = new PtySession(ptyId, ptyProcess, command);
 
-    child.on("error", (err) => {
+  // Set up timeout
+  if (timeoutSec > 0) {
+    timeoutHandle = setTimeout(() => {
+      timedOut = true;
+
+      // DO NOT kill the process - transfer to monitor instead
+      const monitorId = monitorRegistry.adopt(
+        ptySession!,
+        sessionId,
+        command,
+        `Bash timeout transfer: ${command.slice(0, 50)}${command.length > 50 ? "…" : ""}`
+      );
+
+      // Detach the session from here (monitor now owns it)
+      ptySession!.detach();
+      ptySession = undefined;
+
+      // Notify via signal if available
+      signal?.removeEventListener("abort", onAbort);
+
+      // Return the monitor info - process continues running
+    }, timeoutSec * 1000);
+  }
+
+  // Handle abort signal
+  const onAbort = () => {
+    if (!timedOut) {
+      ptySession?.kill("SIGTERM");
+    }
+  };
+  signal?.addEventListener("abort", onAbort);
+
+  // Wait for PTY exit
+  return new Promise((resolve) => {
+    ptyProcess.onExit(({ exitCode }) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      reject(err);
-    });
+      signal?.removeEventListener("abort", onAbort);
 
-    child.on("close", (code) => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      resolve({ stdout, stderr, exitCode: code ?? 0, timedOut });
+      if (timedOut && ptySession) {
+        // Already handled in timeout callback
+        resolve({
+          exitCode: undefined,
+          output,
+          timedOut: true,
+          monitorId: monitorRegistry.getRunningBySession(sessionId).slice(-1)[0]?.id,
+          session: undefined,
+        });
+      } else {
+        resolve({
+          exitCode: exitCode ?? 0,
+          output,
+          timedOut: false,
+          monitorId: undefined,
+          session: undefined,
+        });
+      }
     });
   });
 }
 
-export async function executeBash(params: BashToolInput): Promise<{ content: TextContent[]; details: { exitCode: number; timedOut: boolean } }> {
-  const { stdout, stderr, exitCode, timedOut } = await execBash(params.command, params.timeout);
+export async function executeBash(params: BashToolInput): Promise<BashResult> {
+  const { exitCode, output, timedOut, monitorId } = await execBashWithPty(
+    params.command,
+    params.timeout
+  );
 
-  let output = stdout;
-  if (stderr) {
-    output += (output ? "\n\n" : "") + `[stderr]\n${stderr}`;
-  }
-  if (timedOut) {
-    output += "\n\n[Command timed out and was terminated]";
-  }
-  if (output.length > MAX_OUTPUT_CHARS) {
-    output = output.slice(0, MAX_OUTPUT_CHARS) + `\n\n[Output truncated: ${output.length} chars total, limit: ${MAX_OUTPUT_CHARS}]`;
+  let displayOutput = output;
+
+  // Truncate if needed
+  if (displayOutput.length > MAX_OUTPUT_CHARS) {
+    displayOutput =
+      displayOutput.slice(0, MAX_OUTPUT_CHARS) +
+      `\n\n[Output truncated: ${output.length} chars total, limit: ${MAX_OUTPUT_CHARS}]`;
   }
 
+  // Warning for dangerous commands
   const warning = isDangerousBashCommand(params.command)
     ? "\n\n[Warning: This command may be destructive. Proceed with caution.]"
     : "";
 
+  if (timedOut && monitorId) {
+    // Timeout occurred - process transferred to monitor
+    return {
+      content: [
+        {
+          type: "text",
+          text:
+            `Command timed out after ${params.timeout}s.\n\n` +
+            `The process has been transferred to a background monitor.\n\n` +
+            `Monitor ID: ${monitorId}\n` +
+            `Use SendToMonitor to provide input (e.g., passwords) or InterruptMonitor to stop it.\n\n` +
+            `Latest output:\n${displayOutput.slice(-2000)}${warning}`,
+        } satisfies TextContent,
+      ],
+      details: { exitCode: undefined, timedOut: true, monitorId },
+    };
+  }
+
+  // Normal completion
   return {
-    content: [{ type: "text", text: output + warning }],
-    details: { exitCode, timedOut },
+    content: [{ type: "text", text: displayOutput + warning }],
+    details: { exitCode, timedOut: false },
   };
 }
 
-export function createBashToolDefinition(_cwd: string): ToolDefinition<typeof bashSchema, { exitCode: number; timedOut: boolean }> {
+export function createBashToolDefinition(_cwd: string): ToolDefinition<typeof bashSchema, { exitCode?: number; timedOut: boolean; monitorId?: string }> {
   return {
     name: "bash",
     label: "Bash",
     description:
-      "Execute a bash command in the environment.\n\n" +
+      "Execute a bash command in the environment with full PTY isolation.\n\n" +
       "IMPORTANT: Avoid using this tool to run `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands. " +
       "Instead, use the appropriate dedicated tool.\n\n" +
       "Git Safety Protocol:\n" +
       "- NEVER update the git config\n" +
       "- NEVER run destructive git commands (push --force, reset --hard, checkout .) unless explicitly requested\n" +
       "- NEVER use git commands with the -i flag (interactive)\n" +
-      "- NEVER skip hooks (--no-verify, --no-gpg-sign) unless explicitly asked",
-    promptSnippet: "Bash: execute shell commands (last resort — prefer dedicated tools)",
+      "- NEVER skip hooks (--no-verify, --no-gpg-sign) unless explicitly asked\n\n" +
+      "Timeout Handling:\n" +
+      "If the command times out, it will be transferred to a background monitor instead of being killed. " +
+      "Use SendToMonitor to interact with the process (e.g., enter sudo passwords).",
+    promptSnippet: "Bash: execute shell commands with PTY isolation (last resort — prefer dedicated tools)",
     parameters: bashSchema,
     executionMode: "parallel",
-    async execute(_toolCallId, params, _signal, _onUpdate) {
+    async execute(_toolCallId, params, signal, _onUpdate) {
       return withWriteLock(async () => {
         const perm = checkPermission("bash", params);
         if (perm.decision === "deny") {
-          const result: ToolResultWithError<{ exitCode: number; timedOut: boolean }> = {
+          const result: ToolResultWithError<{ exitCode?: number; timedOut: boolean; monitorId?: string }> = {
             content: [{ type: "text", text: `Permission denied: ${perm.reason ?? "bash operation blocked"}` }],
             details: { exitCode: 1, timedOut: false },
             isError: true,
@@ -133,7 +226,7 @@ export function createBashToolDefinition(_cwd: string): ToolDefinition<typeof ba
         if (perm.decision === "ask") {
           const allowed = await requestPermission({ toolName: "bash", args: params, reason: perm.reason ?? "Confirm shell command" });
           if (!allowed) {
-            const result: ToolResultWithError<{ exitCode: number; timedOut: boolean }> = {
+            const result: ToolResultWithError<{ exitCode?: number; timedOut: boolean; monitorId?: string }> = {
               content: [{ type: "text", text: "User denied permission to execute command." }],
               details: { exitCode: 1, timedOut: false },
               isError: true,
