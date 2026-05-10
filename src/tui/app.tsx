@@ -701,13 +701,20 @@ export function App({ onExit }: AppProps) {
   const handleSubmit = useCallback(
     (text: string) => {
       if (!text.trim() || !isReady) return;
+
+      // Handle /plan command to switch to plan mode
+      if (text.trim() === "/plan") {
+        applyAgentMode("plan");
+        return;
+      }
+
       if (isStreaming) {
         void steer(text);
       } else {
         void prompt(text);
       }
     },
-    [isReady, isStreaming, steer, prompt]
+    [isReady, isStreaming, steer, prompt, applyAgentMode]
   );
 
   const handleQueueSubmit = useCallback(
@@ -814,10 +821,11 @@ export function App({ onExit }: AppProps) {
       { id: "/rename", label: "Rename session", section: "Session", action: () => setShowRenameModal(true) },
       { id: "/yolo", label: "Toggle YOLO mode (auto-approve all permissions)", section: "Mode", action: () => setYoloMode((prev) => !prev) },
       { id: "/mode", label: `Cycle agent mode (${agentMode})`, section: "Mode", action: () => handleModeSwitch() },
+      { id: "/plan", label: "Switch to plan mode (read-only, no file modifications)", section: "Mode", action: () => applyAgentMode("plan") },
       { id: "/connect", label: "Connect to a provider", section: "Model", action: () => setShowConnectModal(true) },
       { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true) },
     ],
-    [session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch]
+    [session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode]
   );
 
   // Global keyboard shortcuts. Guarded by anyModalOpen so typing in a modal doesn't trigger app actions.
