@@ -23,6 +23,11 @@ interface SessionModalProps {
 }
 
 function formatRelativeTime(date: Date): string {
+  // Handle invalid dates to prevent TextNodeRenderable errors
+  if (!(date instanceof Date) || isNaN(date.getTime())) {
+    return "unknown";
+  }
+
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
@@ -174,6 +179,14 @@ export function SessionModal({
             const isForked = s.forkedFrom !== null;
             const forkDepth = s.forkDepth ?? 0;
 
+            // Ensure safe values for rendering to prevent TextNodeRenderable errors
+            const safeTitle = s.title ?? "Untitled Session";
+            const safeMessageCount = typeof s.messageCount === "number" ? s.messageCount : 0;
+            const safeUpdatedAt =
+              s.updatedAt instanceof Date && !isNaN(s.updatedAt.getTime())
+                ? s.updatedAt
+                : new Date();
+
             // Build fork prefix: "├─ " repeated for each depth level
             const forkPrefix = isForked
               ? "│ ".repeat(Math.min(forkDepth, 5)) + "├─ "
@@ -197,15 +210,15 @@ export function SessionModal({
                   truncate={true}
                 >
                   {isCurrent ? "● " : "  "}
-                  {forkPrefix}{s.title}
+                  {forkPrefix}{safeTitle}
                   {isForked && <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}> ↱</text>}
                 </text>
                 <box flexDirection="row" gap={1}>
                   <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-                    {s.messageCount}msg
+                    {safeMessageCount}msg
                   </text>
                   <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })} width={8}>
-                    {formatRelativeTime(s.updatedAt)}
+                    {formatRelativeTime(safeUpdatedAt)}
                   </text>
                 </box>
               </box>

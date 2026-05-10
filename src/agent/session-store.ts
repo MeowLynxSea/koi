@@ -138,14 +138,31 @@ function safeDeleteDir(dir: string): void {
 
 function sessionInfoToMeta(info: SessionInfo): SessionMeta {
   const forkMeta = forkManager.getForkMetadata(info.id);
+
+  // Ensure valid dates with fallbacks to prevent rendering issues
+  const createdAt =
+    info.created instanceof Date && !isNaN(info.created.getTime())
+      ? info.created
+      : new Date();
+  const updatedAt =
+    info.modified instanceof Date && !isNaN(info.modified.getTime())
+      ? info.modified
+      : new Date();
+
+  // Ensure messageCount is a valid number
+  const messageCount =
+    typeof info.messageCount === "number" && info.messageCount >= 0
+      ? info.messageCount
+      : 0;
+
   return {
     id: info.id,
     title: info.name || info.firstMessage || "Untitled Session",
     filePath: info.path,
-    cwd: info.cwd,
-    createdAt: info.created,
-    updatedAt: info.modified,
-    messageCount: info.messageCount,
+    cwd: info.cwd ?? "",
+    createdAt,
+    updatedAt,
+    messageCount,
     // Fork-related fields
     forkedFrom: forkMeta?.sourceSessionId ?? null,
     forkDepth: forkMeta ? forkManager.getForkDepth(info.id) : 0,
