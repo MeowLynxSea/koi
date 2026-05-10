@@ -233,6 +233,9 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
   // Ink wave animation state - phase index for ripple effect
   const [wavePhase, setWavePhase] = useState(0);
 
+  // Shimmer animation state - the highlight position index
+  const [shimmerIndex, setShimmerIndex] = useState(-1);
+
   // Animate ink wave effect when busy - elegant ripple
   useEffect(() => {
     if (!isBusy) return;
@@ -241,6 +244,28 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
     }, 150); // 150ms for smooth wave
     return () => clearInterval(interval);
   }, [isBusy]);
+
+  // Animate shimmer effect when busy - left to right highlight sweep
+  useEffect(() => {
+    if (!isBusy) {
+      setShimmerIndex(-1);
+      return;
+    }
+    // Start shimmer animation
+    const modeText = MODE_PREFIX[mode];
+    const textLength = modeText.length;
+    let currentIdx = -1;
+    
+    const interval = setInterval(() => {
+      currentIdx = (currentIdx + 1) % (textLength + 4); // +4 for pause at ends
+      if (currentIdx >= textLength) {
+        setShimmerIndex(-1); // Hide during pause
+      } else {
+        setShimmerIndex(currentIdx);
+      }
+    }, 80); // 80ms per step for smooth sweep
+    return () => clearInterval(interval);
+  }, [isBusy, mode]);
 
   // Generate ink wave characters - pure black/white/gray elegant wave
   const getInkWaveChars = useCallback(() => {
@@ -329,10 +354,29 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
         )}
       </box>
       <box flexDirection="row" height={3}>
-        <box marginRight={1} flexShrink={0}>
-          <text fg={MODE_COLOR[mode]} attributes={createTextAttributes({ bold: true })}>
-            {MODE_PREFIX[mode]}
-          </text>
+        {/* Mode prefix with shimmer effect - row of characters */}
+        <box flexDirection="row" marginRight={1} flexShrink={0}>
+          {(() => {
+            const modeText = MODE_PREFIX[mode];
+            const highlightColor = mode === "build" ? "#86efac" : 
+                                   mode === "ask" ? "#fde68a" : "#93c5fd";
+            const nearColor = mode === "build" ? "#bbf7d0" : 
+                              mode === "ask" ? "#fef08a" : "#bfdbfe";
+            
+            return modeText.split('').map((char, i) => {
+              const isHighlighted = isBusy && shimmerIndex === i;
+              const isNearHighlight = isBusy && shimmerIndex !== -1 && 
+                (shimmerIndex === i - 1 || shimmerIndex === i + 1);
+              
+              if (isHighlighted) {
+                return <text key={i} fg={highlightColor} attributes={createTextAttributes({ bold: true })}>{char}</text>;
+              }
+              if (isNearHighlight) {
+                return <text key={i} fg={nearColor} attributes={createTextAttributes({ bold: true })}>{char}</text>;
+              }
+              return <text key={i} fg={MODE_COLOR[mode]} attributes={createTextAttributes({ bold: true })}>{char}</text>;
+            });
+          })()}
         </box>
         <box flexGrow={1} height={3}>
           <textarea
