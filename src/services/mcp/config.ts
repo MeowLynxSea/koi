@@ -29,7 +29,12 @@ function loadConfigFile(): void {
       for (const [name, config] of Object.entries(data.mcpServers)) {
         const cfg = config as McpServerConfig;
         if (cfg.command || cfg.url) {
-          mcpConfigs.set(name, { ...cfg, scope: "user" });
+          const scopedConfig: ScopedMcpConfig = { ...cfg, scope: "user" };
+          mcpConfigs.set(name, scopedConfig);
+          // Load disabled state from config
+          if (cfg.enabled === false) {
+            disabledServers.add(name);
+          }
         }
       }
     }
@@ -43,8 +48,13 @@ function saveConfigFile(): void {
   const servers: Record<string, McpServerConfig> = {};
   for (const [name, scopedConfig] of mcpConfigs) {
     if (scopedConfig.scope === "user") {
-      const { scope: _scope, description: _desc, enabled: _enabled, ...config } = scopedConfig;
-      servers[name] = config;
+      const { scope: _scope, description: _desc, ...config } = scopedConfig;
+      // Preserve the enabled field for disabled servers
+      if (disabledServers.has(name)) {
+        servers[name] = { ...config, enabled: false };
+      } else {
+        servers[name] = config;
+      }
     }
   }
   fs.writeFileSync(MCP_CONFIG_FILE, JSON.stringify({ mcpServers: servers }, null, 2) + "\n", { mode: 0o600 });
@@ -129,8 +139,16 @@ export function isMcpServerDisabled(name: string): boolean {
 }
 
 export function setMcpServerEnabled(name: string, enabled: boolean): void {
-  if (enabled) disabledServers.delete(name);
-  else disabledServers.add(name);
+  if (enabled) {
+    disabledServers.delete(name);
+  } else {
+    disabledServers.add(name);
+  }
+  // Persist the disabled state to disk
+  const config = mcpConfigs.get(name);
+  if (config && config.scope === "user") {
+    saveConfigFile();
+  }
 }
 
 export function getMcpServerNames(): string[] {
