@@ -1,0 +1,35 @@
+NOTICE
+======
+
+This software includes the following third-party components:
+
+Third-Party Licenses
+--------------------
+
+The following components are distributed under their respective licenses:
+
+- @mariozechner/pi-agent-core (MIT)
+- @mariozechner/pi-ai (MIT)
+- @mariozechner/pi-coding-agent (MIT)
+- @mariozechner/pi-tui (MIT)
+- @modelcontextprotocol/sdk (MIT)
+- @opentui-ui/dialog (MIT)
+- @opentui/core (MIT)
+- @opentui/react (MIT)
+- axios (MIT)
+- bun (MIT)
+- commander (MIT)
+- diff (BSD-3-Clause)
+- fast-glob (MIT)
+- jimp (MIT)
+- react (MIT)
+- turndown (MIT)
+
+For the full license terms of these components, please refer to their
+respective LICENSE files in the node_modules directory.
+
+---
+
+Koi - A coding agent built on Pi SDK with TUI + Bun runtime
+Copyright (c) 2024 MeowLynxSea
+Licensed under GNU General Public License v3.0
