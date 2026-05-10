@@ -256,13 +256,19 @@ export class SessionTaskManager {
     const oldToNewIdMap = new Map<string, string>();
     const now = Date.now();
 
+    // Collect existing tasks before mutating the store
+    const existingTasks = Array.from(currentStore.values());
+
     // First pass: create new IDs
-    for (const task of currentStore.values()) {
+    for (const task of existingTasks) {
       oldToNewIdMap.set(task.id, this.generateTaskId());
     }
 
+    // Clear the store so only forked tasks remain
+    currentStore.clear();
+
     // Second pass: create forked tasks with updated references
-    for (const task of currentStore.values()) {
+    for (const task of existingTasks) {
       const newId = oldToNewIdMap.get(task.id)!;
       const forkedTask: Task = {
         ...task,

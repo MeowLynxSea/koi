@@ -181,24 +181,42 @@ export class ForkManager {
   getForkDepth(sessionId: string): number {
     let depth = 0;
     let currentId: string | null = sessionId;
+    const visited = new Set<string>();
 
     while (currentId) {
+      if (visited.has(currentId)) break;
+      visited.add(currentId);
+
       const meta = this.loadForkMetadata(currentId);
       if (!meta) break;
+      if (meta.sourceSessionId === currentId) break; // self-referential
+
       depth++;
       currentId = meta.sourceSessionId;
     }
 
-    return depth - 1; // Subtract 1 because original sessions have depth 0
+    return depth;
   }
 
   /**
    * Build the full fork tree starting from a session.
    */
-  getForkTree(sessionId: string, title: string = "Session"): ForkTreeNode {
+  getForkTree(sessionId: string, title: string = "Session", visited?: Set<string>): ForkTreeNode {
+    if (!visited) visited = new Set();
+    if (visited.has(sessionId)) {
+      return {
+        sessionId,
+        forkId: sessionId,
+        title: "(cycle)",
+        forkedAt: Date.now(),
+        children: [],
+      };
+    }
+    visited.add(sessionId);
+
     const meta = this.loadForkMetadata(sessionId);
     const forkedAt = meta?.forkedAt ?? Date.now();
-    
+
     const node: ForkTreeNode = {
       sessionId,
       forkId: meta?.forkId ?? sessionId,
@@ -214,7 +232,7 @@ export class ForkManager {
       const childTitle = childMeta?.forkPoint
         ? `Fork at ${childMeta.forkPoint.slice(0, 8)}...`
         : "Fork";
-      node.children.push(this.getForkTree(childId, childTitle));
+      node.children.push(this.getForkTree(childId, childTitle, visited));
     }
 
     return node;
@@ -223,7 +241,11 @@ export class ForkManager {
   /**
    * Get all fork metadata for sessions that originated from a given session.
    */
-  getForkHistory(sessionId: string): ForkMetadata[] {
+  getForkHistory(sessionId: string, visited?: Set<string>): ForkMetadata[] {
+    if (!visited) visited = new Set();
+    if (visited.has(sessionId)) return [];
+    visited.add(sessionId);
+
     const results: ForkMetadata[] = [];
     const childForks = this.getChildForks(sessionId);
 
@@ -232,7 +254,7 @@ export class ForkManager {
       if (meta) {
         results.push(meta);
         // Recursively get grandchildren
-        results.push(...this.getForkHistory(childId));
+        results.push(...this.getForkHistory(childId, visited));
       }
     }
 

@@ -23,7 +23,6 @@ import {
   listSessions,
   createNewSession,
   loadSession,
-  continueRecentSession,
   saveKoiState,
   loadKoiState,
   buildUIMessagesFromAgentSession,
@@ -863,10 +862,10 @@ export function useKoiAgent(): KoiAgentState {
     []
   );
 
-  // On mount: try to continue the most recent session; on failure surface the error and show the UI anyway.
+  // On mount: create a new session instead of continuing the most recent one.
   useEffect(() => {
     let mounted = true;
-    void continueRecentSession(globalTaskManager)
+    void createNewSession(globalTaskManager)
       .then((result) => {
         if (!mounted) {
           result.session.dispose();
