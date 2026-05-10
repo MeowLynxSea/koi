@@ -10,7 +10,7 @@ import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
 
 const HINT_TEXT =
-  "Enter Send  Shift+Enter Newline  Ctrl+P Command Panel  Ctrl+O Expand/Collapse  Ctrl+C Exit  Esc Cancel";
+  "Enter Send/Steer  Ctrl+Enter Queue  Shift+Enter Newline  Ctrl+P Command  Ctrl+O Expand/Collapse  Ctrl+C Clear/Abort/Exit";
 const EXIT_TEXT = "Confirm exit in dialog";
 const SCROLL_INTERVAL_MS = 300;
 const MAX_HINT_WIDTH_RATIO = 0.6; // max 60% of width for hints

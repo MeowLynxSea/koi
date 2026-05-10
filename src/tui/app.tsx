@@ -31,6 +31,7 @@ import { ConnectModal } from "./components/connect-modal.js";
 import { ModelModal } from "./components/model-modal.js";
 import { SessionModal } from "./components/session-modal.js";
 import { ConfirmModal } from "./components/confirm-modal.js";
+import { ConnectingModal } from "./components/connecting-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
 import { ImagePreviewModal } from "./components/image-preview-modal.js";
 import { MCPSettings } from "./components/mcp/MCPSettings.js";
@@ -261,6 +262,8 @@ export function App({ onExit }: AppProps) {
     error,
     steeringMessages,
     followUpMessages,
+    isConnectingMcp,
+    mcpConnectionProgress,
     prompt,
     steer,
     followUp,
@@ -1130,6 +1133,12 @@ export function App({ onExit }: AppProps) {
           onCancel={handleCancelDelete}
         />
       )}
+      
+      {/* MCP Connection Progress Modal */}
+      <ConnectingModal
+        isActive={isConnectingMcp}
+        progress={mcpConnectionProgress}
+      />
       <ForkModal
         isActive={showForkModal}
         onClose={() => setShowForkModal(false)}

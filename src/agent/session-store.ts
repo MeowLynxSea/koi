@@ -28,6 +28,7 @@ import {
   disconnectAllMcpServers,
   getAllMcpTools,
   getMcpConnection,
+  type McpProgressCallback,
 } from "../services/mcp/index.js";
 import { getActiveToolNamesForMode } from "./mode.js";
 import {
@@ -324,10 +325,10 @@ function convertKoiSkillsToPiSkills(skillCommands: SkillCommand[]): Skill[] {
     });
 }
 
-async function buildSessionConfig(taskManager: SessionTaskManager): Promise<SessionConfig> {
-  // Initialize MCP connections to get tool definitions
+async function buildSessionConfig(taskManager: SessionTaskManager, onMcpProgress?: McpProgressCallback): Promise<SessionConfig> {
+  // Initialize MCP connections to get tool definitions (with progress callback)
   await disconnectAllMcpServers();
-  await initializeMcpConnections();
+  await initializeMcpConnections({ onProgressUpdate: onMcpProgress });
   
   // Create MCP tool definitions
   const mcpToolDefs = createMcpToolDefinitions();
@@ -413,10 +414,11 @@ export async function listSessions(): Promise<SessionMeta[]> {
 }
 
 export async function createNewSession(
-  taskManager: SessionTaskManager
+  taskManager: SessionTaskManager,
+  onMcpProgress?: McpProgressCallback
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-  const config = await buildSessionConfig(taskManager);
+  const config = await buildSessionConfig(taskManager, onMcpProgress);
   const sessionManager = SessionManager.create(process.cwd());
   const result = await createAgentSessionWithConfig(sessionManager, config);
 

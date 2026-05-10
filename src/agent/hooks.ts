@@ -30,6 +30,7 @@ import {
   type SessionMeta,
   type KoiSessionState,
 } from "./session-store.js";
+import type { McpConnectionProgress } from "../services/mcp/index.js";
 import { globalTaskManager } from "./session-tasks.js";
 import fs from "fs";
 import {
@@ -127,6 +128,9 @@ export interface KoiAgentState {
   sessionTitle: string;
   steeringMessages: readonly string[];
   followUpMessages: readonly string[];
+  // MCP connection progress state
+  isConnectingMcp: boolean;
+  mcpConnectionProgress: McpConnectionProgress | null;
   prompt: (text: string) => Promise<void>;
   steer: (text: string) => Promise<void>;
   followUp: (text: string) => Promise<void>;
@@ -766,6 +770,9 @@ export function useKoiAgent(): KoiAgentState {
   const [sessionTitle, setSessionTitleState] = useState<string>(getSessionTitle());
   const [steeringMessages, setSteeringMessages] = useState<readonly string[]>([]);
   const [followUpMessages, setFollowUpMessages] = useState<readonly string[]>([]);
+  // MCP connection progress state
+  const [isConnectingMcp, setIsConnectingMcp] = useState(false);
+  const [mcpConnectionProgress, setMcpConnectionProgress] = useState<McpConnectionProgress | null>(null);
 
   const streamingMsgIdRef = useRef<string | null>(null);
   const pendingToolsRef = useRef<Map<string, string>>(new Map());
@@ -1053,8 +1060,25 @@ export function useKoiAgent(): KoiAgentState {
     saveCurrentState();
     await session.abort();
     session.dispose();
+    
+    // Start MCP connection progress tracking
+    setIsConnectingMcp(true);
+    setMcpConnectionProgress({
+      total: 0,
+      completed: 0,
+      currentServer: "Initializing...",
+      status: "connecting",
+    });
+    
     try {
-      const result = await createNewSession(globalTaskManager);
+      const result = await createNewSession(globalTaskManager, (progress) => {
+        setMcpConnectionProgress(progress);
+      });
+      
+      // Clear MCP connection progress
+      setIsConnectingMcp(false);
+      setMcpConnectionProgress(null);
+      
       resetSessionUI();
       setMessages([]);
       setSessionTitleState("New Session");
@@ -1065,6 +1089,8 @@ export function useKoiAgent(): KoiAgentState {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
       setIsReady(true);
+      setIsConnectingMcp(false);
+      setMcpConnectionProgress(null);
     }
   }, [session, saveCurrentState, setupSession, resetSessionUI]);
 
@@ -1487,6 +1513,8 @@ export function useKoiAgent(): KoiAgentState {
     error,
     steeringMessages,
     followUpMessages,
+    isConnectingMcp,
+    mcpConnectionProgress,
     prompt,
     steer,
     followUp,

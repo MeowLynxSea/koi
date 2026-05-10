@@ -3,7 +3,7 @@
  */
 
 import { connectToServer, disconnectFromServer, type ConnectResult } from "./client.js";
-import type { MCPServerConnection, ConnectedMCPServer, FailedMCPServer, SerializedTool, ServerResource } from "./types.js";
+import type { MCPServerConnection, ConnectedMCPServer, FailedMCPServer, SerializedTool, ServerResource, ScopedMcpConfig } from "./types.js";
 import { getAllMcpConfigs, isMcpServerDisabled, setMcpServerEnabled, loadMcpConfigs } from "./config.js";
 
 interface ConnectionManagerState {
@@ -18,30 +18,77 @@ let connectionManager: ConnectionManagerState = {
   error: null,
 };
 
-export async function initializeMcpConnections(options?: { onProgress?: (message: string) => void }): Promise<MCPServerConnection[]> {
+export interface McpConnectionProgress {
+  total: number;
+  completed: number;
+  currentServer: string;
+  status: "connecting" | "connected" | "failed" | "disabled";
+  error?: string;
+}
+
+export type McpProgressCallback = (progress: McpConnectionProgress) => void;
+
+export async function initializeMcpConnections(options?: { onProgress?: (message: string) => void; onProgressUpdate?: McpProgressCallback }): Promise<MCPServerConnection[]> {
   loadMcpConfigs();
   connectionManager.isConnecting = true;
   connectionManager.error = null;
 
   const configs = getAllMcpConfigs();
   const connections: MCPServerConnection[] = [];
+  const total = configs.size;
+  let completed = 0;
 
-  options?.onProgress?.(`Initializing ${configs.size} MCP servers...`);
+  // Separate disabled and active configs
+  const disabledServers: Array<{ name: string; config: ScopedMcpConfig }> = [];
+  const activeConfigs: Array<{ name: string; config: ScopedMcpConfig }> = [];
 
   for (const [name, config] of configs) {
     if (isMcpServerDisabled(name)) {
-      connectionManager.connections.set(name, { name, status: "disabled", config });
-      continue;
+      disabledServers.push({ name, config });
+    } else {
+      activeConfigs.push({ name, config });
     }
+  }
 
-    options?.onProgress?.(`Connecting to ${name}...`);
+  // Set disabled servers immediately
+  for (const { name, config } of disabledServers) {
+    connectionManager.connections.set(name, { name, status: "disabled", config });
+    completed++;
+    options?.onProgress?.(`[${completed}/${total}] ${name} (disabled)`);
+    options?.onProgressUpdate?.({
+      total,
+      completed,
+      currentServer: name,
+      status: "disabled",
+    });
+  }
+
+  options?.onProgress?.(`Connecting to ${activeConfigs.length} MCP servers in parallel...`);
+
+  // Connect to active servers in parallel
+  const connectPromises = activeConfigs.map(async ({ name, config }) => {
+    options?.onProgress?.(`[${completed + 1}/${total}] Connecting to ${name}...`);
+    options?.onProgressUpdate?.({
+      total,
+      completed,
+      currentServer: name,
+      status: "connecting",
+    });
 
     const result = await connectToServer(name, config, { onProgress: options?.onProgress });
 
+    completed++;
+    
     if (result.success && result.server) {
       connectionManager.connections.set(name, result.server);
       connections.push(result.server);
-      options?.onProgress?.(`Connected to ${name}`);
+      options?.onProgress?.(`[${completed}/${total}] ✓ ${name} connected`);
+      options?.onProgressUpdate?.({
+        total,
+        completed,
+        currentServer: name,
+        status: "connected",
+      });
     } else {
       const failedServer: FailedMCPServer = {
         name,
@@ -51,9 +98,18 @@ export async function initializeMcpConnections(options?: { onProgress?: (message
         lastAttempt: Date.now(),
       };
       connectionManager.connections.set(name, failedServer);
-      options?.onProgress?.(`Failed to connect to ${name}: ${result.error}`);
+      options?.onProgress?.(`[${completed}/${total}] ✗ ${name} failed: ${result.error}`);
+      options?.onProgressUpdate?.({
+        total,
+        completed,
+        currentServer: name,
+        status: "failed",
+        error: result.error,
+      });
     }
-  }
+  });
+
+  await Promise.all(connectPromises);
 
   connectionManager.isConnecting = false;
   return connections;

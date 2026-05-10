@@ -61,6 +61,8 @@ export {
   getMcpError,
   disconnectAllMcpServers,
   resetMcpConnectionManager,
+  type McpConnectionProgress,
+  type McpProgressCallback,
 } from "./connection-manager.js";
 
 // Stdio Transport with JSON filtering
