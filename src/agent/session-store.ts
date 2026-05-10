@@ -9,8 +9,8 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { createAgentSession, SessionManager, defineTool } from "@mariozechner/pi-coding-agent";
-import type { AgentSession, CreateAgentSessionResult, SessionInfo, ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, SessionManager, defineTool, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import type { AgentSession, CreateAgentSessionResult, SessionInfo, ToolDefinition, Skill, ResourceDiagnostic } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import type { UIMessage } from "../tui/components/chat-panel.js";
 import type { ModelRef } from "../config/settings.js";
@@ -30,6 +30,11 @@ import {
   getMcpConnection,
 } from "../services/mcp/index.js";
 import { getActiveToolNamesForMode } from "./mode.js";
+import {
+  loadAllSkills,
+  initBundledSkills,
+  type SkillCommand,
+} from "../skills/index.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
 const KOI_SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
@@ -286,6 +291,37 @@ interface SessionConfig {
   settingsManager: ReturnType<typeof getPiSettingsManager>;
   currentModel: ReturnType<typeof getCurrentPiModel>;
   customTools: ToolDefinition[];
+  skills: Skill[];
+}
+
+/**
+ * Convert Koi's SkillCommand to Pi's Skill format for injection into the session.
+ */
+function convertKoiSkillsToPiSkills(skillCommands: SkillCommand[]): Skill[] {
+  return skillCommands
+    .filter((cmd) => !cmd.disableModelInvocation)
+    .map((cmd) => {
+      const filePath = cmd.skillRoot 
+        ? path.join(cmd.skillRoot, "SKILL.md")
+        : `koi://bundled-skills/${cmd.name}`;
+      
+      const baseDir = cmd.skillRoot || "";
+      
+      return {
+        name: cmd.name,
+        description: cmd.description,
+        filePath,
+        baseDir,
+        sourceInfo: {
+          path: filePath,
+          source: cmd.loadedFrom === "bundled" ? "koi-bundled" : "koi",
+          scope: cmd.source === "projectSettings" ? "project" : "user",
+          origin: "top-level",
+          baseDir,
+        },
+        disableModelInvocation: cmd.disableModelInvocation,
+      };
+    });
 }
 
 async function buildSessionConfig(taskManager: SessionTaskManager): Promise<SessionConfig> {
@@ -299,12 +335,23 @@ async function buildSessionConfig(taskManager: SessionTaskManager): Promise<Sess
   // Combine coding tools with MCP tools
   const codingTools = createCodingToolDefinitions(process.cwd(), taskManager);
   
+  // Initialize bundled skills and load all skills
+  initBundledSkills();
+  const koiSkillCommands = await loadAllSkills(process.cwd());
+  const piSkills = convertKoiSkillsToPiSkills(koiSkillCommands);
+  
+  // Debug log
+  const logPath = "/tmp/koi-session-debug.log";
+  const logLine = `[${new Date().toISOString()}] buildSessionConfig: loaded ${koiSkillCommands.length} skills, ${piSkills.length} after filter\n`;
+  try { fs.appendFileSync(logPath, logLine); } catch {}
+  
   return {
     authStorage: getPiAuthStorage(),
     modelRegistry: getPiModelRegistry(),
     settingsManager: getPiSettingsManager(),
     currentModel: getCurrentPiModel(),
     customTools: [...codingTools, ...mcpToolDefs],
+    skills: piSkills,
   };
 }
 
@@ -312,6 +359,26 @@ async function createAgentSessionWithConfig(
   sessionManager: ReturnType<typeof SessionManager.create>,
   config: SessionConfig
 ): Promise<CreateAgentSessionResult> {
+  const skillDiagnostics: ResourceDiagnostic[] = [];
+  
+  // Create resource loader with Koi skills injected
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: process.cwd(),
+    agentDir: PI_AGENT_DIR,
+    settingsManager: config.settingsManager,
+    noSkills: true,
+    skillsOverride: () => ({
+      skills: config.skills,
+      diagnostics: skillDiagnostics,
+    }),
+  });
+  await resourceLoader.reload();
+  
+  // Debug log
+  const logPath = "/tmp/koi-session-debug.log";
+  const logLine = `[${new Date().toISOString()}] createAgentSessionWithConfig: injecting ${config.skills.length} skills into session\n`;
+  try { fs.appendFileSync(logPath, logLine); } catch {}
+  
   return createAgentSession({
     cwd: process.cwd(),
     agentDir: PI_AGENT_DIR,
@@ -322,6 +389,7 @@ async function createAgentSessionWithConfig(
     noTools: "builtin",
     customTools: config.customTools,
     sessionManager,
+    resourceLoader,
   });
 }
 

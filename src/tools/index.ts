@@ -30,6 +30,7 @@ import {
   createMonitorToolDefinition,
   createCancelMonitorToolDefinition,
 } from "./monitor.js";
+import { createSkillToolDefinition } from "./skill.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 export function createCodingToolDefinitions(
@@ -55,6 +56,7 @@ export function createCodingToolDefinitions(
     createTaskUpdateToolDefinition(_cwd, taskManager),
     createMonitorToolDefinition(),
     createCancelMonitorToolDefinition(),
+    createSkillToolDefinition(),
   ] as ToolDefinition[];
 }
 
