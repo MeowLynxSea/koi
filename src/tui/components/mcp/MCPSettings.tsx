@@ -85,17 +85,17 @@ export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps
     onMcpChange?.();
   };
 
-  const handleToggle = (name: string) => {
+  const handleToggle = async (name: string) => {
     const connection = getMcpConnections().get(name);
     const status = connection?.status ?? "disconnected";
 
     if (status === "connected" || status === "failed") {
-      toggleMcpServer(name, false);
+      await toggleMcpServer(name, false);
       setMessage(`Disabled ${name}`);
       refreshServers();
       onMcpChange?.();
     } else {
-      toggleMcpServer(name, true);
+      await toggleMcpServer(name, true);
       setMessage(`Enabled ${name}`);
       refreshServers();
       onMcpChange?.();

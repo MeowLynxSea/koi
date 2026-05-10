@@ -19,7 +19,7 @@ import {
   isToolExpandable,
   isToolForceExpanded,
 } from "./components/chat-panel.js";
-import { InputBox, type InputBoxHandle } from "./components/input-box.js";
+import { InputBox } from "./components/input-box.js";
 import { PendingArea } from "./components/pending-area.js";
 import { EditPendingModal } from "./components/edit-pending-modal.js";
 import { InfoBar } from "./components/info-bar.js";
@@ -34,7 +34,28 @@ import { ConfirmModal } from "./components/confirm-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
 import { ImagePreviewModal } from "./components/image-preview-modal.js";
 import { MCPSettings } from "./components/mcp/MCPSettings.js";
+import { SkillsMenu } from "../skills/SkillsMenu.js";
+import { 
+  getActiveSkills, 
+  detectSkillInvocation, 
+  invokeSkill, 
+  loadAllSkills,
+  getSkillCountBySource,
+  registerCommonBundledSkills,
+} from "../skills/index.js";
+import type { SkillCommand } from "../skills/types.js";
+import type { InputBoxHandle } from "./components/input-box.js";
 import { refreshMcpTools } from "../agent/session.js";
+
+/* ───────── Skill Helpers ───────── */
+
+function extractTextFromContent(content: unknown[]): string {
+  const blocks = content as Array<{ type: string; text?: string }>;
+  return blocks
+    .filter((block): block is { type: "text"; text: string } => block.type === "text" && "text" in block)
+    .map((block) => block.text)
+    .join("\n\n");
+}
 
 /* ───────── Agent & Config ───────── */
 import {
@@ -205,6 +226,8 @@ export function App({ onExit }: AppProps) {
   const [yoloMode, setYoloMode] = useState(false);
   const [agentMode, setAgentMode] = useState<AgentMode>(getAgentMode());
   const [showMCPSettings, setShowMCPSettings] = useState(false);
+  const [showSkillsModal, setShowSkillsModal] = useState(false);
+  const [skills, setSkills] = useState<SkillCommand[]>([]);
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -212,6 +235,23 @@ export function App({ onExit }: AppProps) {
   }, [yoloMode]);
 
   const dialog = useDialog();
+
+  // Load skills on mount
+  useEffect(() => {
+    void (async () => {
+      // Register built-in bundled skills first
+      registerCommonBundledSkills();
+      
+      // Load all skills from configured directories
+      await loadAllSkills(process.cwd());
+      
+      // Use getActiveSkills to get all loaded skills
+      const activeSkills = getActiveSkills();
+      setSkills(activeSkills as SkillCommand[]);
+      
+      console.log("[skills] Loaded:", getSkillCountBySource());
+    })();
+  }, []);
 
   const {
     session,
@@ -242,6 +282,19 @@ export function App({ onExit }: AppProps) {
     addPlanMessage,
     syncAgentMode,
   } = useKoiAgent();
+
+  // Handle skill invocation from skills menu
+  const handleInvokeSkill = useCallback(
+    async (skill: SkillCommand, args: string) => {
+      const content = await invokeSkill(skill, args, session);
+      const skillPrompt = extractTextFromContent(content);
+      if (skillPrompt) {
+        await prompt(skillPrompt);
+      }
+      setShowSkillsModal(false);
+    },
+    [session, prompt]
+  );
 
   // Sync agent mode changes to the active session's tool set
   const applyAgentMode = useCallback(
@@ -699,7 +752,7 @@ export function App({ onExit }: AppProps) {
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
-    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings;
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal;
 
   // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
@@ -712,13 +765,27 @@ export function App({ onExit }: AppProps) {
         return;
       }
 
+      // Handle skill invocation
+      const skillInvocation = detectSkillInvocation(text);
+      if (skillInvocation) {
+        void (async () => {
+          const content = await invokeSkill(skillInvocation.skill, skillInvocation.args, session);
+          // Convert skill content to a prompt string
+          const skillPrompt = extractTextFromContent(content);
+          if (skillPrompt) {
+            await prompt(skillPrompt);
+          }
+        })();
+        return;
+      }
+
       if (isStreaming) {
         void steer(text);
       } else {
         void prompt(text);
       }
     },
-    [isReady, isStreaming, steer, prompt, applyAgentMode]
+    [isReady, isStreaming, steer, prompt, applyAgentMode, session]
   );
 
   const handleQueueSubmit = useCallback(
@@ -828,7 +895,8 @@ export function App({ onExit }: AppProps) {
       { id: "/plan", label: "Switch to plan mode (read-only, no file modifications)", section: "Mode", action: () => applyAgentMode("plan") },
       { id: "/connect", label: "Connect to a provider", section: "Model", action: () => setShowConnectModal(true) },
       { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true) },
-      { id: "/mcp", label: "Open MCP settings", section: "MCP", action: () => setShowMCPSettings(true) },
+      { id: "/mcp", label: "Open MCP settings", section: "Extensions", action: () => setShowMCPSettings(true) },
+      { id: "/skills", label: "List and manage skills", section: "Extensions", action: () => setShowSkillsModal(true) },
     ],
     [session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode]
   );
@@ -1062,6 +1130,12 @@ export function App({ onExit }: AppProps) {
         isActive={showMCPSettings}
         onClose={() => setShowMCPSettings(false)}
         onMcpChange={() => { void refreshMcpTools(session); }}
+      />
+      <SkillsMenu
+        isActive={showSkillsModal}
+        onClose={() => setShowSkillsModal(false)}
+        skills={skills}
+        onInvokeSkill={handleInvokeSkill}
       />
     </box>
   );
