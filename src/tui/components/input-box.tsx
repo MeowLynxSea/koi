@@ -196,7 +196,7 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
       }
     }
 
-    if (event.name === "tab" && event.shift && onModeSwitch) {
+    if (event.name === "tab" && event.shift && onModeSwitch && !isBusy) {
       event.preventDefault();
       event.stopPropagation();
       onModeSwitch();

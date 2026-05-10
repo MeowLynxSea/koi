@@ -16,6 +16,7 @@ export interface CommandDef {
   label: string;
   section: string;
   action: () => void;
+  disabled?: boolean;
 }
 
 interface CommandPanelProps {
@@ -116,18 +117,42 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
       return;
     }
     
-    // Navigation with direct scroll calculation
+    // Navigation with direct scroll calculation - skip disabled commands
     if (key.name === "up" || key.name === "down") {
       key.preventDefault();
       key.stopPropagation();
       
-      const newIndex = key.name === "up" 
-        ? Math.max(0, selectedCmdIndex - 1)
-        : Math.min(cmdCount - 1, selectedCmdIndex + 1);
+      // Get all enabled command indices
+      const enabledIndices = flatItems
+        .filter((i): i is ListItem & { cmd: CommandDef; cmdIndex: number } => 
+          i.type === "command" && !i.cmd?.disabled && i.cmdIndex !== undefined
+        )
+        .map((i) => i.cmdIndex);
+      
+      if (enabledIndices.length === 0) return; // All commands disabled
+      
+      const currentIdx = enabledIndices.indexOf(selectedCmdIndex);
+      let targetIndex: number;
+      
+      if (key.name === "up") {
+        // Find previous enabled command
+        if (currentIdx <= 0) {
+          targetIndex = enabledIndices[enabledIndices.length - 1]!;
+        } else {
+          targetIndex = enabledIndices[currentIdx - 1]!;
+        }
+      } else {
+        // Find next enabled command
+        if (currentIdx < 0 || currentIdx >= enabledIndices.length - 1) {
+          targetIndex = enabledIndices[0]!;
+        } else {
+          targetIndex = enabledIndices[currentIdx + 1]!;
+        }
+      }
       
       // Calculate scroll based on new index
       const newFlatIndex = flatItems.findIndex(
-        (i) => i.type === "command" && i.cmdIndex === newIndex
+        (i) => i.type === "command" && i.cmdIndex === targetIndex
       );
       
       const currentScroll = scrollOffsetRef.current;
@@ -140,17 +165,8 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
         }
       }
       
-      console.log('[CommandPanel] Key press:', {
-        key: key.name,
-        newIndex,
-        newFlatIndex,
-        currentScroll,
-        listHeight,
-        newScrollOffset
-      });
-      
       scrollOffsetRef.current = newScrollOffset;
-      setSelectedCmdIndex(newIndex);
+      setSelectedCmdIndex(targetIndex);
       return;
     }
   });
@@ -166,7 +182,7 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
     const selectedItem = flatItems.find(
       (i) => i.type === "command" && i.cmdIndex === selectedCmdIndex
     );
-    if (selectedItem?.cmd) {
+    if (selectedItem?.cmd && !selectedItem.cmd.disabled) {
       onClose();
       selectedItem.cmd.action();
     }
@@ -240,11 +256,12 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
                 </box>
               );
             }
-            const isSelected = item.cmdIndex === selectedCmdIndex;
+            const isDisabled = item.cmd?.disabled;
+            const isSelected = !isDisabled && item.cmdIndex === selectedCmdIndex;
             return (
               <box key={`c-${item.cmd!.id}-${flatIndex}`} height={1} backgroundColor={isSelected ? "#44475a" : undefined} paddingLeft={2}>
-                <text fg={isSelected ? "#ff79c6" : "#f8f8f2"}>
-                  {`${item.cmd!.id}  ${item.cmd!.label}`}
+                <text fg={isDisabled ? "#666666" : isSelected ? "#ff79c6" : "#f8f8f2"}>
+                  {`${item.cmd!.id}  ${isDisabled ? item.cmd!.label + " (busy)" : item.cmd!.label}`}
                 </text>
               </box>
             );

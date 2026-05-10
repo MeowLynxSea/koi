@@ -913,23 +913,23 @@ export function App({ onExit }: AppProps) {
   // Slash-command definitions for the command palette (Ctrl+P).
   const commands = useMemo<CommandDef[]>(
     () => [
-      { id: "/new", label: "Start a new session", section: "Session", action: () => void handleNewSession() },
-      { id: "/fork", label: "Fork current session", section: "Session", action: () => setShowForkModal(true) },
-      { id: "/sessions", label: "Browse sessions", section: "Session", action: async () => { await refreshSessionList(); setShowSessionModal(true); } },
-      { id: "/compact", label: "Compact current session", section: "Session", action: () => { session?.compact().catch(() => {}); } },
+      { id: "/new", label: "Start a new session", section: "Session", action: () => void handleNewSession(), disabled: isStreaming },
+      { id: "/fork", label: "Fork current session", section: "Session", action: () => setShowForkModal(true), disabled: isStreaming },
+      { id: "/sessions", label: "Browse sessions", section: "Session", action: async () => { await refreshSessionList(); setShowSessionModal(true); }, disabled: isStreaming },
+      { id: "/compact", label: "Compact current session", section: "Session", action: () => { session?.compact().catch(() => {}); }, disabled: isStreaming },
       { id: "/rename", label: "Rename session", section: "Session", action: () => setShowRenameModal(true) },
       { id: "/exit", label: "Exit Koi", section: "Session", action: () => { saveCurrentState(); onExit(); } },
       { id: "/quit", label: "Exit Koi (alias)", section: "Session", action: () => { saveCurrentState(); onExit(); } },
       { id: "/yolo", label: "Toggle YOLO mode (auto-approve all permissions)", section: "Mode", action: () => setYoloMode((prev) => !prev) },
       { id: "/mode", label: `Cycle agent mode (${agentMode})`, section: "Mode", action: () => handleModeSwitch() },
-      { id: "/plan", label: "Switch to plan mode (read-only, no file modifications)", section: "Mode", action: () => applyAgentMode("plan") },
+      { id: "/plan", label: "Switch to plan mode (read-only, no file modifications)", section: "Mode", action: () => applyAgentMode("plan"), disabled: isStreaming },
       { id: "/connect", label: "Connect to a provider", section: "Model", action: () => setShowConnectModal(true) },
-      { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true) },
+      { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true), disabled: isStreaming },
       { id: "/mcp", label: "Open MCP settings", section: "Extensions", action: () => setShowMCPSettings(true) },
       { id: "/skills", label: "List and manage skills", section: "Extensions", action: () => setShowSkillsModal(true) },
       ...skillCommands,
     ],
-    [session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode, skillCommands]
+    [isStreaming, session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode, skillCommands]
   );
 
   // Global keyboard shortcuts. Guarded by anyModalOpen so typing in a modal doesn't trigger app actions.
@@ -988,17 +988,23 @@ export function App({ onExit }: AppProps) {
     }
 
     if (key.ctrl && key.name === "s") {
-      void (async () => { await refreshSessionList(); setShowSessionModal(true); })();
+      if (!isStreaming) {
+        void (async () => { await refreshSessionList(); setShowSessionModal(true); })();
+      }
       return;
     }
 
     if (key.ctrl && key.name === "f") {
-      setShowForkModal(true);
+      if (!isStreaming) {
+        setShowForkModal(true);
+      }
       return;
     }
 
     if (key.name === "tab" && key.shift) {
-      handleModeSwitch();
+      if (!isStreaming) {
+        handleModeSwitch();
+      }
       return;
     }
 
