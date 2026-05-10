@@ -18,7 +18,7 @@ import type { ToolResultWithError } from "./types.js";
 
 export const bashSchema = Type.Object({
   command: Type.String({ description: "Bash command to execute" }),
-  timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+  timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default: 60)", default: 60 })),
 });
 
 export type BashToolInput = {
@@ -43,14 +43,15 @@ function execBash(command: string, timeoutSec?: number): Promise<{ stdout: strin
     let timedOut = false;
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
-    if (timeoutSec !== undefined && timeoutSec > 0) {
+    const effectiveTimeout = timeoutSec ?? 60;
+    if (effectiveTimeout > 0) {
       timeoutHandle = setTimeout(() => {
         timedOut = true;
         child.kill("SIGTERM");
         setTimeout(() => {
           if (!child.killed) child.kill("SIGKILL");
         }, 5000);
-      }, timeoutSec * 1000);
+      }, effectiveTimeout * 1000);
     }
 
     child.stdout?.on("data", (chunk: Buffer) => {
