@@ -356,6 +356,76 @@ async function buildSessionConfig(taskManager: SessionTaskManager, onMcpProgress
   };
 }
 
+/**
+ * Tool Abort Support
+ * 
+ * Wraps all tool definitions with abort signal support.
+ * When Ctrl+C is pressed, the abort signal is set, and any wrapped tool
+ * will immediately return "User interrupted tool use." instead of continuing.
+ * 
+ * This uses Promise.race to ensure tools can be interrupted at any point,
+ * even if they don't explicitly check the signal.
+ */
+
+/** Sentinel error used to cancel tool execution via Promise.race */
+class ToolAbortError extends Error {
+  constructor() {
+    super("Tool execution aborted");
+    this.name = "ToolAbortError";
+  }
+}
+
+/** Wraps a tool definition to support abort signal checking. */
+function wrapToolWithAbortSupport<TParams, TDetails>(
+  tool: ToolDefinition<TParams, TDetails>
+): ToolDefinition<TParams, TDetails> {
+  return {
+    ...tool,
+    execute: async (toolCallId, params, signal, onUpdate, ctx) => {
+      // Immediately check if signal is already aborted
+      if (signal?.aborted) {
+        return {
+          content: [{ type: "text", text: "User interrupted tool use." }],
+          details: {} as TDetails,
+          isError: true,
+        };
+      }
+
+      // Create a promise that resolves when abort is signaled
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (signal) {
+          const abortHandler = () => {
+            reject(new ToolAbortError());
+          };
+          signal.addEventListener("abort", abortHandler, { once: true });
+        }
+      });
+
+      // Race the tool execution against the abort signal
+      try {
+        return await Promise.race([
+          tool.execute(toolCallId, params, signal, onUpdate, ctx),
+          abortPromise,
+        ]);
+      } catch (error) {
+        if (error instanceof ToolAbortError) {
+          return {
+            content: [{ type: "text", text: "User interrupted tool use." }],
+            details: {} as TDetails,
+            isError: true,
+          };
+        }
+        throw error;
+      }
+    },
+  };
+}
+
+/** Wraps all tools in an array with abort support. */
+function wrapAllToolsWithAbortSupport(tools: ToolDefinition[]): ToolDefinition[] {
+  return tools.map((tool) => wrapToolWithAbortSupport(tool));
+}
+
 async function createAgentSessionWithConfig(
   sessionManager: ReturnType<typeof SessionManager.create>,
   config: SessionConfig
@@ -388,7 +458,7 @@ async function createAgentSessionWithConfig(
     settingsManager: config.settingsManager,
     model: config.currentModel,
     noTools: "builtin",
-    customTools: config.customTools,
+    customTools: wrapAllToolsWithAbortSupport(config.customTools),
     sessionManager,
     resourceLoader,
   });
