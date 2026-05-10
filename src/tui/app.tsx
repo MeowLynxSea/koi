@@ -882,6 +882,24 @@ export function App({ onExit }: AppProps) {
     setImageModalUrl("");
   }, []);
 
+  // Build skill commands for the command palette
+  const skillCommands = useMemo<CommandDef[]>(() => {
+    return skills
+      .filter((skill) => skill.userInvocable && !skill.isHidden)
+      .map((skill) => ({
+        id: `/${skill.source}:${skill.name}`,
+        label: skill.description || skill.name,
+        section: "Skills",
+        action: async () => {
+          const content = await invokeSkill(skill, "", session);
+          const skillPrompt = extractTextFromContent(content);
+          if (skillPrompt) {
+            await prompt(skillPrompt);
+          }
+        },
+      }));
+  }, [skills, session, prompt]);
+
   // Slash-command definitions for the command palette (Ctrl+P).
   const commands = useMemo<CommandDef[]>(
     () => [
@@ -897,8 +915,9 @@ export function App({ onExit }: AppProps) {
       { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true) },
       { id: "/mcp", label: "Open MCP settings", section: "Extensions", action: () => setShowMCPSettings(true) },
       { id: "/skills", label: "List and manage skills", section: "Extensions", action: () => setShowSkillsModal(true) },
+      ...skillCommands,
     ],
-    [session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode]
+    [session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode, skillCommands]
   );
 
   // Global keyboard shortcuts. Guarded by anyModalOpen so typing in a modal doesn't trigger app actions.
