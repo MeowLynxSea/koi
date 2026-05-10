@@ -31,14 +31,19 @@ import {
   type KoiSessionState,
 } from "./session-store.js";
 import { globalTaskManager } from "./session-tasks.js";
+import fs from "fs";
 import {
   getAgentMode,
   setAgentMode,
   getActiveToolNamesForMode,
   injectModeIntoSystemPrompt,
 } from "./mode.js";
-import { getCurrentPlanText } from "./plan-ui.js";
+import { getCurrentPlanText, setCurrentPlanText } from "./plan-ui.js";
 import { forkManager } from "./session-fork.js";
+import {
+  saveSnapshotIfChanged,
+  restoreSnapshot,
+} from "./session-snapshots.js";
 
 /** Global ref to the active AgentSession, usable by tools outside React hooks. */
 export const activeSessionRef = { current: null as AgentSession | null };
@@ -445,6 +450,17 @@ function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>
   ctx.streamingMsgIdRef.current = null;
   ctx.pendingToolsRef.current.clear();
   ctx.hasToolCallsRef.current = false;
+
+  // Save snapshot after each completed turn so forks can restore exact state.
+  const currentSession = ctx.sessionRef.current;
+  if (currentSession) {
+    saveSnapshotIfChanged(currentSession, {
+      tasks: globalTaskManager.listTasks(),
+      planText: getCurrentPlanText(),
+      agentMode: getAgentMode(),
+      activeTools: getActiveToolNamesForMode(getAgentMode()),
+    });
+  }
 }
 
 /** Creates a blank streaming placeholder for the incoming assistant message.
@@ -756,6 +772,10 @@ export function useKoiAgent(): KoiAgentState {
 
   // Wire Pi AgentSession events into React setters via the central handleEvent dispatcher.
   const subscribeToSession = useCallback((s: AgentSession) => {
+    // Set refs immediately so event handlers (which may fire before the next
+    // React render cycle / useEffect) see the correct session.
+    sessionRef.current = s;
+    activeSessionRef.current = s;
     const ctx: EventHandlerContext = {
       setMessages,
       setIsStreaming,
@@ -821,6 +841,22 @@ export function useKoiAgent(): KoiAgentState {
       setAgentMode(sessionStateRef.current.agentMode);
       s.setActiveToolsByName(sessionStateRef.current.activeTools);
       injectModeIntoSystemPrompt(s, sessionStateRef.current.agentMode);
+    }
+
+    // Restore snapshot (tasks + plan + mode) for current leaf, overriding koiState if present.
+    const leafId = s.sessionManager.getLeafId();
+    if (leafId) {
+      const snapshotData = restoreSnapshot(s, leafId, globalTaskManager);
+      if (snapshotData) {
+        sessionStateRef.current = {
+          ...sessionStateRef.current,
+          agentMode: snapshotData.agentMode,
+          activeTools: snapshotData.activeTools,
+        };
+        setAgentMode(snapshotData.agentMode);
+        s.setActiveToolsByName(snapshotData.activeTools);
+        injectModeIntoSystemPrompt(s, snapshotData.agentMode);
+      }
     }
   }, []);
 
@@ -1004,11 +1040,23 @@ export function useKoiAgent(): KoiAgentState {
       }
     }
 
+    // Walk backward from the candidate to skip custom entries (snapshots, plans)
+    // so we never branch from a synthetic node.
+    const findLastNonCustom = (startIndex: number): string | undefined => {
+      for (let i = startIndex; i >= 0; i--) {
+        const entry = forwardPath[i];
+        if (entry && entry.type !== "custom") {
+          return entry.id;
+        }
+      }
+      return undefined;
+    };
+
     if (nextUserIndex >= 1) {
-      return forwardPath[nextUserIndex - 1]?.id ?? entryId;
+      return findLastNonCustom(nextUserIndex - 1) ?? entryId;
     }
     if (nextUserIndex === -1) {
-      return forwardPath[forwardPath.length - 1]?.id ?? entryId;
+      return findLastNonCustom(forwardPath.length - 1) ?? entryId;
     }
     return entryId;
   }, []);
@@ -1021,33 +1069,36 @@ export function useKoiAgent(): KoiAgentState {
       const forwardPath = computeForwardPath(session, entryId);
       const branchFromId = findBranchPoint(forwardPath, entryId);
       const branchPath = session.sessionManager.getBranch();
+      fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[fork] entryId=${entryId} branchFromId=${branchFromId} forwardPath=${forwardPath.length} branchPath=${branchPath.length}\n`);
 
-      // 2. Get current state before forking
-      const currentAgentMode = getAgentMode();
-      const currentActiveTools = getActiveToolNamesForMode(currentAgentMode);
-      const currentPendingPlan = getCurrentPlanText();
-      const currentTasks = globalTaskManager.listTasks();
-      const currentKoiState = loadKoiState(session.sessionId);
-
-      // 3. Execute session branching
+      // 2. Execute session branching
       session.sessionManager.branch(branchFromId);
       const context = session.sessionManager.buildSessionContext();
       session.state.messages = context.messages;
 
-      // 4. Fork all tasks (creates new IDs, preserves all task data)
-      globalTaskManager.forkTasks();
+      // 3. Restore snapshot at the fork point (tasks + plan)
+      const snapshotData = restoreSnapshot(session, entryId, globalTaskManager);
+
+      // 4. Determine restored or fallback state for metadata
+      const restoredAgentMode = snapshotData?.agentMode ?? getAgentMode();
+      const restoredActiveTools = snapshotData?.activeTools ?? getActiveToolNamesForMode(restoredAgentMode);
+      const restoredPlan = snapshotData?.planText ?? getCurrentPlanText();
+      const restoredTasks = globalTaskManager.listTasks();
+      const currentKoiState = loadKoiState(session.sessionId);
 
       // 5. Create and save fork metadata
+      const restoredTaskStatuses = restoredTasks.map(t => `${t.id}:${t.status}`).join(", ");
+      fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[fork] restoredTasks=[${restoredTaskStatuses}] plan=${restoredPlan?.slice(0, 20) ?? "null"} mode=${restoredAgentMode}\n`);
       const forkMetadata = {
         forkId: session.sessionId,
         sourceSessionId: session.sessionId,
         sourceBranchId: branchPath.find(e => e.id === branchFromId)?.id ?? '',
         forkPoint: branchFromId,
         forkedAt: Date.now(),
-        tasksSnapshot: currentTasks,
-        agentMode: currentAgentMode,
-        activeTools: currentActiveTools,
-        pendingPlanText: currentPendingPlan,
+        tasksSnapshot: restoredTasks,
+        agentMode: restoredAgentMode,
+        activeTools: restoredActiveTools,
+        pendingPlanText: restoredPlan,
       };
       forkManager.saveForkMetadata(session.sessionId, forkMetadata);
 
@@ -1066,8 +1117,8 @@ export function useKoiAgent(): KoiAgentState {
         forkedFrom: session.sessionId,
         forkBranchId: branchFromId,
         forkedAt: now,
-        agentMode: currentAgentMode,
-        activeTools: currentActiveTools,
+        agentMode: restoredAgentMode,
+        activeTools: restoredActiveTools,
         expandedMessages: [],
         collapsedMessages: [],
       };
@@ -1078,17 +1129,17 @@ export function useKoiAgent(): KoiAgentState {
         forkedFrom: session.sessionId,
         forkBranchId: branchFromId,
         forkedAt: Date.now(),
-        agentMode: currentAgentMode,
-        activeTools: currentActiveTools,
+        agentMode: restoredAgentMode,
+        activeTools: restoredActiveTools,
       };
 
       // 7. Rebuild UI messages from the new branch context
       setMessages(buildUIMessagesFromAgentSession(session));
 
       // 8. Restore agent mode state for the new branch
-      setAgentMode(currentAgentMode);
-      session.setActiveToolsByName(currentActiveTools);
-      injectModeIntoSystemPrompt(session, currentAgentMode);
+      setAgentMode(restoredAgentMode);
+      session.setActiveToolsByName(restoredActiveTools);
+      injectModeIntoSystemPrompt(session, restoredAgentMode);
 
       // 9. Clear streaming state
       streamingMsgIdRef.current = null;
@@ -1281,6 +1332,14 @@ export function useKoiAgent(): KoiAgentState {
       setMessages((prev) => {
         const withoutOldPlan = prev.filter((m) => m.type !== "plan");
         return [...withoutOldPlan, { id: generateId("plan"), type: "plan", content }] as UIMessage[];
+      });
+      // Save snapshot since plan state changed.
+      fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[plan] addPlanMessage calling saveSnapshotIfChanged plan=${content.slice(0, 30)}\n`);
+      saveSnapshotIfChanged(session, {
+        tasks: globalTaskManager.listTasks(),
+        planText: content,
+        agentMode: getAgentMode(),
+        activeTools: getActiveToolNamesForMode(getAgentMode()),
       });
     },
     [session]

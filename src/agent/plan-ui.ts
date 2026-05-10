@@ -47,6 +47,10 @@ export function getCurrentPlanText(): string {
   return currentPlanText;
 }
 
+export function setCurrentPlanText(text: string): void {
+  currentPlanText = text;
+}
+
 export function resolvePlanApproval(id: string, result: PlanApprovalResult): void {
   const request = queue.find((r) => r.id === id);
   if (!request) return;

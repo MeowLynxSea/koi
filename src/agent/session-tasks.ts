@@ -216,6 +216,19 @@ export class SessionTaskManager {
     return ok;
   }
 
+  /**
+   * Replace all tasks in the active session store.
+   * Used when restoring from a snapshot.
+   */
+  setTasks(tasks: Task[]): void {
+    const store = this.getStore();
+    store.clear();
+    for (const task of tasks) {
+      store.set(task.id, task);
+    }
+    this.saveActive();
+  }
+
   load(sessionId: string): void {
     const tasksArray = safeReadTasks(getTasksPath(sessionId));
     if (!tasksArray) {
