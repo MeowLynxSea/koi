@@ -11,6 +11,7 @@
  */
 
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import { getAllMcpTools } from "../services/mcp/index.js";
 
 export type AgentMode = "build" | "ask" | "plan";
 
@@ -121,17 +122,42 @@ const PLAN_TOOLS = [
   "exitPlanMode",
 ];
 
+/**
+ * Get MCP tool names that should be included in the tool allowlist.
+ * MCP tools are included in all modes since they are user-configured and 
+ * the user should have control over them.
+ */
+function getMcpToolNames(): string[] {
+  try {
+    const mcpTools = getAllMcpTools();
+    // Filter to only return tools from connected servers
+    return mcpTools.map((tool) => tool.name);
+  } catch {
+    return [];
+  }
+}
+
 export function getActiveToolNamesForMode(mode: AgentMode): string[] {
+  // Get MCP tool names dynamically
+  const mcpToolNames = getMcpToolNames();
+  
   switch (mode) {
-    case "build":
-      // Build mode can enter plan mode, but exitPlanMode is only for plan mode
-      return ALL_TOOLS.filter((t) => t !== "exitPlanMode");
+    case "build": {
+      // Build mode: all built-in tools + MCP tools
+      const baseTools = ALL_TOOLS.filter((t) => t !== "exitPlanMode");
+      return [...baseTools, ...mcpToolNames];
+    }
     case "ask":
-      return READONLY_TOOLS;
-    case "plan":
-      // Plan mode can exit plan mode, but enterPlanMode is redundant while already in plan mode
-      return PLAN_TOOLS.filter((t) => t !== "enterPlanMode");
-    default:
-      return ALL_TOOLS.filter((t) => t !== "exitPlanMode");
+      // Ask mode: readonly tools + MCP tools
+      return [...READONLY_TOOLS, ...mcpToolNames];
+    case "plan": {
+      // Plan mode: readonly + task management tools + MCP tools (for read-only MCP tools)
+      const planTools = PLAN_TOOLS.filter((t) => t !== "enterPlanMode");
+      return [...planTools, ...mcpToolNames];
+    }
+    default: {
+      const baseTools = ALL_TOOLS.filter((t) => t !== "exitPlanMode");
+      return [...baseTools, ...mcpToolNames];
+    }
   }
 }

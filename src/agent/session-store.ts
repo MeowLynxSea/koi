@@ -9,8 +9,9 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
-import type { AgentSession, CreateAgentSessionResult, SessionInfo } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, SessionManager, defineTool } from "@mariozechner/pi-coding-agent";
+import type { AgentSession, CreateAgentSessionResult, SessionInfo, ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { Type } from "typebox";
 import type { UIMessage } from "../tui/components/chat-panel.js";
 import type { ModelRef } from "../config/settings.js";
 import {
@@ -22,6 +23,13 @@ import {
 import { createCodingToolDefinitions } from "../tools/index.js";
 import type { SessionTaskManager } from "./session-tasks.js";
 import { forkManager } from "./session-fork.js";
+import {
+  initializeMcpConnections,
+  disconnectAllMcpServers,
+  getAllMcpTools,
+  getMcpConnection,
+} from "../services/mcp/index.js";
+import { getActiveToolNamesForMode } from "./mode.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
 const KOI_SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
@@ -130,6 +138,106 @@ function safeDeleteDir(dir: string): void {
 }
 
 /**
+ * MCP Tool Definition Helpers
+ * 
+ * These functions convert MCP tools to Pi ToolDefinition format,
+ * allowing MCP tools to be registered with the agent session.
+ */
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function convertJsonSchemaToTypeBox(schema: unknown): any {
+  if (!schema || typeof schema !== "object") {
+    return Type.String();
+  }
+  
+  const s = schema as Record<string, unknown>;
+  
+  const type = s["type"] as string | undefined;
+  if (type === "string") return Type.String();
+  if (type === "number" || type === "integer") return Type.Number();
+  if (type === "boolean") return Type.Boolean();
+  if (type === "array") {
+    const items = s["items"] ? convertJsonSchemaToTypeBox(s["items"]) : Type.String();
+    return Type.Array(items);
+  }
+  if (type === "object") {
+    const properties: Record<string, unknown> = {};
+    const props = s["properties"] as Record<string, unknown> | undefined;
+    if (props) {
+      for (const [key, value] of Object.entries(props)) {
+        properties[key] = convertJsonSchemaToTypeBox(value);
+      }
+    }
+    // @ts-expect-error - TypeBox TProperties type is too strict
+    return Type.Object(properties);
+  }
+  
+  return Type.String();
+}
+
+function createMcpToolDefinitions(): ToolDefinition[] {
+  const mcpTools = getAllMcpTools();
+  return mcpTools.map((tool) => {
+    const serverName = tool.serverName ?? "unknown";
+    const originalToolName = tool.originalToolName ?? tool.name;
+    
+    // Create a TypeBox schema from the input schema
+    const inputSchema = tool.inputSchema || {};
+    const properties: Record<string, unknown> = {};
+    
+    if (typeof inputSchema === "object" && inputSchema !== null) {
+      const schema = inputSchema as Record<string, unknown>;
+      
+      const schemaProps = schema["properties"] as Record<string, unknown> | undefined;
+      if (schemaProps && typeof schemaProps === "object") {
+        for (const [key, value] of Object.entries(schemaProps)) {
+          properties[key] = convertJsonSchemaToTypeBox(value);
+        }
+      }
+    }
+    
+    // @ts-expect-error - TypeBox TProperties type is too strict
+    const typeboxSchema = Type.Object(properties, {
+      additionalProperties: true,
+    });
+    
+    return defineTool({
+      name: tool.name,
+      label: `${serverName}: ${originalToolName}`,
+      description: tool.description || `MCP tool from ${serverName}`,
+      parameters: typeboxSchema,
+      // @ts-expect-error - execute signature compatibility
+      execute: async (toolCallId, params, signal, onUpdate, ctx) => {
+        try {
+          const connection = getMcpConnection(serverName);
+          if (!connection || connection.status !== "connected") {
+            return {
+              content: [{ type: "text" as const, text: `MCP server '${serverName}' is not connected` }],
+              isError: true,
+            };
+          }
+          
+          const result = await connection.client.callTool({
+            name: originalToolName ?? "",
+            arguments: params as Record<string, unknown>,
+          });
+          
+          return {
+            content: result.content as Array<{ type: string; text?: string; [key: string]: unknown }>,
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return {
+            content: [{ type: "text" as const, text: errorMessage }],
+            isError: true,
+          };
+        }
+      },
+    });
+  });
+}
+
+/**
  * Session Helpers
  *
  * SessionConfig collects the cross-cutting dependencies (auth, registry, settings, tools)
@@ -175,16 +283,26 @@ interface SessionConfig {
   modelRegistry: ReturnType<typeof getPiModelRegistry>;
   settingsManager: ReturnType<typeof getPiSettingsManager>;
   currentModel: ReturnType<typeof getCurrentPiModel>;
-  customTools: ReturnType<typeof createCodingToolDefinitions>;
+  customTools: ToolDefinition[];
 }
 
-function buildSessionConfig(taskManager: SessionTaskManager): SessionConfig {
+async function buildSessionConfig(taskManager: SessionTaskManager): Promise<SessionConfig> {
+  // Initialize MCP connections to get tool definitions
+  await disconnectAllMcpServers();
+  await initializeMcpConnections();
+  
+  // Create MCP tool definitions
+  const mcpToolDefs = createMcpToolDefinitions();
+  
+  // Combine coding tools with MCP tools
+  const codingTools = createCodingToolDefinitions(process.cwd(), taskManager);
+  
   return {
     authStorage: getPiAuthStorage(),
     modelRegistry: getPiModelRegistry(),
     settingsManager: getPiSettingsManager(),
     currentModel: getCurrentPiModel(),
-    customTools: createCodingToolDefinitions(process.cwd(), taskManager),
+    customTools: [...codingTools, ...mcpToolDefs],
   };
 }
 
@@ -228,11 +346,14 @@ export async function createNewSession(
   taskManager: SessionTaskManager
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-  const config = buildSessionConfig(taskManager);
+  const config = await buildSessionConfig(taskManager);
   const sessionManager = SessionManager.create(process.cwd());
   const result = await createAgentSessionWithConfig(sessionManager, config);
 
   const now = Date.now();
+  // Get active tools for build mode, which includes MCP tools
+  const activeTools = getActiveToolNamesForMode("build");
+  
   const state: KoiSessionState = {
     sessionId: result.session.sessionId,
     title: "New Session",
@@ -247,24 +368,7 @@ export async function createNewSession(
     forkedAt: null,
     // Agent mode state (defaults for new sessions)
     agentMode: "build",
-    activeTools: [
-      "read",
-      "grep",
-      "glob",
-      "ls",
-      "bash",
-      "edit",
-      "write",
-      "webfetch",
-      "taskCreate",
-      "taskGet",
-      "taskList",
-      "taskUpdate",
-      "askUserQuestion",
-      "enterPlanMode",
-      "exitPlanMode",
-      "agent",
-    ],
+    activeTools,
     // UI state
     expandedMessages: [],
     collapsedMessages: [],
@@ -278,7 +382,7 @@ export async function loadSession(
   taskManager: SessionTaskManager
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-  const config = buildSessionConfig(taskManager);
+  const config = await buildSessionConfig(taskManager);
   const sessionManager = SessionManager.open(filePath, undefined, process.cwd());
   return createAgentSessionWithConfig(sessionManager, config);
 }
@@ -287,7 +391,7 @@ export async function continueRecentSession(
   taskManager: SessionTaskManager
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-  const config = buildSessionConfig(taskManager);
+  const config = await buildSessionConfig(taskManager);
   const sessionManager = SessionManager.continueRecent(process.cwd());
   return createAgentSessionWithConfig(sessionManager, config);
 }

@@ -15,18 +15,21 @@ import {
   isMcpServerDisabled,
   setMcpServerEnabled,
   validateMcpConfig,
+  loadMcpConfigs,
 } from "../../../services/mcp/config.js";
 import { connectMcpServer, disconnectMcpServer, getMcpConnections } from "../../../services/mcp/connection-manager.js";
 
 interface MCPSettingsProps {
   isActive: boolean;
   onClose: () => void;
+  /** Callback when MCP configuration changes (connect/disconnect/add/remove) */
+  onMcpChange?: () => void;
 }
 
 type View = "list" | "add" | "edit";
 type ServerType = "stdio" | "sse" | "http" | "ws";
 
-export function MCPSettings({ isActive, onClose }: MCPSettingsProps) {
+export function MCPSettings({ isActive, onClose, onMcpChange }: MCPSettingsProps) {
   const { width, height } = useTerminalDimensions();
   const [view, setView] = useState<View>("list");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -51,6 +54,8 @@ export function MCPSettings({ isActive, onClose }: MCPSettingsProps) {
   const panelWidth = Math.min(75, Math.max(50, Math.floor(width * 0.8)));
 
   const refreshServers = useCallback(() => {
+    // Ensure configs are loaded from disk first
+    loadMcpConfigs();
     const configs = getAllMcpConfigs();
     setServers(Array.from(configs.keys()));
     setSelectedIndex(0);
@@ -83,27 +88,31 @@ export function MCPSettings({ isActive, onClose }: MCPSettingsProps) {
     if (result.success) setMessage(`Connected to ${name}`);
     else setMessage(`Failed: ${result.error}`);
     refreshServers();
-  }, [refreshServers]);
+    onMcpChange?.();
+  }, [refreshServers, onMcpChange]);
 
   const handleDisconnect = useCallback(async (name: string) => {
     await disconnectMcpServer(name);
     setMessage(`Disconnected from ${name}`);
     refreshServers();
-  }, [refreshServers]);
+    onMcpChange?.();
+  }, [refreshServers, onMcpChange]);
 
   const handleToggle = useCallback((name: string) => {
     const disabled = isMcpServerDisabled(name);
     setMcpServerEnabled(name, !disabled);
     setMessage(`${disabled ? "Enabled" : "Disabled"} ${name}`);
     refreshServers();
-  }, [refreshServers]);
+    onMcpChange?.();
+  }, [refreshServers, onMcpChange]);
 
   const handleDelete = useCallback((name: string) => {
     removeMcpConfig(name);
     disconnectMcpServer(name).catch(() => {});
     setMessage(`Removed ${name}`);
     refreshServers();
-  }, [refreshServers]);
+    onMcpChange?.();
+  }, [refreshServers, onMcpChange]);
 
   const handleAddNew = useCallback(() => {
     setEditName("");
@@ -157,10 +166,22 @@ export function MCPSettings({ isActive, onClose }: MCPSettingsProps) {
     if (view === "add" && getMcpConfig(nameToUse)) { setMessage(`Server '${nameToUse}' already exists`); return; }
 
     setMcpConfig(nameToUse, config, "user");
-    setMessage(`Saved ${nameToUse}`);
+    setMessage(`Saved ${nameToUse} - connecting...`);
     setView("list");
     refreshServers();
-  }, [view, editName, editType, editCommand, editArgs, editUrl, editHeaders, refreshServers]);
+
+    // Auto-connect after saving
+    void (async () => {
+      const result = await connectMcpServer(nameToUse);
+      if (result.success) {
+        setMessage(`Connected to ${nameToUse}`);
+      } else {
+        setMessage(`Saved but failed to connect: ${result.error}`);
+      }
+      refreshServers();
+      onMcpChange?.();
+    })();
+  }, [view, editName, editType, editCommand, editArgs, editUrl, editHeaders, refreshServers, onMcpChange]);
 
   const handleBack = useCallback(() => { setView("list"); setMessage(null); }, []);
 

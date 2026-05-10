@@ -2,10 +2,11 @@
  * Side Bar Component
  *
  * Right sidebar: Logo, session title, working directory, model info,
- * context usage, cost estimate, and task list.
+ * context usage, cost estimate, MCP servers, and task list.
  */
 
 import { createTextAttributes } from "@opentui/core";
+import { getMcpConnections, getMcpStatusSummary } from "../../services/mcp/index.js";
 
 const KOI_LOGO = [
   "██   ███   ███████   ██████",
@@ -89,6 +90,14 @@ const MONITOR_STATUS_COLORS: Record<string, string> = {
   completed: "#00ff99",
   error: "#ff6b6b",
   killed: "#fbbf24",
+};
+
+const MCP_STATUS_COLORS: Record<string, string> = {
+  connected: "#00ff99",
+  failed: "#ff6b6b",
+  disabled: "#fbbf24",
+  disconnected: "#6c6c7c",
+  pending: "#00d9ff",
 };
 
 function Divider({
@@ -220,6 +229,34 @@ export function SideBar({
 
       {/* Context usage + cost */}
       <text fg="#8a9aaa">{`${contextUsage} ${tokenCount} ${cost}`}</text>
+
+      {/* MCP Servers section - get live data */}
+      {(() => {
+        const mcpSummary = getMcpStatusSummary();
+        const mcpConnections = getMcpConnections();
+        if (mcpSummary.total === 0) return null;
+        return (
+          <>
+            <text> </text>
+            <text attributes={createTextAttributes({ bold: true })} fg="#5a6a7a">
+              MCP ({mcpSummary.connected}/{mcpSummary.total})
+            </text>
+            {Array.from(mcpConnections.entries()).map(([name, connection]) => {
+              const color = MCP_STATUS_COLORS[connection.status] ?? "#6c6c7c";
+              return (
+                <box key={name} flexDirection="row" gap={1}>
+                  <text fg={color}>●</text>
+                  <FixedWidthText
+                    text={name}
+                    width={Math.max(1, usableWidth - 4)}
+                    fg="#8a9aaa"
+                  />
+                </box>
+              );
+            })}
+          </>
+        );
+      })()}
 
       {/* Subagents section */}
       {visibleSubagents.length > 0 && (

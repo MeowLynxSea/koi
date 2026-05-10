@@ -34,6 +34,7 @@ import { ConfirmModal } from "./components/confirm-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
 import { ImagePreviewModal } from "./components/image-preview-modal.js";
 import { MCPSettings } from "./components/mcp/MCPSettings.js";
+import { refreshMcpTools } from "../agent/session.js";
 
 /* ───────── Agent & Config ───────── */
 import {
@@ -1056,6 +1057,7 @@ export function App({ onExit }: AppProps) {
       <MCPSettings
         isActive={showMCPSettings}
         onClose={() => setShowMCPSettings(false)}
+        onMcpChange={() => { void refreshMcpTools(session); }}
       />
     </box>
   );
