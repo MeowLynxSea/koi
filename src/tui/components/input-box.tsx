@@ -3,12 +3,17 @@
  *
  * Multiline text input with prefix and horizontal borders.
  * Uses OpenTUI <textarea> for editing logic.
+ * Supports user message history navigation via ArrowUp/ArrowDown.
  */
 
 import { useRef, useMemo, useState, useEffect, useCallback } from "react";
 import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
 import type { KeyEvent } from "@opentui/core";
 import type { AgentMode } from "../../agent/mode.js";
+import {
+  addToUserHistory,
+  getUserHistory,
+} from "../hooks/user-prompt-history.js";
 
 const MODE_PREFIX: Record<AgentMode, string> = {
   build: "Build > ",
@@ -67,17 +72,91 @@ export function InputBox({
 }: InputBoxProps) {
   const textareaRef = useRef<TextareaRenderable | null>(null);
 
+  // History navigation state
+  // historyIndex: -1 means not browsing history, 0 means viewing the first history item
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  // savedInput: preserves user's original input when they start browsing history
+  const [savedInput, setSavedInput] = useState("");
+
   const getText = () => textareaRef.current?.editBuffer.getText() ?? "";
+
+  // Navigate to previous history item (ArrowUp) - replaces input text
+  const navigateToPreviousHistory = useCallback(() => {
+    const history = getUserHistory();
+    if (history.length === 0) return;
+
+    // If not already browsing history, save current input and start browsing
+    if (historyIndex === -1) {
+      setSavedInput(getText());
+      setHistoryIndex(0);
+      textareaRef.current?.editBuffer.replaceText(history[0]!);
+      return;
+    }
+
+    // Move to the next older entry
+    const nextIndex = historyIndex + 1;
+    if (nextIndex < history.length) {
+      setHistoryIndex(nextIndex);
+      textareaRef.current?.editBuffer.replaceText(history[nextIndex]!);
+    }
+  }, [historyIndex]);
+
+  // Navigate to next history item (ArrowDown) - replaces input text
+  const navigateToNextHistory = useCallback(() => {
+    const history = getUserHistory();
+    
+    // If not browsing history, nothing to do
+    if (historyIndex === -1) return;
+
+    // Move to the next newer entry (decrement index)
+    const nextIndex = historyIndex - 1;
+    
+    if (nextIndex >= 0) {
+      setHistoryIndex(nextIndex);
+      textareaRef.current?.editBuffer.replaceText(history[nextIndex]!);
+    } else {
+      // Reached past the beginning, restore saved input
+      setHistoryIndex(-1);
+      textareaRef.current?.editBuffer.replaceText(savedInput);
+      setSavedInput("");
+    }
+  }, [historyIndex, savedInput]);
 
   const handleSubmit = () => {
     const text = getText();
     if (text.trim()) {
+      // Add to history before submitting
+      addToUserHistory(text);
       onSubmit(text);
       textareaRef.current?.editBuffer.replaceText("");
+      // Reset history navigation state
+      setHistoryIndex(-1);
+      setSavedInput("");
     }
   };
 
   const handleKeyDown = (event: KeyEvent) => {
+    // Handle ArrowUp for history navigation
+    if (event.name === "up" && !event.ctrl && !event.meta && !event.option) {
+      const history = getUserHistory();
+      if (history.length > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        navigateToPreviousHistory();
+        return;
+      }
+    }
+
+    // Handle ArrowDown for history navigation
+    if (event.name === "down" && !event.ctrl && !event.meta && !event.option) {
+      if (historyIndex !== -1) {
+        event.preventDefault();
+        event.stopPropagation();
+        navigateToNextHistory();
+        return;
+      }
+    }
+
     if (event.name === "tab" && event.shift && onModeSwitch) {
       event.preventDefault();
       event.stopPropagation();
@@ -95,8 +174,11 @@ export function InputBox({
       event.stopPropagation();
       const text = getText();
       if (text.trim()) {
+        addToUserHistory(text);
         onQueueSubmit(text);
         textareaRef.current?.editBuffer.replaceText("");
+        setHistoryIndex(-1);
+        setSavedInput("");
       }
     }
   };
