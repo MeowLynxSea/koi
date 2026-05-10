@@ -156,7 +156,7 @@ export function SessionModal({
             Sessions
           </text>
           <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-            {sessions.length} total
+            {`${sessions.length} total`}
           </text>
         </box>
 

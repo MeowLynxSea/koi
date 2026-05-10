@@ -55,12 +55,13 @@ function ProgressBar({ completed, total }: { completed: number; total: number })
   const filled = Math.round((completed / total) * width);
   const empty = width - filled;
   
+  // Use a single text with styled spans instead of nested text components
   return (
     <text>
-      <text fg="#22c55e">[</text>
-      <text fg="#22c55e">{"=".repeat(filled)}</text>
-      <text fg="#4b5563">{"·".repeat(empty)}</text>
-      <text fg="#22c55e">]</text>
+      <span fg="#22c55e">[</span>
+      <span fg="#22c55e">{"=".repeat(filled)}</span>
+      <span fg="#4b5563">{"·".repeat(empty)}</span>
+      <span fg="#22c55e">]</span>
     </text>
   );
 }
