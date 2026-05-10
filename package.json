@@ -12,7 +12,7 @@
   "files": ["dist", "bin", "src", "NOTICE"],
   "scripts": {
     "dev": "bun run src/main.tsx",
-    "build": "bun build src/main.tsx --outdir dist --target bun",
+    "build": "bun build src/main.tsx --outdir dist --target bun && cp node_modules/@opentui/core/parser.worker.js dist/ && cp -r node_modules/@opentui/core/assets dist/opentui-assets",
     "check": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"

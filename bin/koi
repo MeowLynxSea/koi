@@ -1,0 +1,20 @@
+#!/usr/bin/env bun
+
+/**
+ * Koi CLI Entry Point
+ *
+ * Deeply customized coding agent built on top of Pi SDK.
+ * TUI + Bun runtime.
+ */
+
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
+
+// Ensure we're running from the correct directory
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const projectRoot = resolve(__dirname, "..");
+process.chdir(projectRoot);
+
+import { main } from "../dist/main.js";
+
+await main();
