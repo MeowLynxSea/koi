@@ -84,6 +84,13 @@ const SUBAGENT_STATUS_COLORS: Record<string, string> = {
   killed: "#fbbf24",
 };
 
+const MONITOR_STATUS_COLORS: Record<string, string> = {
+  running: "#00d9ff",
+  completed: "#00ff99",
+  error: "#ff6b6b",
+  killed: "#fbbf24",
+};
+
 function Divider({
   width,
   char = "─",
@@ -113,6 +120,13 @@ interface SubagentItem {
   status: "running" | "completed" | "failed" | "killed";
 }
 
+interface MonitorItem {
+  id: string;
+  description: string;
+  status: "running" | "completed" | "killed" | "error";
+  lastOutput?: string;
+}
+
 interface SideBarProps {
   width?: number;
   workingDir?: string;
@@ -124,6 +138,7 @@ interface SideBarProps {
   cost?: string;
   tasks?: TaskItem[];
   subagents?: SubagentItem[];
+  monitors?: MonitorItem[];
 }
 
 export function SideBar({
@@ -137,6 +152,7 @@ export function SideBar({
   cost = "$0.00",
   tasks = [],
   subagents = [],
+  monitors = [],
 }: SideBarProps) {
   const usableWidth = Math.max(1, width - 1);
 
@@ -145,6 +161,9 @@ export function SideBar({
 
   const visibleSubagents = subagents.slice(0, 8);
   const hasMoreSubagents = subagents.length > visibleSubagents.length;
+
+  const visibleMonitors = monitors.slice(0, 8);
+  const hasMoreMonitors = monitors.length > visibleMonitors.length;
 
   return (
     <box width={width} flexDirection="column" paddingLeft={1}>
@@ -253,6 +272,37 @@ export function SideBar({
           {hasMoreTasks && (
             <text fg="#9aa5b0">
               {`… and ${tasks.length - visibleTasks.length} more`}
+            </text>
+          )}
+        </>
+      )}
+
+      {/* Monitors section */}
+      {visibleMonitors.length > 0 && (
+        <>
+          <text> </text>
+          <text attributes={createTextAttributes({ bold: true })} fg="#5a6a7a">
+            Monitors ({monitors.length})
+          </text>
+          {visibleMonitors.map((mon) => {
+            const color = MONITOR_STATUS_COLORS[mon.status] ?? "#fbbf24";
+            const displayText = mon.lastOutput
+              ? `${mon.description}: ${mon.lastOutput.slice(0, 20)}`
+              : mon.description;
+            return (
+              <box key={mon.id} flexDirection="row" gap={1}>
+                <text fg={color}>●</text>
+                <FixedWidthText
+                  text={displayText}
+                  width={Math.max(1, usableWidth - 4)}
+                  fg="#8a9aaa"
+                />
+              </box>
+            );
+          })}
+          {hasMoreMonitors && (
+            <text fg="#9aa5b0">
+              {`… and ${monitors.length - visibleMonitors.length} more`}
             </text>
           )}
         </>

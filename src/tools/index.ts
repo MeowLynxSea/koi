@@ -26,6 +26,10 @@ import {
   createTaskListToolDefinition,
   createTaskUpdateToolDefinition,
 } from "./task.js";
+import {
+  createMonitorToolDefinition,
+  createCancelMonitorToolDefinition,
+} from "./monitor.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 export function createCodingToolDefinitions(
@@ -49,6 +53,8 @@ export function createCodingToolDefinitions(
     createTaskGetToolDefinition(_cwd, taskManager),
     createTaskListToolDefinition(_cwd, taskManager),
     createTaskUpdateToolDefinition(_cwd, taskManager),
+    createMonitorToolDefinition(),
+    createCancelMonitorToolDefinition(),
   ] as ToolDefinition[];
 }
 

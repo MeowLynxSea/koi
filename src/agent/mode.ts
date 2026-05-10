@@ -92,6 +92,8 @@ const ALL_TOOLS = [
   "enterPlanMode",
   "exitPlanMode",
   "agent",
+  "CreateMonitor",
+  "CancelMonitor",
 ];
 
 const READONLY_TOOLS = [

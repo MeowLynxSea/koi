@@ -269,7 +269,8 @@ function removeAgentMessageIfEmpty(
  * Unmatched messages from the current UI (e.g. tool_call, tool_result) are appended at the end.
  */
 export function isInternalNotification(text: string): boolean {
-  return text.trimStart().startsWith("<task-notification>");
+  const t = text.trimStart();
+  return t.startsWith("<task-notification>") || t.startsWith("<monitor-notification>");
 }
 
 function rebuildMessagesFromHistory(

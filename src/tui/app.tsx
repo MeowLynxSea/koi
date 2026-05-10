@@ -46,6 +46,7 @@ import { useKoiAgent, isInternalNotification } from "../agent/hooks.js";
 import type { SessionMeta } from "../agent/session-store.js";
 import { globalTaskManager, type Task } from "../agent/session-tasks.js";
 import { subagentRegistry, type AsyncSubagentEntry } from "../agent/subagent-registry.js";
+import { monitorRegistry, type MonitorEntry } from "../agent/monitor-registry.js";
 import {
   subscribePermissions,
   getPermissionQueue,
@@ -198,6 +199,7 @@ export function App({ onExit }: AppProps) {
   const [sidebarCost, setSidebarCost] = useState("$0.00");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [subagents, setSubagents] = useState<AsyncSubagentEntry[]>([]);
+  const [monitors, setMonitors] = useState<MonitorEntry[]>([]);
   const [yoloMode, setYoloMode] = useState(false);
   const [agentMode, setAgentMode] = useState<AgentMode>(getAgentMode());
 
@@ -276,6 +278,14 @@ export function App({ onExit }: AppProps) {
     return unsubscribe;
   }, []);
 
+  // Subscribe to monitor registry changes for live sidebar updates.
+  useEffect(() => {
+    const unsubscribe = monitorRegistry.subscribe(() => {
+      setMonitors(monitorRegistry.getAll());
+    });
+    return unsubscribe;
+  }, []);
+
   // Polls session stats (token count, cost, context usage) every 2s for the sidebar.
   // Falls back to zeroed values when no session is active.
   useEffect(() => {
@@ -313,6 +323,7 @@ export function App({ onExit }: AppProps) {
       setSidebarCost(costStr);
       setTasks(globalTaskManager.listTasks());
       setSubagents(subagentRegistry.getAll());
+      setMonitors(monitorRegistry.getAll());
     };
 
     update();
@@ -956,6 +967,7 @@ export function App({ onExit }: AppProps) {
             cost={sidebarCost}
             tasks={tasks}
             subagents={subagents}
+            monitors={monitors}
           />
         </box>
       </box>
