@@ -13,6 +13,11 @@ import Clipboard from "@mariozechner/clipboard";
 /** Text length threshold for auto-saving to file */
 const LONG_TEXT_THRESHOLD = 5000;
 
+/** Helper to handle possibly-async clipboard operations */
+async function resolveMaybePromise<T>(value: T | Promise<T>): Promise<T> {
+  return value as Promise<T>;
+}
+
 /** Generate a unique identifier */
 function generateId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -51,7 +56,7 @@ export async function readClipboardFilePath(): Promise<string | null> {
     log("checking clipboard file path");
     
     const formats = Clipboard.availableFormats();
-    log(`formats: ${JSON.stringify(formats)}`);
+    log(`formats: ${formats.join(", ")}`);
     
     if (!formats) {
       log("no formats available");
@@ -74,11 +79,11 @@ export async function readClipboardFilePath(): Promise<string | null> {
     let text: string | null = null;
     const result = Clipboard.getText();
     if (result instanceof Promise) {
-      text = await result;
+      text = await (result as Promise<string | null>);
     } else if (typeof result === "string") {
       text = result;
     }
-    log(`text from clipboard: "${text}"`);
+    log(`text from clipboard: "${text ?? ""}"`);
     
     // Check if it's a valid file path
     if (text) {
@@ -108,7 +113,7 @@ export async function readClipboardFilePath(): Promise<string | null> {
     
     return null;
   } catch (e) {
-    log(`error: ${e}`);
+    log(`error: ${String(e)}`);
     return null;
   }
 }
@@ -126,14 +131,14 @@ export async function readClipboardText(): Promise<string | null> {
     let text: string | null = null;
     const result = Clipboard.getText();
     if (result instanceof Promise) {
-      text = await result;
+      text = await (result as Promise<string | null>);
     } else if (typeof result === "string") {
       text = result;
     }
-    log(`text: "${text?.substring(0, 100)}..."`);
+    log(`text: "${(text ?? "").substring(0, 100)}..."`);
     return text || null;
   } catch (e) {
-    log(`error reading text: ${e}`);
+    log(`error reading text: ${String(e)}`);
     return null;
   }
 }
@@ -156,7 +161,11 @@ export function readClipboardTextSync(): string | null {
 /** Check if clipboard contains an image */
 export async function checkHasClipboardImage(): Promise<boolean> {
   try {
-    return await Clipboard.hasImage();
+    const result = Clipboard.hasImage();
+    if (typeof result === "boolean") {
+      return result;
+    }
+    return await resolveMaybePromise(result);
   } catch {
     return false;
   }
@@ -173,14 +182,22 @@ export async function readClipboardImage(): Promise<Buffer | null> {
     log("checking for image");
     let hasImage: boolean = false;
     const hasImageResult = Clipboard.hasImage();
-    hasImage = hasImageResult instanceof Promise ? await hasImageResult : hasImageResult;
+    if (typeof hasImageResult === "boolean") {
+      hasImage = hasImageResult;
+    } else {
+      hasImage = (await resolveMaybePromise(hasImageResult)) as boolean;
+    }
     log(`hasImage: ${hasImage}`);
     if (!hasImage) return null;
 
     let base64: string | null = null;
     const base64Result = Clipboard.getImageBase64();
-    base64 = base64Result instanceof Promise ? await base64Result : base64Result;
-    log(`got base64: ${base64 ? base64.length + " chars" : "null"}`);
+    if (base64Result instanceof Promise) {
+      base64 = await (base64Result as Promise<string | null>);
+    } else {
+      base64 = base64Result;
+    }
+    log(`got base64: ${base64 ? `${base64.length} chars` : "null"}`);
     if (!base64) return null;
 
     // Remove data URL prefix if present
@@ -189,7 +206,7 @@ export async function readClipboardImage(): Promise<Buffer | null> {
     log(`image buffer: ${buffer.length} bytes`);
     return buffer;
   } catch (e) {
-    log(`error reading image: ${e}`);
+    log(`error reading image: ${String(e)}`);
     return null;
   }
 }

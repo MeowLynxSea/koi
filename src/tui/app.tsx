@@ -768,7 +768,7 @@ export function App({ renderer, onExit }: AppProps) {
   const insertTextIntoInput = useCallback((text: string) => {
     inputBoxRef.current?.insertText(text);
   }, []);
-  const { handlePaste, handleImagePaste, handleTextFilePaste } = usePasteHandler(currentSessionId, insertTextIntoInput);
+  const { handleImagePaste, handleTextFilePaste } = usePasteHandler(currentSessionId, insertTextIntoInput);
 
   // Filter out internal subagent notifications from the chat display.
   // These messages are still present in the session state (so the LLM sees

@@ -78,7 +78,7 @@ export function usePasteHandler(
         if (decoded && decoded.trim().length > 0) {
           // Check if it looks like text
           let printableCount = 0;
-          let totalCount = decoded.length;
+          const totalCount = decoded.length;
           for (const c of decoded) {
             const code = c.charCodeAt(0);
             if ((code >= 32 && code < 127) || code === 9 || code === 10 || code === 13) {
