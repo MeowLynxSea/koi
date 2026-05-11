@@ -46,6 +46,7 @@ interface SettingsFile {
   providers: Record<string, ProviderConfig>;
   currentModel: ModelRef | null;
   auxiliaryModel?: ModelRef | null;
+  externalEditor?: string;
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
@@ -56,6 +57,7 @@ let sessionTitle = "New Session";
 let providerConfigs = new Map<string, ProviderConfig>();
 let currentModel: ModelRef | null = null;
 let auxiliaryModel: ModelRef | null = null;
+let externalEditor: string | null = null;
 
 // Pi infrastructure (lazy-initialized)
 let piAuthStorage: AuthStorage | null = null;
@@ -158,6 +160,7 @@ export function saveSettings(): void {
       providers: Object.fromEntries(providerConfigs),
       currentModel,
       auxiliaryModel,
+      externalEditor: externalEditor ?? undefined,
     };
     const json = JSON.stringify(data, null, 2);
     fs.writeFileSync(SETTINGS_PATH, json + "\n", { mode: 0o600 });
@@ -188,6 +191,9 @@ export function loadSettings(): void {
     }
     if (data.auxiliaryModel) {
       auxiliaryModel = data.auxiliaryModel;
+    }
+    if (data.externalEditor) {
+      externalEditor = data.externalEditor;
     }
     syncCredentialsToPi();
   } catch {
@@ -262,6 +268,17 @@ export function getAuxiliaryModel(): ModelRef | null {
 
 export function setAuxiliaryModel(ref: ModelRef | null): void {
   auxiliaryModel = ref;
+  saveSettings();
+}
+
+/* ───────── External editor configuration ───────── */
+
+export function getExternalEditor(): string | null {
+  return externalEditor;
+}
+
+export function setExternalEditor(path: string | null): void {
+  externalEditor = path;
   saveSettings();
 }
 

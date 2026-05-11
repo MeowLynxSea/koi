@@ -34,6 +34,8 @@ import { ConfirmModal } from "./components/confirm-modal.js";
 import { ConnectingModal } from "./components/connecting-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
 import { ImagePreviewModal } from "./components/image-preview-modal.js";
+import { ExternalEditorModal } from "./components/external-editor-modal.js";
+import { openExternalEditor } from "./components/external-editor.js";
 import { MCPSettings } from "./components/mcp/MCPSettings.js";
 import { SkillsMenu } from "../skills/SkillsMenu.js";
 import { 
@@ -64,6 +66,8 @@ import {
   setCurrentModel,
   getAuxiliaryModel,
   setAuxiliaryModel,
+  getExternalEditor,
+  setExternalEditor,
   resolvePiModel,
 } from "../config/settings.js";
 import { useKoiAgent, isInternalNotification } from "../agent/hooks.js";
@@ -102,6 +106,7 @@ import {
 const SIDEBAR_WIDTH = 28;
 
 interface AppProps {
+  renderer: import("@opentui/core").CliRenderer;
   onExit: () => void;
 }
 
@@ -198,7 +203,7 @@ function CustomPromptContent({
  * Keyboard shortcuts are globally bound here; modal-open state blocks shortcuts underneath.
  */
 
-export function App({ onExit }: AppProps) {
+export function App({ renderer, onExit }: AppProps) {
   const { width, height } = useTerminalDimensions();
   const [showExitModal, setShowExitModal] = useState(false);
   const [showCommandPanel, setShowCommandPanel] = useState(false);
@@ -229,6 +234,9 @@ export function App({ onExit }: AppProps) {
   const [showMCPSettings, setShowMCPSettings] = useState(false);
   const [showSkillsModal, setShowSkillsModal] = useState(false);
   const [skills, setSkills] = useState<SkillCommand[]>([]);
+  const [showExternalEditorModal, setShowExternalEditorModal] = useState(false);
+  const [externalEditorBusy, setExternalEditorBusy] = useState(false);
+  const [externalEditorResult, setExternalEditorResult] = useState<string | null | undefined>(undefined);
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -755,7 +763,7 @@ export function App({ onExit }: AppProps) {
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
-    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal;
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal || showExternalEditorModal || externalEditorBusy;
 
   // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
@@ -927,6 +935,7 @@ export function App({ onExit }: AppProps) {
       { id: "/model", label: "Select a model", section: "Model", action: () => setShowModelModal(true), disabled: isStreaming },
       { id: "/mcp", label: "Open MCP settings", section: "Extensions", action: () => setShowMCPSettings(true) },
       { id: "/skills", label: "List and manage skills", section: "Extensions", action: () => setShowSkillsModal(true) },
+      { id: "/editor", label: "Set external editor for prompts", section: "Settings", action: () => setShowExternalEditorModal(true) },
       ...skillCommands,
     ],
     [isStreaming, session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode, skillCommands]
@@ -1022,6 +1031,30 @@ export function App({ onExit }: AppProps) {
       return;
     }
 
+    // Ctrl+G: Open external editor for prompt editing
+    if (key.ctrl && key.name === "g") {
+      if (!isStreaming && !externalEditorBusy) {
+        const editorPath = getExternalEditor();
+        if (editorPath) {
+          // Get current input text
+          const inputText = inputBoxRef.current?.getText?.() ?? "";
+          // Launch external editor (renderer.suspend() restores terminal state)
+          // Use state to pass result back to InputBox via useEffect
+          openExternalEditor(renderer, editorPath, inputText, (result) => {
+            if (result !== null && result.trim()) {
+              setExternalEditorResult(result);
+            }
+            setExternalEditorBusy(false);
+          });
+          setExternalEditorBusy(true);
+        } else {
+          // No editor configured, open settings modal
+          setShowExternalEditorModal(true);
+        }
+      }
+      return;
+    }
+
     if (key.name === "pageup") {
       chatPanelRef.current?.scrollUp?.();
       return;
@@ -1085,11 +1118,14 @@ export function App({ onExit }: AppProps) {
             onQueueSubmit={handleQueueSubmit}
             onSlashEmpty={handleSlashEmpty}
             focused={!anyModalOpen}
-            disabled={!isReady}
+            disabled={!isReady || externalEditorBusy}
+            disabledHint={externalEditorBusy ? "External editor in use..." : undefined}
             width={leftWidth}
             mode={agentMode}
             isBusy={isStreaming}
             onModeSwitch={handleModeSwitch}
+            externalEditorResult={externalEditorResult}
+            onExternalEditorResultUsed={() => setExternalEditorResult(undefined)}
           />
           <InfoBar width={leftWidth} exitMode={showExitModal} yoloMode={yoloMode} onToggleYolo={() => setYoloMode((prev) => !prev)} />
         </box>
@@ -1179,6 +1215,15 @@ export function App({ onExit }: AppProps) {
         onClose={() => setShowSkillsModal(false)}
         skills={skills}
         onInvokeSkill={handleInvokeSkill}
+      />
+      <ExternalEditorModal
+        isActive={showExternalEditorModal}
+        onClose={() => setShowExternalEditorModal(false)}
+        currentPath={getExternalEditor()}
+        onSave={(path) => {
+          setExternalEditor(path || null);
+          setShowExternalEditorModal(false);
+        }}
       />
     </box>
   );

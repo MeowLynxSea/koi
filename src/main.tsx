@@ -16,6 +16,7 @@ export async function main(): Promise<void> {
   createRoot(renderer).render(
     <DialogProvider>
       <App
+        renderer={renderer}
         onExit={() => {
           renderer.destroy();
           process.exit(0);

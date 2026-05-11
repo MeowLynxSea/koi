@@ -50,6 +50,8 @@ const INK_WAVE_PHASES = [
 export interface InputBoxHandle {
   clearInput: () => void;
   isInputEmpty: () => boolean;
+  getText: () => string;
+  setText: (text: string) => void;
 }
 
 interface InputBoxProps {
@@ -58,10 +60,14 @@ interface InputBoxProps {
   onSlashEmpty?: () => void;
   focused?: boolean;
   disabled?: boolean;
+  disabledHint?: string;
   width?: number;
   mode?: AgentMode;
   isBusy?: boolean;
   onModeSwitch?: () => void;
+  // External editor integration
+  externalEditorResult?: string | null;
+  onExternalEditorResultUsed?: () => void;
 }
 
 export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function InputBox({
@@ -70,10 +76,13 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
   onSlashEmpty,
   focused = true,
   disabled = false,
+  disabledHint,
   width,
   mode = "build",
   isBusy = false,
   onModeSwitch,
+  externalEditorResult,
+  onExternalEditorResultUsed,
 }: InputBoxProps, ref) {
   const textareaRef = useRef<TextareaRenderable | null>(null);
 
@@ -85,6 +94,16 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
 
   const getText = () => textareaRef.current?.editBuffer.getText() ?? "";
 
+  // Handle external editor result
+  useEffect(() => {
+    if (externalEditorResult !== undefined && externalEditorResult !== null) {
+      textareaRef.current?.editBuffer.replaceText(externalEditorResult);
+      setHistoryIndex(-1);
+      setSavedInput("");
+      onExternalEditorResultUsed?.();
+    }
+  }, [externalEditorResult, onExternalEditorResultUsed]);
+
   // Expose methods to parent via ref
   useImperativeHandle(ref, () => ({
     clearInput: () => {
@@ -93,7 +112,13 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
       setSavedInput("");
     },
     isInputEmpty: () => getText().trim() === "",
-  }), []);
+    getText,
+    setText: (text: string) => {
+      textareaRef.current?.editBuffer.replaceText(text);
+      setHistoryIndex(-1);
+      setSavedInput("");
+    },
+  }), [getText]);
 
   // Navigate to previous history item (ArrowUp) - replaces input text
   const navigateToPreviousHistory = useCallback(() => {
@@ -379,16 +404,22 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
           })()}
         </box>
         <box flexGrow={1} height={3}>
-          <textarea
-            ref={textareaRef}
-            focused={focused}
-            showCursor={true}
-            height={3}
-            width={Math.max(1, (width ?? 80) - MODE_PREFIX[mode].length - 2)}
-            onSubmit={handleSubmit}
-            onKeyDown={handleKeyDown}
-            keyBindings={keyBindings}
-          />
+          {disabled && disabledHint ? (
+            <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+              {disabledHint}
+            </text>
+          ) : (
+            <textarea
+              ref={textareaRef}
+              focused={focused}
+              showCursor={true}
+              height={3}
+              width={Math.max(1, (width ?? 80) - MODE_PREFIX[mode].length - 2)}
+              onSubmit={handleSubmit}
+              onKeyDown={handleKeyDown}
+              keyBindings={keyBindings}
+            />
+          )}
         </box>
       </box>
     </box>
