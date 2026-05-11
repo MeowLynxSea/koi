@@ -28,7 +28,7 @@ export type ExternalEditorCallback = (result: string | null, error?: ExternalEdi
 /**
  * Check if an editor command exists and is executable
  */
-export function isEditorAvailable(editorPath: string): boolean {
+export async function isEditorAvailable(editorPath: string): Promise<boolean> {
   try {
     const parts = editorPath.trim().split(/\s+/);
     const cmd = parts[0]!;
@@ -36,10 +36,9 @@ export function isEditorAvailable(editorPath: string): boolean {
     // Try to spawn the command with --version to check if it exists
     const result = spawn(cmd, ["--version"], {
       stdio: "pipe",
-      timeout: 5000,
     });
     
-    return new Promise<boolean>((resolve) => {
+    return await new Promise<boolean>((resolve) => {
       result.on("close", (code) => {
         resolve(code === 0);
       });
@@ -57,7 +56,7 @@ export function isEditorAvailable(editorPath: string): boolean {
       }, 5000);
     });
   } catch {
-    return Promise.resolve(false);
+    return false;
   }
 }
 
