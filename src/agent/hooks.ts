@@ -981,18 +981,37 @@ export function useKoiAgent(): KoiAgentState {
   // On mount: create a new session instead of continuing the most recent one.
   useEffect(() => {
     let mounted = true;
-    void createNewSession(globalTaskManager)
+    
+    // Start MCP connection progress tracking
+    setIsConnectingMcp(true);
+    setMcpConnectionProgress({
+      total: 0,
+      completed: 0,
+      currentServer: "Initializing...",
+      status: "connecting",
+    });
+    
+    void createNewSession(globalTaskManager, (progress) => {
+      if (mounted) {
+        setMcpConnectionProgress(progress);
+      }
+    })
       .then((result) => {
         if (!mounted) {
           result.session.dispose();
           return;
         }
+        // Clear MCP connection progress
+        setIsConnectingMcp(false);
+        setMcpConnectionProgress(null);
         void setupSession(result);
       })
       .catch((err: unknown) => {
         if (!mounted) return;
         setError(err instanceof Error ? err.message : String(err));
         setIsReady(true);
+        setIsConnectingMcp(false);
+        setMcpConnectionProgress(null);
       });
     return () => { mounted = false; };
   }, [setupSession]);
