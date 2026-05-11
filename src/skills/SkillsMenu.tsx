@@ -45,11 +45,13 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
   const scrollOffsetRef = useRef(0);
 
   const panelWidth = Math.min(80, Math.max(50, Math.floor(width * 0.8)));
-  const panelHeight = Math.min(height - 4, 25);
+  // Base panel height without details, account for input(1) + separator(1) + padding(2) = 4
+  const basePanelHeight = Math.min(height - 4, 25);
   const inputHeight = 1;
   const separatorHeight = 1;
-  const detailsHeight = showDetails ? 8 : 0;
-  const listHeight = panelHeight - inputHeight - separatorHeight - detailsHeight - 2;
+  const listHeight = basePanelHeight - inputHeight - separatorHeight - 2;
+  // When details panel is shown, expand panel height
+  const panelHeight = showDetails ? Math.min(basePanelHeight + 10, height - 2) : basePanelHeight;
 
   // Group skills by source
   const skillGroups = useMemo<SkillGroup[]>(() => {
@@ -165,25 +167,6 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
       return;
     }
 
-    if (key.name === "return" || key.name === "enter") {
-      key.preventDefault();
-      key.stopPropagation();
-      
-      if (selectedSkill) {
-        if (onInvokeSkill && selectedSkill.argumentHint) {
-          // Show details and allow typing arguments
-          setShowDetails(true);
-        } else if (onInvokeSkill) {
-          onInvokeSkill(selectedSkill, "");
-          onClose();
-        } else {
-          // Just close and show the skill was selected
-          onClose();
-        }
-      }
-      return;
-    }
-
     if (key.name === "tab") {
       key.preventDefault();
       key.stopPropagation();
@@ -226,7 +209,7 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
     ].filter(Boolean);
 
     return (
-      <box height={detailsHeight} flexDirection="column" marginTop={1}>
+      <box height={10} flexDirection="column" marginTop={1}>
         <box height={1}>
           <text fg="#6272a4">
             {"─".repeat(panelWidth - 4)}
@@ -268,7 +251,7 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
             Skills ({totalSkills})
           </text>
           <text fg="#6272a4">
-            ↑↓ navigate · Enter select · Tab details · Esc close
+            ↑↓ navigate · Tab details · Esc close
           </text>
         </box>
 
@@ -325,7 +308,7 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
                   paddingLeft={2}
                   flexDirection="row"
                 >
-                  <text fg="#ffb86c">/{item.skill.name}</text>
+                  <text fg="#ffb86c">{item.skill.name}</text>
                   <text fg="#6272a4">  {safeDescription}{item.skill.description && item.skill.description.length > 50 ? "..." : ""}</text>
                 </box>
               );
