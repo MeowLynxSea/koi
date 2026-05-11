@@ -137,6 +137,7 @@ interface MonitorItem {
 
 interface SideBarProps {
   width?: number;
+  height?: number;
   workingDir?: string;
   sessionTitle?: string;
   modelName?: string;
@@ -151,6 +152,7 @@ interface SideBarProps {
 
 export function SideBar({
   width = 28,
+  height = 50,
   workingDir = "/",
   sessionTitle = "New Session",
   modelName = "Not configured",
@@ -174,6 +176,7 @@ export function SideBar({
   const hasMoreMonitors = monitors.length > visibleMonitors.length;
 
   return (
+    <scrollbox scrollY={true} scrollX={false} width={width} height={height}>
     <box width={width} flexDirection="column" paddingLeft={1}>
       {/* Top spacer */}
       <text> </text>
@@ -344,5 +347,6 @@ export function SideBar({
         </>
       )}
     </box>
+    </scrollbox>
   );
 }

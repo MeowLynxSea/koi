@@ -1141,6 +1141,7 @@ export function App({ renderer, onExit }: AppProps) {
           <box width={1} />
           <SideBar
             width={SIDEBAR_WIDTH}
+            height={height}
             workingDir={process.cwd()}
             sessionTitle={sessionTitle}
             modelName={modelInfo.modelName}
