@@ -13,6 +13,10 @@ import { loadSettings } from "./config/settings.js";
 export async function main(): Promise<void> {
   loadSettings();
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
+
+  // Enable bracketed paste mode so we can detect paste events
+  process.stdout.write("\x1B[?2004h");
+
   createRoot(renderer).render(
     <DialogProvider>
       <App
@@ -28,6 +32,8 @@ export async function main(): Promise<void> {
   // Ensure terminal state is restored on unexpected exits
   const cleanup = () => {
     try {
+      // Disable bracketed paste mode before exit
+      process.stdout.write("\x1B[?2004l");
       renderer.destroy();
     } catch {
       // ignore cleanup errors during shutdown

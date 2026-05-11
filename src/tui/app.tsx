@@ -20,6 +20,7 @@ import {
   isToolForceExpanded,
 } from "./components/chat-panel.js";
 import { InputBox } from "./components/input-box.js";
+import { usePasteHandler } from "./hooks/paste-handler.js";
 import { PendingArea } from "./components/pending-area.js";
 import { EditPendingModal } from "./components/edit-pending-modal.js";
 import { InfoBar } from "./components/info-bar.js";
@@ -763,6 +764,12 @@ export function App({ renderer, onExit }: AppProps) {
   const chatPanelRef = useRef<ChatPanelHandle>(null);
   const inputBoxRef = useRef<InputBoxHandle>(null);
 
+  // Paste handler for files, images, and long text
+  const insertTextIntoInput = useCallback((text: string) => {
+    inputBoxRef.current?.insertText(text);
+  }, []);
+  const { handlePaste } = usePasteHandler(currentSessionId, insertTextIntoInput);
+
   // Filter out internal subagent notifications from the chat display.
   // These messages are still present in the session state (so the LLM sees
   // them), but we don't want to clutter the UI with XML task notifications.
@@ -1068,6 +1075,20 @@ export function App({ renderer, onExit }: AppProps) {
       return;
     }
 
+    // Ctrl+V / Command+V: Paste from clipboard (images, files, long text)
+    if ((key.ctrl || key.meta) && key.name === "v") {
+      const fs = require("fs") as typeof import("fs");
+      fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [App] Ctrl+V detected, anyModalOpen: ${anyModalOpen}, externalEditorBusy: ${externalEditorBusy}\n`);
+      if (!anyModalOpen && !externalEditorBusy) {
+        void (async () => {
+          fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [App] calling handlePaste\n`);
+          await handlePaste();
+          fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [App] handlePaste done\n`);
+        })();
+      }
+      return;
+    }
+
     if (key.name === "pageup") {
       chatPanelRef.current?.scrollUp?.();
       return;
@@ -1139,6 +1160,7 @@ export function App({ renderer, onExit }: AppProps) {
             onModeSwitch={handleModeSwitch}
             externalEditorResult={externalEditorResult}
             onExternalEditorResultUsed={() => setExternalEditorResult(undefined)}
+            onPaste={handlePaste}
           />
           <InfoBar width={leftWidth} exitMode={showExitModal} yoloMode={yoloMode} onToggleYolo={() => setYoloMode((prev) => !prev)} />
         </box>

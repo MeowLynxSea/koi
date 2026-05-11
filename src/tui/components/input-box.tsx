@@ -8,7 +8,7 @@
 
 import { useRef, useMemo, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import { createTextAttributes, type TextareaRenderable, type KeyBinding } from "@opentui/core";
-import type { KeyEvent } from "@opentui/core";
+import type { KeyEvent, PasteEvent } from "@opentui/core";
 import type { AgentMode } from "../../agent/mode.js";
 import {
   addToUserHistory,
@@ -52,6 +52,7 @@ export interface InputBoxHandle {
   isInputEmpty: () => boolean;
   getText: () => string;
   setText: (text: string) => void;
+  insertText: (text: string) => void;
 }
 
 interface InputBoxProps {
@@ -68,6 +69,8 @@ interface InputBoxProps {
   // External editor integration
   externalEditorResult?: string | null;
   onExternalEditorResultUsed?: () => void;
+  // Paste handling
+  onPaste?: (event: PasteEvent) => Promise<boolean>;
 }
 
 export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function InputBox({
@@ -83,6 +86,7 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
   onModeSwitch,
   externalEditorResult,
   onExternalEditorResultUsed,
+  onPaste,
 }: InputBoxProps, ref) {
   const textareaRef = useRef<TextareaRenderable | null>(null);
 
@@ -115,6 +119,15 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
     getText,
     setText: (text: string) => {
       textareaRef.current?.editBuffer.replaceText(text);
+      setHistoryIndex(-1);
+      setSavedInput("");
+    },
+    insertText: (text: string) => {
+      // Insert text at cursor position
+      const editBuffer = textareaRef.current?.editBuffer;
+      if (editBuffer) {
+        editBuffer.insertText(text);
+      }
       setHistoryIndex(-1);
       setSavedInput("");
     },
@@ -417,6 +430,12 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
               width={Math.max(1, (width ?? 80) - MODE_PREFIX[mode].length - 2)}
               onSubmit={handleSubmit}
               onKeyDown={handleKeyDown}
+              onPaste={onPaste ? (event: PasteEvent) => {
+                const fs = require("fs") as typeof import("fs");
+                fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [InputBox] onPaste triggered, bytes: ${event.bytes.length}, metadata: ${JSON.stringify(event.metadata)}\n`);
+                event.preventDefault();
+                void onPaste(event);
+              } : undefined}
               keyBindings={keyBindings}
             />
           )}

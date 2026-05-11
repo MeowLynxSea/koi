@@ -126,6 +126,59 @@ function getKoiStatePath(sessionId: string): string {
   return path.join(getKoiSessionDir(sessionId), "koi-state.json");
 }
 
+/**
+ * Attachment Management Functions
+ *
+ * Handles saving and loading files/images/text pasted via Ctrl+V.
+ * All attachments are stored in the session's attachments subdirectory.
+ */
+
+export function getAttachmentsDir(sessionId: string): string | null {
+  try {
+    const sessionDir = getKoiSessionDir(sessionId);
+    const attachmentsDir = path.join(sessionDir, "attachments");
+    if (!fs.existsSync(attachmentsDir)) {
+      fs.mkdirSync(attachmentsDir, { recursive: true, mode: 0o700 });
+    }
+    return attachmentsDir;
+  } catch {
+    return null;
+  }
+}
+
+export function saveAttachment(
+  sessionId: string,
+  type: "files" | "images" | "texts",
+  fileName: string,
+  data: Buffer | string
+): string | null {
+  const attachmentsDir = getAttachmentsDir(sessionId);
+  if (!attachmentsDir) return null;
+
+  try {
+    const subDir = path.join(attachmentsDir, type);
+    if (!fs.existsSync(subDir)) {
+      fs.mkdirSync(subDir, { recursive: true, mode: 0o700 });
+    }
+
+    const filePath = path.join(subDir, fileName);
+    fs.writeFileSync(filePath, data, { mode: 0o600 });
+    return filePath;
+  } catch {
+    return null;
+  }
+}
+
+export function getSessionId(sessionId: string | null): string | null {
+  // This is a utility function to validate/return session ID
+  // Used by paste-handler to ensure valid session context
+  if (!sessionId) return null;
+  
+  // Verify session directory exists
+  const sessionDir = getKoiSessionDir(sessionId);
+  return fs.existsSync(sessionDir) ? sessionId : null;
+}
+
 function safeReadFile<T>(path: string, parser: (raw: string) => T): T | null {
   try {
     if (!fs.existsSync(path)) return null;
@@ -505,6 +558,16 @@ When encountering an obstacle, do not use destructive actions as a shortcut. Inv
 - Do not use a colon before tool calls.
 - Only use emojis if the user explicitly requests it.
 - Focus text output on: decisions needing user input, high-level status updates, errors or blockers.
+
+# Paste Attachments
+
+When the user pastes files, images, or large text via Ctrl+V/Command+V:
+
+1. **Files**: Sent as [File:path] - the file has been saved to the session folder. Read the file content using the file path provided.
+2. **Images**: Sent as [Image:path] - the image has been saved to the session folder. Use appropriate tools to analyze or process the image.
+3. **Long text**: Sent as Text:path - text exceeding 5000 characters has been saved to the session folder. Read the file content using the path provided.
+
+Always use the read tool to access the actual content of pasted files, images, or long text when needed.
 `;
 
 async function createAgentSessionWithConfig(
