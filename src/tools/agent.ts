@@ -77,7 +77,8 @@ export async function executeAgent(
   };
 
   if (params.run_in_background) {
-    const agentId = await subagentRegistry.launch(config);
+    const sessionId = activeSessionRef.current.sessionId;
+    const agentId = await subagentRegistry.launch(sessionId, config);
     return {
       content: [
         {

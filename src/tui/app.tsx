@@ -342,10 +342,15 @@ export function App({ renderer, onExit }: AppProps) {
   // Subscribe to subagent registry changes for live sidebar updates.
   useEffect(() => {
     const unsubscribe = subagentRegistry.subscribe(() => {
-      setSubagents(subagentRegistry.getAll());
+      // Only show subagents for the current session
+      setSubagents(currentSessionId ? subagentRegistry.getBySession(currentSessionId) : []);
     });
+    // Re-filter when session changes
+    if (currentSessionId) {
+      setSubagents(subagentRegistry.getBySession(currentSessionId));
+    }
     return unsubscribe;
-  }, []);
+  }, [currentSessionId]);
 
   // Subscribe to monitor registry changes for live sidebar updates.
   // Filters to show only monitors for the current session.
@@ -373,6 +378,8 @@ export function App({ renderer, onExit }: AppProps) {
         setSidebarCost("$0.00");
         setTasks([]);
         setSubagents([]);
+        // Clear subagents from registry display for this session
+        subagentRegistry.clearSession(currentSessionId ?? "");
         return;
       }
 
@@ -399,7 +406,8 @@ export function App({ renderer, onExit }: AppProps) {
       setSidebarTokenCount(tokenStr);
       setSidebarCost(costStr);
       setTasks(globalTaskManager.listTasks());
-      setSubagents(subagentRegistry.getAll());
+      // Only show subagents for the current session
+      setSubagents(currentSessionId ? subagentRegistry.getBySession(currentSessionId) : []);
       // Only show monitors for the current session
       setMonitors(currentSessionId ? monitorRegistry.getBySession(currentSessionId) : []);
     };

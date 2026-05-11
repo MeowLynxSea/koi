@@ -86,6 +86,23 @@ export interface KoiSessionState {
   expandedMessages: string[];
   /** IDs of collapsed messages (tool results) */
   collapsedMessages: string[];
+
+  // === Subagent state ===
+  /** Subagent entries for this session (persisted for session restore) */
+  subagents: SubagentEntryState[];
+}
+
+/**
+ * Persisted subagent entry (subset of AsyncSubagentEntry for storage)
+ */
+export interface SubagentEntryState {
+  id: string;
+  description: string;
+  status: "running" | "completed" | "failed" | "killed";
+  result?: string;
+  error?: string;
+  startTime: number;
+  endTime?: number;
 }
 
 /**
@@ -608,6 +625,8 @@ export async function createNewSession(
     // UI state
     expandedMessages: [],
     collapsedMessages: [],
+    // Subagent state (empty for new sessions)
+    subagents: [],
   };
   saveKoiState(result.session.sessionId, state);
   return result;
@@ -740,4 +759,53 @@ export function buildUIMessagesFromAgentSession(session: AgentSession): UIMessag
   }
 
   return uiMessages;
+}
+
+/**
+ * Update subagent state in session storage.
+ * This persists subagent changes to the session's koi-state.json.
+ */
+export function updateSubagentState(
+  sessionId: string,
+  subagents: SubagentEntryState[]
+): void {
+  const state = loadKoiState(sessionId);
+  if (!state) {
+    // If no state file exists, create one with the subagents
+    const now = Date.now();
+    const newState: KoiSessionState = {
+      sessionId,
+      title: "Untitled",
+      currentModel: null,
+      auxiliaryModel: null,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+      forkedFrom: null,
+      forkBranchId: null,
+      forkedAt: null,
+      agentMode: "build",
+      activeTools: [],
+      expandedMessages: [],
+      collapsedMessages: [],
+      subagents,
+    };
+    saveKoiState(sessionId, newState);
+    return;
+  }
+
+  // Update only the subagents field
+  state.subagents = subagents;
+  state.updatedAt = Date.now();
+  saveKoiState(sessionId, state);
+}
+
+/**
+ * Load subagent state from session storage.
+ * Returns empty array if no state or subagents exist.
+ */
+export function loadSubagentState(sessionId: string): SubagentEntryState[] {
+  const state = loadKoiState(sessionId);
+  if (!state) return [];
+  return state.subagents ?? [];
 }

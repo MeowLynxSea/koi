@@ -45,6 +45,7 @@ import {
   saveSnapshotIfChanged,
   restoreSnapshot,
 } from "./session-snapshots.js";
+import { subagentRegistry } from "./subagent-registry.js";
 
 /** Global ref to the active AgentSession, usable by tools outside React hooks. */
 export const activeSessionRef = { current: null as AgentSession | null };
@@ -949,6 +950,8 @@ export function useKoiAgent(): KoiAgentState {
       globalTaskManager.setActiveSession(s.sessionId);
       subscribeToSession(s);
       restoreSessionState(s);
+      // Restore subagent state for this session
+      subagentRegistry.restoreFromSession(s.sessionId);
       setIsReady(true);
       setSessionList(await listSessions());
     },
