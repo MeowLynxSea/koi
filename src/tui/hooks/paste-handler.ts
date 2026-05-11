@@ -1,21 +1,30 @@
 /**
  * Paste Handler Hook
  *
- * Handles paste events for files, images, and large text.
+ * Handles paste events for files, images, and text.
+ * - Text: short text sent directly, long text saved to file and path sent
+ * - Images: saved to session attachments and [Image:path] sent
+ * - Files: cloned to session attachments and path sent
  */
 
 import { useCallback, useRef } from "react";
-import type { PasteEvent } from "@opentui/core";
 import {
   readClipboardText,
   readClipboardImage,
+  readClipboardFilePath,
   processTextForSubmission,
   processImageForSubmission,
+  processFileForSubmission,
 } from "./clipboard.js";
 
-/** Decode paste bytes to string (same logic as OpenTUI's decodePasteBytes) */
-function decodePasteBytes(bytes: Uint8Array): string {
-  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+/** Decode paste bytes to string */
+function decodePasteBytes(bytes: Uint8Array): string | null {
+  if (!bytes || bytes.length === 0) return null;
+  try {
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -32,66 +41,131 @@ export function usePasteHandler(
   const processingRef = useRef(false);
 
   /**
-   * Main paste handler - reads from system clipboard and processes content.
-   * Returns true if the paste was handled (caller should call event.preventDefault()).
+   * Handle image paste (used for Ctrl+V on Mac)
+   * Only checks for image in clipboard.
    */
-  const handlePaste = useCallback(async (event?: PasteEvent): Promise<boolean> => {
+  const handleImagePaste = useCallback(async (): Promise<boolean> => {
     if (processingRef.current) return false;
     processingRef.current = true;
 
-    const log = (msg: string) => {
-      const fs = require("fs") as typeof import("fs");
-      fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [paste-handler] ${msg}\n`);
-    };
-
-    log(`start, event: ${event ? "yes" : "no"}`);
-
     try {
-      // First, try to read image from clipboard (cross-platform)
-      log("checking clipboard image...");
       const imageData = await readClipboardImage();
-      log(`image result: ${imageData ? imageData.length + " bytes" : "null"}`);
-      
       if (imageData && imageData.length > 0) {
-        log("processing image...");
         const result = await processImageForSubmission(imageData, sessionId);
-        log(`inserting: ${result.text}`);
         insertIntoInput(result.text);
         return true;
       }
-
-      // Try to read text from OpenTUI PasteEvent if available
-      if (event?.bytes && event.bytes.length > 0) {
-        log(`using paste event bytes: ${event.bytes.length}`);
-        const text = decodePasteBytes(event.bytes);
-        if (text) {
-          log(`inserting text: ${text.substring(0, 30)}`);
-          const result = processTextForSubmission(text, sessionId);
-          insertIntoInput(result.insertText);
-          return true;
-        }
-      }
-
-      // Fallback: try to read text from clipboard
-      log("checking clipboard text...");
-      const text = readClipboardText();
-      log(`text result: ${text ? `"${text.substring(0, 30)}..."` : "null"}`);
-      
-      if (text !== null) {
-        const result = processTextForSubmission(text, sessionId);
-        insertIntoInput(result.insertText);
-        return true;
-      }
-
-      log("no content found");
       return false;
-    } catch (e) {
-      log(`error: ${e}`);
+    } catch {
       return false;
     } finally {
       processingRef.current = false;
     }
   }, [sessionId, insertIntoInput]);
 
-  return { handlePaste };
+  /**
+   * Handle text/file paste (used for Command+V on Mac via textarea onPaste)
+   * Checks for text and files, but not images.
+   */
+  const handleTextFilePaste = useCallback(async (event?: { bytes?: Uint8Array; metadata?: unknown }): Promise<boolean> => {
+    if (processingRef.current) return false;
+    processingRef.current = true;
+
+    try {
+      // Priority 1: If paste event has bytes, check if it's valid text
+      if (event?.bytes && event.bytes.length > 0) {
+        const decoded = decodePasteBytes(event.bytes);
+        if (decoded && decoded.trim().length > 0) {
+          // Check if it looks like text
+          let printableCount = 0;
+          let totalCount = decoded.length;
+          for (const c of decoded) {
+            const code = c.charCodeAt(0);
+            if ((code >= 32 && code < 127) || code === 9 || code === 10 || code === 13) {
+              printableCount++;
+            } else if (code >= 128) {
+              printableCount += 0.5;
+            }
+          }
+          const printableRatio = printableCount / totalCount;
+          
+          // Only treat as text if printable ratio is high and content is reasonably sized
+          if (printableRatio > 0.9 && decoded.length > 10) {
+            const result = processTextForSubmission(decoded, sessionId);
+            insertIntoInput(result.insertText);
+            return true;
+          }
+        }
+      }
+
+      // Priority 2: Check for file
+      const filePath = await readClipboardFilePath();
+      if (filePath) {
+        const newPath = processFileForSubmission(filePath, sessionId);
+        if (newPath) {
+          insertIntoInput(newPath);
+          return true;
+        }
+      }
+
+      // Priority 3: Fallback to clipboard text
+      const text = await readClipboardText();
+      if (text) {
+        const result = processTextForSubmission(text, sessionId);
+        insertIntoInput(result.insertText);
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    } finally {
+      processingRef.current = false;
+    }
+  }, [sessionId, insertIntoInput]);
+
+  /**
+   * Full paste handler - reads from system clipboard and processes all content types.
+   * Used by Ctrl+V global handler.
+   */
+  const handlePaste = useCallback(async (): Promise<boolean> => {
+    if (processingRef.current) return false;
+    processingRef.current = true;
+
+    try {
+      // Priority 1: Check for image (for Ctrl+V image paste)
+      const imageData = await readClipboardImage();
+      if (imageData && imageData.length > 0) {
+        const result = await processImageForSubmission(imageData, sessionId);
+        insertIntoInput(result.text);
+        return true;
+      }
+
+      // Priority 2: Check for file
+      const filePath = await readClipboardFilePath();
+      if (filePath) {
+        const newPath = processFileForSubmission(filePath, sessionId);
+        if (newPath) {
+          insertIntoInput(newPath);
+          return true;
+        }
+      }
+
+      // Priority 3: Fallback to text
+      const text = await readClipboardText();
+      if (text) {
+        const result = processTextForSubmission(text, sessionId);
+        insertIntoInput(result.insertText);
+        return true;
+      }
+
+      return false;
+    } catch {
+      return false;
+    } finally {
+      processingRef.current = false;
+    }
+  }, [sessionId, insertIntoInput]);
+
+  return { handlePaste, handleImagePaste, handleTextFilePaste };
 }

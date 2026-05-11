@@ -768,7 +768,7 @@ export function App({ renderer, onExit }: AppProps) {
   const insertTextIntoInput = useCallback((text: string) => {
     inputBoxRef.current?.insertText(text);
   }, []);
-  const { handlePaste } = usePasteHandler(currentSessionId, insertTextIntoInput);
+  const { handlePaste, handleImagePaste, handleTextFilePaste } = usePasteHandler(currentSessionId, insertTextIntoInput);
 
   // Filter out internal subagent notifications from the chat display.
   // These messages are still present in the session state (so the LLM sees
@@ -1075,16 +1075,11 @@ export function App({ renderer, onExit }: AppProps) {
       return;
     }
 
-    // Ctrl+V / Command+V: Paste from clipboard (images, files, long text)
-    if ((key.ctrl || key.meta) && key.name === "v") {
-      const fs = require("fs") as typeof import("fs");
-      fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [App] Ctrl+V detected, anyModalOpen: ${anyModalOpen}, externalEditorBusy: ${externalEditorBusy}\n`);
+    // Ctrl+V: Paste image from clipboard (images are handled via clipboard API)
+    // Command+V is handled by textarea's onPaste for text and files
+    if (key.ctrl && key.name === "v") {
       if (!anyModalOpen && !externalEditorBusy) {
-        void (async () => {
-          fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [App] calling handlePaste\n`);
-          await handlePaste();
-          fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [App] handlePaste done\n`);
-        })();
+        void handleImagePaste();
       }
       return;
     }
@@ -1160,7 +1155,7 @@ export function App({ renderer, onExit }: AppProps) {
             onModeSwitch={handleModeSwitch}
             externalEditorResult={externalEditorResult}
             onExternalEditorResultUsed={() => setExternalEditorResult(undefined)}
-            onPaste={handlePaste}
+            onPaste={handleTextFilePaste}
           />
           <InfoBar width={leftWidth} exitMode={showExitModal} yoloMode={yoloMode} onToggleYolo={() => setYoloMode((prev) => !prev)} />
         </box>
