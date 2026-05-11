@@ -226,10 +226,12 @@ export function ForkModal({
   const [scrollOffset, setScrollOffset] = useState(0);
   const [rows, setRows] = useState<TreeRow[]>([]);
 
-  // Calculate panel dimensions
-  const panelWidth = Math.min(80, Math.max(52, Math.floor(width * 0.8)));
-  const listHeight = Math.min(16, Math.floor(height * 0.5));
-  const contentWidth = Math.max(1, panelWidth - 4);
+  // Memoize layout calculations
+  const layout = useMemo(() => ({
+    panelWidth: Math.min(80, Math.max(52, Math.floor(width * 0.8))),
+    listHeight: Math.min(16, Math.max(3, Math.floor(height * 0.5))),
+    contentWidth: Math.max(1, Math.min(80, Math.max(52, Math.floor(width * 0.8))) - 4),
+  }), [width, height]);
 
   // Recompute tree rows when modal opens
   useEffect(() => {
@@ -264,9 +266,9 @@ export function ForkModal({
       return;
     }
     const flatIndex = selectedRow.index;
-    const maxOffset = Math.max(0, rows.length - listHeight);
+    const maxOffset = Math.max(0, rows.length - layout.listHeight);
     setScrollOffset(Math.max(0, Math.min(flatIndex - 4, maxOffset)));
-  }, [selectedRow, listHeight, rows.length]);
+  }, [selectedRow, layout.listHeight, rows.length]);
 
   useKeyboard((key) => {
     if (!isActive) return;
@@ -292,7 +294,7 @@ export function ForkModal({
 
   if (!isActive) return null;
 
-  const visibleRows = rows.slice(scrollOffset, scrollOffset + listHeight);
+  const visibleRows = rows.slice(scrollOffset, scrollOffset + layout.listHeight);
 
   return (
     <box
@@ -307,7 +309,7 @@ export function ForkModal({
     >
       <box
         alignSelf="center"
-        width={panelWidth}
+        width={layout.panelWidth}
         flexDirection="column"
         borderStyle="rounded"
         borderColor="#4a4a5a"
@@ -324,7 +326,7 @@ export function ForkModal({
         </text>
 
         {/* Tree list */}
-        <box height={listHeight} flexDirection="column" overflow="hidden" marginTop={1}>
+        <box height={layout.listHeight} flexDirection="column" overflow="hidden" marginTop={1}>
           {rows.length === 0 && (
             <box height={1}>
               <text fg="#6c6c7c">No messages available.</text>
@@ -332,8 +334,8 @@ export function ForkModal({
           )}
           {visibleRows.map((row) => {
             const isSelected = selectedRow?.index === row.index;
-            const prefix = getVisiblePrefix(row, contentWidth);
-            const availableWidth = Math.max(1, contentWidth - prefix.length);
+            const prefix = getVisiblePrefix(row, layout.contentWidth);
+            const availableWidth = Math.max(1, layout.contentWidth - prefix.length);
             const displayText =
               row.displayText.length > availableWidth
                 ? row.displayText.slice(0, availableWidth - 1) + "…"

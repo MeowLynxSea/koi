@@ -6,7 +6,7 @@
  */
 
 import { useState } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
 
@@ -65,6 +65,8 @@ function Button({
 }
 
 export function ExitModal({ isActive, onConfirm, onCancel }: ExitModalProps) {
+  const { width } = useTerminalDimensions();
+
   useKeyboard((key) => {
     if (!isActive) return;
     if (key.name === "y" || key.name === "return") {
@@ -75,6 +77,9 @@ export function ExitModal({ isActive, onConfirm, onCancel }: ExitModalProps) {
   });
 
   if (!isActive) return null;
+
+  // Adaptive width
+  const modalWidth = Math.min(35, Math.max(20, Math.floor(width * 0.4)));
 
   return (
     <box
@@ -95,6 +100,7 @@ export function ExitModal({ isActive, onConfirm, onCancel }: ExitModalProps) {
         paddingY={1}
         flexDirection="column"
         alignItems="center"
+        width={modalWidth}
       >
         <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">
           Exit Koi?

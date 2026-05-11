@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from "react";
 import { createTextAttributes } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/react";
 type SpinnerVariant = "dots" | "arc" | "circle" | "line";
 import type { McpConnectionProgress } from "../../services/mcp/index.js";
 
@@ -71,6 +72,8 @@ export function ConnectingModal({ isActive, progress }: ConnectingModalProps) {
   // Don't render if not active or progress is null
   if (!isActive) return null;
 
+  const { width, height } = useTerminalDimensions();
+
   const defaultProgress: McpConnectionProgress = progress ?? {
     total: 0,
     completed: 0,
@@ -83,6 +86,10 @@ export function ConnectingModal({ isActive, progress }: ConnectingModalProps) {
 
   // Format percentage
   const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  // Adaptive dimensions
+  const modalWidth = Math.min(60, Math.max(40, Math.floor(width * 0.7)));
+  const modalHeight = Math.min(height - 4, 12);
 
   return (
     <box
@@ -102,8 +109,8 @@ export function ConnectingModal({ isActive, progress }: ConnectingModalProps) {
         paddingX={3}
         paddingY={2}
         flexDirection="column"
-        minWidth={50}
-        maxWidth={60}
+        width={modalWidth}
+        height={modalHeight}
       >
         {/* Header */}
         <box flexDirection="row" alignItems="center" justifyContent="center" marginBottom={1}>

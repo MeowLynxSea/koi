@@ -55,8 +55,11 @@ export function SessionModal({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
 
-  const panelWidth = Math.min(70, Math.max(50, Math.floor(width * 0.7)));
-  const listHeight = Math.min(14, Math.floor(height * 0.5));
+  // Memoize layout calculations
+  const layout = useMemo(() => ({
+    panelWidth: Math.min(70, Math.max(50, Math.floor(width * 0.7))),
+    listHeight: Math.min(14, Math.max(3, Math.floor(height * 0.5))),
+  }), [width, height]);
 
   // Reset when opened
   useEffect(() => {
@@ -86,10 +89,10 @@ export function SessionModal({
     if (safeIndex === -1) return;
     if (safeIndex < scrollOffset) {
       setScrollOffset(safeIndex);
-    } else if (safeIndex >= scrollOffset + listHeight) {
-      setScrollOffset(safeIndex - listHeight + 1);
+    } else if (safeIndex >= scrollOffset + layout.listHeight) {
+      setScrollOffset(safeIndex - layout.listHeight + 1);
     }
-  }, [safeIndex, listHeight, scrollOffset]);
+  }, [safeIndex, layout.listHeight, scrollOffset]);
 
   useKeyboard((key) => {
     if (!isActive || keyboardDisabled) return;
@@ -128,7 +131,7 @@ export function SessionModal({
 
   if (!isActive) return null;
 
-  const visibleSessions = sessions.slice(scrollOffset, scrollOffset + listHeight);
+  const visibleSessions = sessions.slice(scrollOffset, scrollOffset + layout.listHeight);
 
   return (
     <box
@@ -142,7 +145,7 @@ export function SessionModal({
       justifyContent="center"
     >
       <box
-        width={panelWidth}
+        width={layout.panelWidth}
         flexDirection="column"
         borderStyle="rounded"
         borderColor="#4a4a5a"
@@ -162,7 +165,7 @@ export function SessionModal({
 
         {/* Session list */}
         <box
-          height={listHeight}
+          height={layout.listHeight}
           flexDirection="column"
           overflow="hidden"
           marginTop={1}
@@ -178,8 +181,9 @@ export function SessionModal({
             const isCurrent = s.id === currentSessionId;
 
             // Ensure safe string values for rendering
-            const safeTitle = String(s.title ?? "Untitled Session");
+            const safeTitle = s.title ?? "Untitled Session";
             const safeMessageCount = typeof s.messageCount === "number" ? s.messageCount : 0;
+            const messageCountDisplay = safeMessageCount > 0 ? safeMessageCount.toString() : "0";
             const safeUpdatedAt =
               s.updatedAt instanceof Date && !isNaN(s.updatedAt.getTime())
                 ? s.updatedAt
@@ -199,7 +203,7 @@ export function SessionModal({
                 <text
                   fg={isSelected ? "#ff79c6" : isCurrent ? "#00f5ff" : "#f8f8f2"}
                   attributes={createTextAttributes({ bold: isCurrent })}
-                  width={Math.max(1, panelWidth - 24)}
+                  width={Math.max(1, layout.panelWidth - 24)}
                   truncate={true}
                 >
                   {isCurrent ? "● " : "  "}
@@ -207,7 +211,7 @@ export function SessionModal({
                 </text>
                 <box flexDirection="row" gap={1}>
                   <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-                    {String(safeMessageCount)}msg
+                    {messageCountDisplay}msg
                   </text>
                   <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })} width={8}>
                     {formatRelativeTime(safeUpdatedAt)}

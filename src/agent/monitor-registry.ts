@@ -115,7 +115,7 @@ class MonitorRegistryImpl extends EventEmitter {
       this.handlePtyData(id, { type: "data", data });
     });
     
-    session.on("exit", ({ exitCode }) => {
+    session.on("exit", ({ exitCode }: { exitCode: number | null }) => {
       this.handlePtyExit(id, exitCode ?? 0);
     });
 
@@ -160,7 +160,7 @@ class MonitorRegistryImpl extends EventEmitter {
       this.handlePtyData(id, { type: "data", data });
     });
 
-    newSession.on("exit", ({ exitCode }) => {
+    newSession.on("exit", ({ exitCode }: { exitCode: number | null }) => {
       this.handlePtyExit(id, exitCode ?? 0);
     });
 

@@ -77,7 +77,6 @@ async function execBashWithPty(
   let output = "";
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
-  let ptySession: PtySession | undefined;
   let resolvePromise: ((value: ExecBashResult) => void) | undefined;
 
   // Create PTY
@@ -92,7 +91,7 @@ async function execBashWithPty(
     onData?.(data);
   });
 
-  ptySession = new PtySession(ptyId, ptyProcess, command);
+  const ptySession = new PtySession(ptyId, ptyProcess, command);
 
   // Set up timeout
   if (timeoutSec > 0) {
@@ -101,14 +100,14 @@ async function execBashWithPty(
 
       // DO NOT kill the process - transfer to monitor instead
       const monitorId = monitorRegistry.adopt(
-        ptySession!,
+        ptySession,
         sessionId,
         command,
         `Bash timeout transfer: ${command.slice(0, 50)}${command.length > 50 ? "…" : ""}`
       );
       
       // Clean up the old session's listeners so only monitor receives events
-      ptySession!.cleanup();
+      ptySession.cleanup();
 
       // Notify caller about the timeout
       onTimeout?.(monitorId);

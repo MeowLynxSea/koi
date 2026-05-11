@@ -51,7 +51,11 @@ export function ModelModal({
   const scrollOffsetRef = useRef(0);
   const inputRef = useRef<TextareaRenderable>(null);
 
-  const listHeight = Math.min(12, Math.floor(height * 0.4));
+  // Memoize layout calculations
+  const layout = useMemo(() => ({
+    listHeight: Math.min(12, Math.max(3, Math.floor(height * 0.4))),
+  }), [height]);
+
   const primaryModel = getCurrentModel();
   const auxiliaryModel = getAuxiliaryModel();
 
@@ -175,8 +179,8 @@ export function ModelModal({
       if (newFlatIndex !== -1) {
         if (newFlatIndex < scrollOffsetRef.current) {
           newScrollOffset = newFlatIndex;
-        } else if (newFlatIndex > scrollOffsetRef.current + listHeight - 1) {
-          newScrollOffset = newFlatIndex - listHeight + 1;
+        } else if (newFlatIndex > scrollOffsetRef.current + layout.listHeight - 1) {
+          newScrollOffset = newFlatIndex - layout.listHeight + 1;
         }
       }
 
@@ -208,7 +212,7 @@ export function ModelModal({
 
   if (!isActive) return null;
 
-  const visibleItems = flatItems.slice(effectiveScrollOffset, effectiveScrollOffset + listHeight);
+  const visibleItems = flatItems.slice(effectiveScrollOffset, effectiveScrollOffset + layout.listHeight);
 
   const isCurrent = (provider?: string, modelId?: string) => {
     const target = activeTab === "primary" ? primaryModel : auxiliaryModel;
@@ -321,7 +325,7 @@ export function ModelModal({
         </box>
 
         <box
-          height={listHeight}
+          height={layout.listHeight}
           flexDirection="column"
           overflow="hidden"
           marginTop={1}

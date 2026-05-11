@@ -36,7 +36,7 @@ const SOURCE_LABELS: Record<SkillSource, string> = {
 /**
  * SkillsMenu component
  */
-export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsMenuProps) {
+export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill: _onInvokeSkill }: SkillsMenuProps) {
   const { width, height } = useTerminalDimensions();
   const inputRef = useRef<TextareaRenderable>(null);
   const [filterText, setFilterText] = useState("");
@@ -44,14 +44,21 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
   const [showDetails, setShowDetails] = useState(false);
   const scrollOffsetRef = useRef(0);
 
-  const panelWidth = Math.min(80, Math.max(50, Math.floor(width * 0.8)));
-  // Base panel height without details, account for input(1) + separator(1) + padding(2) = 4
-  const basePanelHeight = Math.min(height - 4, 25);
-  const inputHeight = 1;
-  const separatorHeight = 1;
-  const listHeight = basePanelHeight - inputHeight - separatorHeight - 2;
-  // When details panel is shown, expand panel height
-  const panelHeight = showDetails ? Math.min(basePanelHeight + 10, height - 2) : basePanelHeight;
+  // Memoize layout calculations to prevent recalculation on every render
+  const layout = useMemo(() => {
+    const panelWidth = Math.min(80, Math.max(50, Math.floor(width * 0.8)));
+    // Base panel height without details, account for header(1) + input(1) + separator(1) + padding(2) = 5
+    const basePanelHeight = Math.min(height - 4, 25);
+    const inputHeight = 1;
+    const separatorHeight = 1;
+    const headerHeight = 1;
+    const listHeight = Math.max(3, basePanelHeight - inputHeight - separatorHeight - 2);
+    // When details panel is shown, calculate available space dynamically
+    const availableHeight = height - 4 - headerHeight - inputHeight - separatorHeight - 2;
+    const detailsHeight = showDetails ? Math.min(10, Math.max(3, availableHeight - listHeight)) : 0;
+    const panelHeight = basePanelHeight + detailsHeight;
+    return { panelWidth, panelHeight, listHeight, detailsHeight };
+  }, [width, height, showDetails]);
 
   // Group skills by source
   const skillGroups = useMemo<SkillGroup[]>(() => {
@@ -160,8 +167,8 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
       if (newFlatIndex !== -1) {
         if (newFlatIndex < currentScroll) {
           scrollOffsetRef.current = newFlatIndex;
-        } else if (newFlatIndex > currentScroll + listHeight - 1) {
-          scrollOffsetRef.current = newFlatIndex - listHeight + 1;
+        } else if (newFlatIndex > currentScroll + layout.listHeight - 1) {
+          scrollOffsetRef.current = newFlatIndex - layout.listHeight + 1;
         }
       }
       return;
@@ -194,7 +201,7 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
   if (!isActive) return null;
 
   const effectiveScrollOffset = scrollOffsetRef.current;
-  const visibleItems = flatItems.slice(effectiveScrollOffset, effectiveScrollOffset + listHeight);
+  const visibleItems = flatItems.slice(effectiveScrollOffset, effectiveScrollOffset + layout.listHeight);
 
   // Render details panel
   const renderDetails = () => {
@@ -209,13 +216,13 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
     ].filter(Boolean);
 
     return (
-      <box height={10} flexDirection="column" marginTop={1}>
+      <box height={layout.detailsHeight} flexDirection="column" marginTop={1}>
         <box height={1}>
           <text fg="#6272a4">
-            {"─".repeat(panelWidth - 4)}
+            {"─".repeat(layout.panelWidth - 4)}
           </text>
         </box>
-        {details.map((line, idx) => (
+        {details.slice(0, layout.detailsHeight - 1).map((line, idx) => (
           <box key={idx} height={1}>
             <text fg="#8be9fd" wrapMode="none">{line}</text>
           </box>
@@ -236,8 +243,8 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
       justifyContent="center"
     >
       <box
-        width={panelWidth}
-        height={panelHeight}
+        width={layout.panelWidth}
+        height={layout.panelHeight}
         flexDirection="column"
         borderStyle="rounded"
         borderColor="#6272a4"
@@ -256,7 +263,7 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
         </box>
 
         {/* Filter input */}
-        <box height={inputHeight} marginTop={1}>
+        <box height={1} marginTop={1}>
           <text fg="#6272a4">Filter: </text>
           <textarea
             ref={inputRef}
@@ -265,7 +272,7 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
             showCursor
             height={1}
             wrapMode="none"
-            width={panelWidth - 10}
+            width={layout.panelWidth - 10}
             textColor="#f8f8f2"
             backgroundColor="#44475a"
             onContentChange={handleContentChange}
@@ -273,14 +280,14 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
         </box>
 
         {/* Separator */}
-        <box height={separatorHeight} marginTop={1}>
+        <box height={1} marginTop={1}>
           <text fg="#6272a4">
-            {"─".repeat(panelWidth - 2)}
+            {"─".repeat(layout.panelWidth - 2)}
           </text>
         </box>
 
         {/* Skill list */}
-        <box height={listHeight} flexDirection="column" overflow="hidden">
+        <box height={layout.listHeight} flexDirection="column" overflow="hidden">
           {visibleItems.map((item, idx) => {
             const flatIndex = effectiveScrollOffset + idx;
 
@@ -317,7 +324,7 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill }: SkillsM
             return null;
           })}
           {flatItems.length === 0 && (
-            <box height={listHeight} alignItems="center" justifyContent="center">
+            <box height={layout.listHeight} alignItems="center" justifyContent="center">
               <text fg="#6272a4">No skills found</text>
             </box>
           )}

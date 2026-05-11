@@ -6,7 +6,7 @@
  */
 
 import { useRef, useEffect } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes, type TextareaRenderable } from "@opentui/core";
 import { InputBox } from "./input-box.js";
 
@@ -25,8 +25,9 @@ export function EditPendingModal({
   type,
   onConfirm,
   onCancel,
-  width = 70,
+  width: widthProp,
 }: EditPendingModalProps) {
+  const { width } = useTerminalDimensions();
   const textareaRef = useRef<TextareaRenderable | null>(null);
 
   useEffect(() => {
@@ -45,6 +46,9 @@ export function EditPendingModal({
   if (!isActive) return null;
 
   const label = type === "sheer" ? "Edit Sheer" : "Edit Queued";
+
+  // Adaptive width
+  const modalWidth = Math.min(widthProp ?? 70, Math.max(40, Math.floor(width * 0.85)));
 
   const handleConfirm = () => {
     const text = textareaRef.current?.editBuffer.getText() ?? "";
@@ -72,7 +76,7 @@ export function EditPendingModal({
         backgroundColor="#1a1a2e"
         paddingX={2}
         paddingY={1}
-        width={width}
+        width={modalWidth}
       >
         <text alignSelf="center" attributes={createTextAttributes({ bold: true })} fg="#fbbf24">
           {label}
@@ -82,7 +86,7 @@ export function EditPendingModal({
             onSubmit={handleConfirm}
             focused={true}
             disabled={false}
-            width={width - 4}
+            width={modalWidth - 4}
           />
         </box>
         <box alignSelf="center" flexDirection="row" gap={2}>

@@ -5,7 +5,7 @@
  */
 
 import { useState } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
 
@@ -76,6 +76,8 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const { width } = useTerminalDimensions();
+
   useKeyboard((key) => {
     if (!isActive) return;
     if (key.name === "y" || key.name === "return") {
@@ -87,6 +89,9 @@ export function ConfirmModal({
 
   if (!isActive) return null;
 
+  // Adaptive width
+  const modalWidth = Math.min(40, Math.max(25, Math.floor(width * 0.5)));
+
   return (
     <box
       position="absolute"
@@ -94,7 +99,7 @@ export function ConfirmModal({
       left={0}
       width="100%"
       height="100%"
-      backgroundColor="#00000080"
+      backgroundColor="#00000090"
       alignItems="center"
       justifyContent="center"
     >
@@ -106,6 +111,7 @@ export function ConfirmModal({
         paddingY={1}
         flexDirection="column"
         alignItems="center"
+        width={modalWidth}
       >
         <text attributes={createTextAttributes({ bold: true })} fg="#fb7185">
           {title}

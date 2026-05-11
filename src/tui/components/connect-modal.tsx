@@ -48,7 +48,10 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
   const inputRef = useRef<TextareaRenderable>(null);
   const searchRef = useRef<TextareaRenderable>(null);
 
-  const listHeight = Math.min(10, Math.floor(height * 0.35));
+  // Memoize layout calculations
+  const layout = useMemo(() => ({
+    listHeight: Math.min(10, Math.max(3, Math.floor(height * 0.35))),
+  }), [height]);
 
   // Filter providers based on search text
   const query = filterText;
@@ -158,10 +161,10 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
   useEffect(() => {
     if (selectedProviderIndex < scrollOffset) {
       setScrollOffset(selectedProviderIndex);
-    } else if (selectedProviderIndex >= scrollOffset + listHeight) {
-      setScrollOffset(selectedProviderIndex - listHeight + 1);
+    } else if (selectedProviderIndex >= scrollOffset + layout.listHeight) {
+      setScrollOffset(selectedProviderIndex - layout.listHeight + 1);
     }
-  }, [selectedProviderIndex, listHeight, scrollOffset]);
+  }, [selectedProviderIndex, layout.listHeight, scrollOffset]);
 
   // Reset selected index when filter changes
   useEffect(() => {
@@ -266,7 +269,7 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
 
   if (!isActive) return null;
 
-  const visibleProviders = filteredProviders.slice(scrollOffset, scrollOffset + listHeight);
+  const visibleProviders = filteredProviders.slice(scrollOffset, scrollOffset + layout.listHeight);
 
   return (
     <box
@@ -316,7 +319,7 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
               </text>
             </box>
 
-            <box height={listHeight} flexDirection="column" overflow="hidden" marginTop={1}>
+            <box height={layout.listHeight} flexDirection="column" overflow="hidden" marginTop={1}>
               {filteredProviders.length === 0 && (
                 <box height={1}>
                   <text fg="#6c6c7c">

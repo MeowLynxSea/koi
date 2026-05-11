@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { TextareaRenderable } from "@opentui/core";
 
@@ -17,6 +17,7 @@ interface RenameModalProps {
 }
 
 export function RenameModal({ isActive, currentTitle, onConfirm, onCancel }: RenameModalProps) {
+  const { width } = useTerminalDimensions();
   const inputRef = useRef<TextareaRenderable>(null);
   const [value, setValue] = useState(currentTitle);
 
@@ -54,6 +55,9 @@ export function RenameModal({ isActive, currentTitle, onConfirm, onCancel }: Ren
 
   if (!isActive) return null;
 
+  // Adaptive width
+  const modalWidth = Math.min(50, Math.max(30, Math.floor(width * 0.6)));
+
   return (
     <box
       position="absolute"
@@ -66,7 +70,7 @@ export function RenameModal({ isActive, currentTitle, onConfirm, onCancel }: Ren
       justifyContent="center"
     >
       <box
-        width={50}
+        width={modalWidth}
         flexDirection="column"
         borderStyle="rounded"
         borderColor="#4a4a5a"

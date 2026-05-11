@@ -59,8 +59,6 @@ class BunPty extends EventEmitter implements IPty {
     const command = options.command ?? shell;
     const commandArgs = options.args ?? args;
 
-    const self = this;
-
     this.proc = Bun.spawn([command, ...commandArgs], {
       cwd: options.cwd ?? process.cwd(),
       env: {
@@ -73,12 +71,12 @@ class BunPty extends EventEmitter implements IPty {
         name: options.name ?? "xterm-256color",
         cols: options.cols ?? DEFAULT_COLS,
         rows: options.rows ?? DEFAULT_ROWS,
-        data(_terminal, data) {
-          self.emit("data", self.textDecoder.decode(data));
+        data: (_terminal: unknown, data: Uint8Array) => {
+          this.emit("data", this.textDecoder.decode(data));
         },
       },
-      onExit(_subprocess, exitCode, signalCode) {
-        self.emit("exit", { exitCode: exitCode ?? 0, signal: signalCode ?? "" });
+      onExit: (_subprocess: unknown, exitCode: number | null, signalCode: number | null) => {
+        this.emit("exit", { exitCode: exitCode ?? 0, signal: signalCode !== null ? String(signalCode) : "" });
       },
     });
 
@@ -195,7 +193,7 @@ export class PtySession extends EventEmitter {
   resize(cols: number, rows: number): void {
     try {
       this.pty.resize(cols, rows);
-    } catch (e) {
+    } catch {
       // 忽略调整大小失败
     }
   }
