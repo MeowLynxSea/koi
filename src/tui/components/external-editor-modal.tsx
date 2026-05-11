@@ -5,8 +5,8 @@
  * Used when the user types /editor or hasn't set an editor yet.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { TextareaRenderable } from "@opentui/core";
 
@@ -23,8 +23,16 @@ export function ExternalEditorModal({
   currentPath,
   onSave,
 }: ExternalEditorModalProps) {
+  const { width, height } = useTerminalDimensions();
   const inputRef = useRef<TextareaRenderable>(null);
   const [editorPath, setEditorPath] = useState(currentPath ?? "");
+
+  // Memoize layout calculations
+  const layout = useMemo(() => ({
+    panelWidth: Math.min(60, Math.max(40, Math.floor(width * 0.7))),
+    // Calculate max suggestions based on terminal height
+    maxSuggestions: Math.max(2, Math.floor(height * 0.25)),
+  }), [width, height]);
 
   // Reset and focus when opened
   useEffect(() => {
@@ -89,7 +97,7 @@ export function ExternalEditorModal({
       justifyContent="center"
     >
       <box
-        width={60}
+        width={layout.panelWidth}
         flexDirection="column"
         borderStyle="rounded"
         borderColor="#4a4a5a"
@@ -140,14 +148,16 @@ export function ExternalEditorModal({
             Suggestions:
           </text>
         </box>
-        {suggestedEditors.map((editor) => (
-          <box key={editor.cmd} marginTop={0} flexDirection="row">
-            <text fg="#50fa7b">{editor.cmd}</text>
-            <text fg="#6c6c7c" marginLeft={2}>
-              {editor.desc}
-            </text>
-          </box>
-        ))}
+        <scrollbox height={layout.maxSuggestions} flexDirection="column" overflow="hidden">
+          {suggestedEditors.slice(0, layout.maxSuggestions).map((editor) => (
+            <box key={editor.cmd} height={1} flexDirection="row">
+              <text fg="#50fa7b">{editor.cmd}</text>
+              <text fg="#6c6c7c" marginLeft={2}>
+                {editor.desc}
+              </text>
+            </box>
+          ))}
+        </scrollbox>
 
         {/* Current setting */}
         {currentPath && (
