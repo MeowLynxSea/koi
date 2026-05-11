@@ -35,6 +35,7 @@ import { ConnectingModal } from "./components/connecting-modal.js";
 import { ForkModal } from "./components/fork-modal.js";
 import { ImagePreviewModal } from "./components/image-preview-modal.js";
 import { ExternalEditorModal } from "./components/external-editor-modal.js";
+import { AlertModal } from "./components/alert-modal.js";
 import { openExternalEditor } from "./components/external-editor.js";
 import { MCPSettings } from "./components/mcp/MCPSettings.js";
 import { SkillsMenu } from "../skills/SkillsMenu.js";
@@ -237,6 +238,7 @@ export function App({ renderer, onExit }: AppProps) {
   const [showExternalEditorModal, setShowExternalEditorModal] = useState(false);
   const [externalEditorBusy, setExternalEditorBusy] = useState(false);
   const [externalEditorResult, setExternalEditorResult] = useState<string | null | undefined>(undefined);
+  const [externalEditorError, setExternalEditorError] = useState<string | null>(null);
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -763,7 +765,7 @@ export function App({ renderer, onExit }: AppProps) {
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
-    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal || showExternalEditorModal || externalEditorBusy;
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal || showExternalEditorModal || externalEditorBusy || externalEditorError !== null;
 
   // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
@@ -1040,9 +1042,12 @@ export function App({ renderer, onExit }: AppProps) {
           const inputText = inputBoxRef.current?.getText?.() ?? "";
           // Launch external editor (renderer.suspend() restores terminal state)
           // Use state to pass result back to InputBox via useEffect
-          openExternalEditor(renderer, editorPath, inputText, (result) => {
+          openExternalEditor(renderer, editorPath, inputText, (result, error) => {
             if (result !== null && result.trim()) {
               setExternalEditorResult(result);
+            } else if (error) {
+              // Show error modal
+              setExternalEditorError(error.message);
             }
             setExternalEditorBusy(false);
           });
@@ -1224,6 +1229,12 @@ export function App({ renderer, onExit }: AppProps) {
           setExternalEditor(path || null);
           setShowExternalEditorModal(false);
         }}
+      />
+      <AlertModal
+        isActive={externalEditorError !== null}
+        title="External Editor Error"
+        message={externalEditorError ?? ""}
+        onClose={() => setExternalEditorError(null)}
       />
     </box>
   );
