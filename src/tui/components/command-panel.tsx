@@ -58,7 +58,7 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
 
   // Build filtered flat list
   const query = filterText;
-  const { flatItems, cmdCount } = useMemo(() => {
+  const { flatItems } = useMemo(() => {
     let filtered = commands;
     if (query) {
       const q = query.toLowerCase();
@@ -95,7 +95,7 @@ export function CommandPanel({ isActive, onClose, commands }: CommandPanelProps)
         cmdIdx++;
       }
     }
-    return { flatItems: items, cmdCount: cmdIdx };
+    return { flatItems: items };
   }, [commands, query]);
 
   // Effective scroll offset (synced from ref)

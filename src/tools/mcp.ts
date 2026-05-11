@@ -4,6 +4,7 @@
 
 import type { McpToolResult, SerializedTool } from "../services/mcp/types.js";
 import { getMcpConnection } from "../services/mcp/index.js";
+import { truncateToolContent, MCP_TOOL_LIMITS } from "../agent/tool-output-guard.js";
 
 export interface KoiMcpTool {
   name: string;
@@ -53,7 +54,19 @@ export async function executeMcpToolCall(toolName: string, args: Record<string, 
 
   try {
     const result = await connection.client.callTool({ name: originalToolName, arguments: args });
-    return { success: true, content: result.content as Array<{ type: string; text?: string; [key: string]: unknown }> };
+
+    // 截断过长的结果（双重保障：也在 afterToolCall 钩子层截断）
+    const originalContent = result.content as Array<{ type: string; text?: string; [key: string]: unknown }>;
+    const { content: truncatedContent, wasTruncated } = truncateToolContent(
+      originalContent as Parameters<typeof truncateToolContent>[0],
+      MCP_TOOL_LIMITS
+    );
+
+    return {
+      success: true,
+      content: truncatedContent as McpToolResult["content"],
+      isTruncated: wasTruncated,
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     return { success: false, error: errorMessage, isError: true, content: [{ type: "text", text: errorMessage }] };

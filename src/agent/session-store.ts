@@ -36,6 +36,7 @@ import {
   initBundledSkills,
   type SkillCommand,
 } from "../skills/index.js";
+import { createToolOutputGuard } from "./tool-output-guard.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
 const KOI_SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
@@ -450,7 +451,7 @@ async function createAgentSessionWithConfig(
   const logLine = `[${new Date().toISOString()}] createAgentSessionWithConfig: injecting ${config.skills.length} skills into session\n`;
   try { fs.appendFileSync(logPath, logLine); } catch {}
   
-  return createAgentSession({
+  const result = await createAgentSession({
     cwd: process.cwd(),
     agentDir: PI_AGENT_DIR,
     authStorage: config.authStorage,
@@ -462,6 +463,12 @@ async function createAgentSessionWithConfig(
     sessionManager,
     resourceLoader,
   });
+
+  // Install tool output guard to prevent context overflow from large tool results
+  const afterToolCall = createToolOutputGuard();
+  result.session.agent.afterToolCall = afterToolCall;
+
+  return result;
 }
 
 /**

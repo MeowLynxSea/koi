@@ -130,6 +130,8 @@ export interface McpToolResult {
   content?: Array<{ type: string; text?: string; [key: string]: unknown }>;
   error?: string;
   isError?: boolean;
+  /** Whether the result content was truncated due to size limits */
+  isTruncated?: boolean;
 }
 
 // Configuration Validation
