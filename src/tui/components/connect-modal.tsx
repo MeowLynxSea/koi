@@ -5,7 +5,7 @@
  * verification (animated) → result.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
 import type { TextareaRenderable, MouseEvent } from "@opentui/core";
@@ -44,9 +44,26 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
   const [verifyResult, setVerifyResult] = useState<{ success: boolean; message: string } | null>(null);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [filterText, setFilterText] = useState("");
   const inputRef = useRef<TextareaRenderable>(null);
+  const searchRef = useRef<TextareaRenderable>(null);
 
   const listHeight = Math.min(10, Math.floor(height * 0.35));
+
+  // Filter providers based on search text
+  const query = filterText;
+  const filteredProviders = useMemo(() => {
+    if (!query) return providers;
+    const q = query.toLowerCase();
+    return providers.filter((p) => p.toLowerCase().includes(q));
+  }, [providers, query]);
+
+  const handleSearchChange = () => {
+    const text = searchRef.current?.editBuffer.getText() ?? "";
+    setFilterText(text);
+    setSelectedProviderIndex(0);
+    setScrollOffset(0);
+  };
 
   // Reset when opened
   useEffect(() => {
@@ -58,6 +75,12 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
       setVerifyResult(null);
       setSpinnerFrame(0);
       setScrollOffset(0);
+      setFilterText("");
+      const ta = searchRef.current;
+      if (ta) {
+        ta.editBuffer.replaceText("");
+        ta.focus();
+      }
     }
   }, [isActive]);
 
@@ -140,6 +163,13 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
     }
   }, [selectedProviderIndex, listHeight, scrollOffset]);
 
+  // Reset selected index when filter changes
+  useEffect(() => {
+    if (selectedProviderIndex >= filteredProviders.length && filteredProviders.length > 0) {
+      setSelectedProviderIndex(filteredProviders.length - 1);
+    }
+  }, [filteredProviders.length, selectedProviderIndex]);
+
   const handleSelectProvider = (provider: string) => {
     setSelectedProvider(provider);
     if (isProviderConfigured(provider)) {
@@ -183,11 +213,11 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
         return;
       }
       if (key.name === "down") {
-        setSelectedProviderIndex((prev) => Math.max(0, Math.min(providers.length - 1, prev + 1)));
+        setSelectedProviderIndex((prev) => Math.max(0, Math.min(filteredProviders.length - 1, prev + 1)));
         return;
       }
       if (key.name === "return") {
-        const provider = providers[selectedProviderIndex];
+        const provider = filteredProviders[selectedProviderIndex];
         if (provider) {
           handleSelectProvider(provider);
         }
@@ -236,7 +266,7 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
 
   if (!isActive) return null;
 
-  const visibleProviders = providers.slice(scrollOffset, scrollOffset + listHeight);
+  const visibleProviders = filteredProviders.slice(scrollOffset, scrollOffset + listHeight);
 
   return (
     <box
@@ -263,7 +293,37 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
             <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">
               Select Provider
             </text>
+
+            {/* Filter input */}
+            <box height={1} marginTop={1} backgroundColor="#16213e" paddingX={1}>
+              <textarea
+                ref={searchRef}
+                initialValue=""
+                focused={isActive}
+                showCursor
+                height={1}
+                wrapMode="none"
+                textColor="#f8f8f2"
+                backgroundColor="#16213e"
+                onContentChange={handleSearchChange}
+              />
+            </box>
+
+            {/* Separator */}
+            <box height={1} marginTop={1}>
+              <text fg="#4a4a5a">
+                {"─".repeat(56)}
+              </text>
+            </box>
+
             <box height={listHeight} flexDirection="column" overflow="hidden" marginTop={1}>
+              {filteredProviders.length === 0 && (
+                <box height={1}>
+                  <text fg="#6c6c7c">
+                    No providers match "{filterText}"
+                  </text>
+                </box>
+              )}
               {visibleProviders.map((p, i) => {
                 const actualIndex = scrollOffset + i;
                 const configured = isProviderConfigured(p);
@@ -294,7 +354,7 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
             </box>
             <box marginTop={1}>
               <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-                ↑↓ Navigate  Enter Select  Esc Cancel
+                ↑↓ Navigate  Enter Select  Esc Cancel  Type to search
               </text>
             </box>
           </>

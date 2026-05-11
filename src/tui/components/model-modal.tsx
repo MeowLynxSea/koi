@@ -11,7 +11,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { createTextAttributes } from "@opentui/core";
-import type { MouseEvent } from "@opentui/core";
+import type { MouseEvent, TextareaRenderable } from "@opentui/core";
 import {
   getConfiguredProviders,
   getCurrentModel,
@@ -47,7 +47,9 @@ export function ModelModal({
   const configuredProviders = getConfiguredProviders();
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<"primary" | "auxiliary">("primary");
+  const [filterText, setFilterText] = useState("");
   const scrollOffsetRef = useRef(0);
+  const inputRef = useRef<TextareaRenderable>(null);
 
   const listHeight = Math.min(12, Math.floor(height * 0.4));
   const primaryModel = getCurrentModel();
@@ -58,30 +60,76 @@ export function ModelModal({
     if (isActive) {
       setSelectedModelIndex(0);
       setActiveTab("primary");
+      setFilterText("");
       scrollOffsetRef.current = 0;
+      const ta = inputRef.current;
+      if (ta) {
+        ta.editBuffer.replaceText("");
+        ta.focus();
+      }
     }
   }, [isActive]);
 
-  // Build flat list of providers + models
+  // Build flat list of providers + models with filtering
+  const query = filterText;
   const { flatItems, modelCount } = useMemo(() => {
-    const items: FlatItem[] = [];
-    let mIdx = 0;
+    // First, collect all models with their provider info
+    const allModels: Array<{ provider: string; modelId: string; modelName: string }> = [];
     for (const provider of configuredProviders) {
-      items.push({ type: "header", provider });
       const models = getProviderModels(provider);
       for (const model of models) {
-        items.push({
-          type: "model",
+        allModels.push({
           provider,
           modelId: model.id,
           modelName: model.name || model.id,
+        });
+      }
+    }
+
+    // Filter and sort by match priority
+    let filteredModels = allModels;
+    if (query) {
+      const q = query.toLowerCase();
+      filteredModels = allModels
+        .map((m) => {
+          const providerMatch = m.provider.toLowerCase().includes(q);
+          const modelIdMatch = m.modelId.toLowerCase().includes(q);
+          const modelNameMatch = m.modelName.toLowerCase().includes(q);
+          const priority = !providerMatch && !modelIdMatch && !modelNameMatch ? 3
+            : providerMatch ? 0
+            : modelIdMatch ? 1
+            : 2;
+          return { model: m, priority };
+        })
+        .filter((item) => item.priority < 3)
+        .sort((a, b) => a.priority - b.priority)
+        .map((item) => item.model);
+    }
+
+    // Group by provider for display
+    const grouped = new Map<string, typeof filteredModels>();
+    for (const m of filteredModels) {
+      if (!grouped.has(m.provider)) grouped.set(m.provider, []);
+      grouped.get(m.provider)!.push(m);
+    }
+
+    const items: FlatItem[] = [];
+    let mIdx = 0;
+    for (const [provider, models] of grouped) {
+      items.push({ type: "header", provider });
+      for (const m of models) {
+        items.push({
+          type: "model",
+          provider: m.provider,
+          modelId: m.modelId,
+          modelName: m.modelName,
           modelIndex: mIdx,
         });
         mIdx++;
       }
     }
     return { flatItems: items, modelCount: mIdx };
-  }, [configuredProviders]);
+  }, [configuredProviders, query]);
 
   // Clamp selected index
   useEffect(() => {
@@ -89,6 +137,13 @@ export function ModelModal({
       setSelectedModelIndex(modelCount - 1);
     }
   }, [modelCount, selectedModelIndex]);
+
+  const handleContentChange = () => {
+    const text = inputRef.current?.editBuffer.getText() ?? "";
+    setFilterText(text);
+    setSelectedModelIndex(0);
+    scrollOffsetRef.current = 0;
+  };
 
   // Effective scroll offset
   const effectiveScrollOffset = scrollOffsetRef.current;
@@ -243,6 +298,28 @@ export function ModelModal({
           </box>
         </box>
 
+        {/* Filter input */}
+        <box height={1} marginTop={1} backgroundColor="#16213e" paddingX={1}>
+          <textarea
+            ref={inputRef}
+            initialValue=""
+            focused={isActive}
+            showCursor
+            height={1}
+            wrapMode="none"
+            textColor="#f8f8f2"
+            backgroundColor="#16213e"
+            onContentChange={handleContentChange}
+          />
+        </box>
+
+        {/* Separator */}
+        <box height={1} marginTop={1}>
+          <text fg="#4a4a5a">
+            {"─".repeat(56)}
+          </text>
+        </box>
+
         <box
           height={listHeight}
           flexDirection="column"
@@ -253,6 +330,13 @@ export function ModelModal({
             <box height={1}>
               <text fg="#6c6c7c">
                 No providers configured. Use /connect to add one.
+              </text>
+            </box>
+          )}
+          {configuredProviders.length > 0 && modelCount === 0 && (
+            <box height={1}>
+              <text fg="#6c6c7c">
+                No models match "{filterText}"
               </text>
             </box>
           )}
@@ -301,7 +385,7 @@ export function ModelModal({
             ↑↓ Navigate  Enter Select  Esc Cancel
           </text>
           <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-            Tab Switch
+            Type to search  Tab Switch
           </text>
         </box>
       </box>
