@@ -105,7 +105,7 @@ class SubagentRegistry {
    * Clear all subagents for a session (called when switching sessions).
    * Running subagents are kept in memory but won't be displayed.
    */
-  clearSession(sessionId: string): void {
+  clearSession(_sessionId: string): void {
     // Just emit to trigger UI refresh without removing entries
     this.emit();
   }

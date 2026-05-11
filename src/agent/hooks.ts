@@ -837,6 +837,8 @@ export function useKoiAgent(): KoiAgentState {
           // UI state (empty, will be populated by actual UI interactions)
           expandedMessages: [],
           collapsedMessages: [],
+          // Subagent state (empty, will be restored on session load)
+          subagents: [],
         };
         saveKoiState(sessionId, state);
         globalTaskManager.save(sessionId);
@@ -977,6 +979,8 @@ export function useKoiAgent(): KoiAgentState {
       // UI state
       expandedMessages: [],
       collapsedMessages: [],
+      // Subagent state (empty, will be restored on session load)
+      subagents: [],
     }),
     []
   );
@@ -1262,6 +1266,7 @@ export function useKoiAgent(): KoiAgentState {
         activeTools: restoredActiveTools,
         expandedMessages: [],
         collapsedMessages: [],
+        subagents: [],
       };
       saveKoiState(session.sessionId, forkedState);
 
