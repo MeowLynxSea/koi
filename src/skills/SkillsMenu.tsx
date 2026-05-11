@@ -47,17 +47,11 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill: _onInvoke
   // Memoize layout calculations to prevent recalculation on every render
   const layout = useMemo(() => {
     const panelWidth = Math.min(80, Math.max(50, Math.floor(width * 0.8)));
-    // Base panel height without details, account for header(1) + input(1) + separator(1) + padding(2) = 5
-    const basePanelHeight = Math.min(height - 4, 25);
-    const inputHeight = 1;
-    const separatorHeight = 1;
-    const headerHeight = 1;
-    const listHeight = Math.max(3, basePanelHeight - inputHeight - separatorHeight - 2);
-    // When details panel is shown, calculate available space dynamically
-    const availableHeight = height - 4 - headerHeight - inputHeight - separatorHeight - 2;
-    const detailsHeight = showDetails ? Math.min(10, Math.max(3, availableHeight - listHeight)) : 0;
-    const panelHeight = basePanelHeight + detailsHeight;
-    return { panelWidth, panelHeight, listHeight, detailsHeight };
+    // Use height * 0.4 for list, matching CommandPanel approach
+    const listHeight = Math.min(20, Math.max(3, Math.floor(height * 0.4)));
+    // Details max 3 lines (separator + 2 content lines)
+    const detailsHeight = showDetails ? 3 : 0;
+    return { panelWidth, listHeight, detailsHeight };
   }, [width, height, showDetails]);
 
   // Group skills by source
@@ -203,7 +197,7 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill: _onInvoke
   const effectiveScrollOffset = scrollOffsetRef.current;
   const visibleItems = flatItems.slice(effectiveScrollOffset, effectiveScrollOffset + layout.listHeight);
 
-  // Render details panel
+  // Render details panel (max 3 lines: separator + 2 content)
   const renderDetails = () => {
     if (!showDetails || !selectedSkill) return null;
 
@@ -216,13 +210,13 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill: _onInvoke
     ].filter(Boolean);
 
     return (
-      <box height={layout.detailsHeight} flexDirection="column" marginTop={1}>
+      <box height={layout.detailsHeight} flexDirection="column">
         <box height={1}>
           <text fg="#6272a4">
             {"─".repeat(layout.panelWidth - 4)}
           </text>
         </box>
-        {details.slice(0, layout.detailsHeight - 1).map((line, idx) => (
+        {details.slice(0, 2).map((line, idx) => (
           <box key={idx} height={1}>
             <text fg="#8be9fd" wrapMode="none">{line}</text>
           </box>
@@ -244,7 +238,6 @@ export function SkillsMenu({ isActive, onClose, skills, onInvokeSkill: _onInvoke
     >
       <box
         width={layout.panelWidth}
-        height={layout.panelHeight}
         flexDirection="column"
         borderStyle="rounded"
         borderColor="#6272a4"
