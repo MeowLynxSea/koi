@@ -89,6 +89,9 @@ jobs:
         run: |
           npm version ${{ github.event.inputs.version }} --no-git-tag-version
 
+      - name: Configure npm
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+
       - name: Publish to npm
         run: npm publish --access public
         env:
