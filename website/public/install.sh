@@ -61,12 +61,34 @@ echo "  Installing KOI..."
 bun install -g "@meowlynxsea/koi@${KOI_VERSION}" --ignore-scripts
 
 # ─── Get the installed KOI package path ───
-GLOBAL_PREFIX=$(bun pm global --globaldir 2>/dev/null || dirname $(bun which koi 2>/dev/null || echo "")/../..)
-KOI_PATH="${GLOBAL_PREFIX}/koi"
+# Try multiple methods to find the global install location
+if command -v koi >/dev/null 2>&1; then
+  KOIPATH=$(which koi 2>/dev/null)
+  KOIPATH=$(readlink -f "$KOIPATH" 2>/dev/null || echo "$KOIPATH")
+  KOIPATH=$(dirname "$(dirname "$KOIPATH")" 2>/dev/null || dirname "$KOIPATH")
+  KOIPATH="${KOIPATH}/koi"
+else
+  # Fallback: use bun pm bin -g to get bin dir, then go up
+  GLOBAL_BIN=$(bun pm bin -g 2>/dev/null || echo "")
+  if [ -n "$GLOBAL_BIN" ]; then
+    KOIPATH="${GLOBAL_BIN}/../.."
+  else
+    # Try common paths
+    for prefix in "$HOME/.bun/lib" "$HOME/.local/share/bun" "/usr/local/lib/bun"; do
+      if [ -d "$prefix/koi" ]; then
+        KOIPATH="$prefix/koi"
+        break
+      fi
+    done
+  fi
+fi
 
-# Fallback to common global paths
+# Ensure we have a path
+KOI_PATH="${KOI_PATH:-${KOIPATH:-unknown}}"
+
+# If not found, try the scoped package path
 if [ ! -d "$KOI_PATH" ]; then
-  KOI_PATH="${GLOBAL_PREFIX}/@meowlynxsea/koi"
+  KOIPATH="${KOIPATH}/@meowlynxsea/koi"
 fi
 
 echo "  KOI installed at: $KOI_PATH"

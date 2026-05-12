@@ -53,10 +53,38 @@ Write-Host "  Installing KOI..." -ForegroundColor Cyan
 & bun install -g "@meowlynxsea/koi@latest" --ignore-scripts
 
 # ─── Get the installed KOI package path ───
-$globalPrefix = & bun pm global --globaldir 2>$null
+# Try multiple methods to find the global install location
+$globalBinDir = & bun pm bin -g 2>$null
+
+if ($globalBinDir) {
+    $globalPrefix = Split-Path $globalBinDir -Parent
+} else {
+    # Fallback: try common Windows global install paths
+    $bunInstall = $env:BUN_INSTALL
+    if (-not $bunInstall) {
+        $possiblePaths = @(
+            "$env:LOCALAPPDATA\Programs\bun",
+            "$env:APPDATA\Programs\bun",
+            "$env:USERPROFILE\.bun"
+        )
+        foreach ($path in $possiblePaths) {
+            if (Test-Path $path) {
+                $bunInstall = $path
+                break
+            }
+        }
+    }
+    if ($bunInstall) {
+        $globalPrefix = Join-Path $bunInstall "lib"
+    } else {
+        # Last resort: use npm global prefix
+        $globalPrefix = & npm config get prefix 2>$null
+    }
+}
+
 $koiPath = Join-Path $globalPrefix "koi"
 
-# If not found in globaldir, try the global installation path
+# If not found, try the scoped package path
 if (-not (Test-Path $koiPath)) {
     $koiPath = Join-Path $globalPrefix "@meowlynxsea\koi"
 }
