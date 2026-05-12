@@ -117,3 +117,16 @@ if (existsSync(indexHmk8xzt3Path)) {
 }
 
 console.log("\nPostinstall complete.");
+
+// Fix main.js: replace scoped package imports with relative paths for Windows compatibility
+const mainJsPath = join(rootDir, "dist", "main.js");
+if (existsSync(mainJsPath)) {
+  let content = readFileSync(mainJsPath, "utf-8");
+  // Replace: import(`@opentui/core-${platform}-${arch}/index.js`)
+  // With:    import(`./node_modules/@opentui/core-${platform}-${arch}/index.js`)
+  if (content.includes("`@opentui/core-")) {
+    content = content.replace(/`@opentui\/core-/g, "`./node_modules/@opentui/core-");
+    writeFileSync(mainJsPath, content);
+    console.log("Fixed dynamic imports in main.js for Windows compatibility");
+  }
+}
