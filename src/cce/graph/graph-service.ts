@@ -877,7 +877,7 @@ export class GraphService {
   // Boot Links Management
   // =====================================================================
 
-  async addBootLink(uri: string, namespace = ""): Promise<{ id: number; target_uri: string }> {
+  async addBootLink(uri: string, _namespace = ""): Promise<{ id: number; target_uri: string }> {
     const targetUri = uri.trim();
     if (!targetUri) throw new Error("URI cannot be empty");
     
@@ -895,13 +895,13 @@ export class GraphService {
     return { id: row[0], target_uri: row[1] };
   }
 
-  async removeBootLink(uri: string, namespace = ""): Promise<{ removed_uri: string }> {
+  async removeBootLink(uri: string, _namespace = ""): Promise<{ removed_uri: string }> {
     const targetUri = uri.trim();
     await this.db.execute("DELETE FROM boot_links WHERE target_uri = ?", [targetUri]);
     return { removed_uri: targetUri };
   }
 
-  async getBootLinks(namespace = ""): Promise<Array<{ id: number; target_uri: string; created_at: string | null }>> {
+  async getBootLinks(_namespace = ""): Promise<Array<{ id: number; target_uri: string; created_at: string | null }>> {
     const rows = await this.db.fetchall<[number, string, string | null]>(
       "SELECT id, target_uri, created_at FROM boot_links ORDER BY created_at DESC"
     );

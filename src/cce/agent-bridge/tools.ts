@@ -423,7 +423,7 @@ async function _generateBootView(graph: GraphService, namespace: string): Promis
     for (const link of links) {
       lines.push(`## ${link.target_uri}`);
       const [domain, path] = link.target_uri.match(/^([a-zA-Z_][a-zA-Z0-9_]*):\/\/(.*)$/)
-        ? [link.target_uri.split("://")[0], link.target_uri.split("://")[1]]
+        ? [link.target_uri.split("://")[0], link.target_uri.split("://")[1] ?? link.target_uri]
         : ["code", link.target_uri];
       const memory = await graph.getMemoryByPath(path, domain, namespace);
       if (memory && memory['content']) {
