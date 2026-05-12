@@ -321,7 +321,11 @@ export function SideBar({
 
       {/* CCE Status */}
       {onOpenCce && (
-        <CceStatusBar onClick={onOpenCce} />
+        <>
+          <text> </text>
+          <CceStatusBar onClick={onOpenCce} />
+          <text> </text>
+        </>
       )}
 
       {/* Monitors section */}
