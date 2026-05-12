@@ -713,6 +713,21 @@ export class GraphService {
     return result;
   }
 
+  async getLinkedMemoryNodes(codeNodeUuid: string, namespace = ""): Promise<Array<Record<string, unknown>>> {
+    const rows = await this.db.fetchall<[string]>(
+      `SELECT memory_node_uuid FROM code_links WHERE code_node_uuid = ? AND namespace = ?`,
+      [codeNodeUuid, namespace]
+    );
+    const result: Array<Record<string, unknown>> = [];
+    for (const [memoryUuid] of rows) {
+      const mem = await this.getMemoryByNodeUuid(memoryUuid, namespace);
+      if (mem && (mem['paths'] as string[]).length > 0) {
+        result.push({ node_uuid: memoryUuid, uri: (mem['paths'] as string[])[0] });
+      }
+    }
+    return result;
+  }
+
   // =====================================================================
   // Brain: Activation & Episodes
   // =====================================================================

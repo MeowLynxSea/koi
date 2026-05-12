@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "dev": "bun run src/main.tsx",
-    "build": "bun build src/main.tsx --outdir dist --target bun && cp node_modules/@opentui/core/parser.worker.js dist/ && cp -r node_modules/@opentui/core/assets dist/opentui-assets",
+    "build": "bun build src/main.tsx --outdir dist --target bun && cp node_modules/@opentui/core/parser.worker.js dist/ && cp -r node_modules/@opentui/core/assets dist/opentui-assets && mkdir -p dist/cce-frontend && cp -r src/cce/web/frontend/dist/* dist/cce-frontend/",
     "check": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"

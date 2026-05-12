@@ -67,10 +67,10 @@ export class SearchIndexer {
   private async checkFts5(): Promise<boolean> {
     if (this.fts5Available !== null) return this.fts5Available;
     try {
-      const row = await this.db.fetchone<{ n: number }>(
+      const row = await this.db.fetchone<[number]>(
         "SELECT 1 as n FROM sqlite_master WHERE type='table' AND name='context_vectors_fts'"
       );
-      this.fts5Available = row?.n === 1;
+      this.fts5Available = row?.[0] === 1;
     } catch {
       this.fts5Available = false;
     }

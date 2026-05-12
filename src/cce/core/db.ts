@@ -56,16 +56,16 @@ export class DatabaseManager {
     if (this._closed) throw new Error("Database is closed");
     await Promise.resolve();
     const stmt = this.db.prepare(sql);
-    const row = stmt.get(...(params as any[])) as T | null;
+    const rows = stmt.values(...(params as any[])) as T[];
     stmt.finalize();
-    return row ?? null;
+    return rows[0] ?? null;
   }
 
   async fetchall<T = DbRow>(sql: string, params: unknown[] = []): Promise<T[]> {
     if (this._closed) throw new Error("Database is closed");
     await Promise.resolve();
     const stmt = this.db.prepare(sql);
-    const rows = stmt.all(...(params as any[])) as T[];
+    const rows = stmt.values(...(params as any[])) as T[];
     stmt.finalize();
     return rows;
   }
@@ -138,15 +138,15 @@ export class Transaction {
   async fetchone<T = DbRow>(sql: string, params: unknown[] = []): Promise<T | null> {
     await Promise.resolve();
     const stmt = this.db.prepare(sql);
-    const row = stmt.get(...(params as any[])) as T | null;
+    const rows = stmt.values(...(params as any[])) as T[];
     stmt.finalize();
-    return row ?? null;
+    return rows[0] ?? null;
   }
 
   async fetchall<T = DbRow>(sql: string, params: unknown[] = []): Promise<T[]> {
     await Promise.resolve();
     const stmt = this.db.prepare(sql);
-    const rows = stmt.all(...(params as any[])) as T[];
+    const rows = stmt.values(...(params as any[])) as T[];
     stmt.finalize();
     return rows;
   }

@@ -1,8 +1,0 @@
-body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
-.tab-btn.active { border-bottom: 2px solid #22d3ee; }
-.context-item { cursor: pointer; transition: background 0.15s; }
-.context-item:hover { background: #1f2937; }
-.wm-slot { border-left: 3px solid #a855f7; padding-left: 0.75rem; }
-.activation-bar { height: 4px; background: #4b5563; border-radius: 2px; overflow: hidden; }
-.activation-bar > div { height: 100%; background: #a855f7; }
-#maintenance-log { white-space: pre-wrap; }

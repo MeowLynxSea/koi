@@ -18,10 +18,10 @@ export async function initDb(db: DatabaseManager): Promise<void> {
   await db.executescript(schemaSql);
 
   // Version check & migrations
-  const row = await db.fetchone<{ version: number }>(
+  const row = await db.fetchone<[number]>(
     "SELECT MAX(version) as version FROM _schema_version"
   );
-  const currentVersion = row?.version ?? 0;
+  const currentVersion = row?.[0] ?? 0;
 
   if (currentVersion < TARGET_VERSION) {
     // Future migrations go here
@@ -34,10 +34,10 @@ export async function initDb(db: DatabaseManager): Promise<void> {
 
 export async function checkFts5Support(db: DatabaseManager): Promise<boolean> {
   try {
-    const row = await db.fetchone<{ n: number }>(
+    const row = await db.fetchone<[number]>(
       "SELECT 1 as n FROM sqlite_master WHERE type='table' AND name='context_vectors_fts'"
     );
-    return row?.n === 1;
+    return row?.[0] === 1;
   } catch {
     return false;
   }
