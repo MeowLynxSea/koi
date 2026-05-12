@@ -30,6 +30,9 @@ while (!existsSync(join(packageRoot, "dist/main.js"))) {
   packageRoot = parent;
 }
 
+// Set environment variable for native modules
+process.env.KOI_PACKAGE_ROOT = packageRoot;
+
 // Import and run main
 const { main } = await import(join(packageRoot, "dist/main.js"));
 await main();

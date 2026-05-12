@@ -104,7 +104,7 @@ var __KOI_ONNX_PATH__;
 (function() {
   var _p = process.platform === 'win32' ? 'win32' : process.platform;
   var _a = process.arch;
-  var _r = process.cwd();
+  var _r = process.env.KOI_PACKAGE_ROOT || process.cwd();
   var _koiNativeBase = _r + '/native';
   __KOI_NATIVE_BASE__ = _koiNativeBase;
   __KOI_OPENTUI_PATH__ = _koiNativeBase + '/opentui/' + _p + '/' + _a;
