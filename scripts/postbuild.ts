@@ -293,10 +293,24 @@ if (clipboardRequirePattern.test(content)) {
   }
 }
 
-// Replace "Cannot require module" paths - this is what Bun throws when local file exists
-content = content.replace(/"Cannot require module "\+"\.\/clipboard\.([^"]+)"/g,
-  `"Cannot require module " + __KOI_CLIPBOARD_PATH__ + "/clipboard.$1"`);
-console.log("[postbuild] Replaced clipboard 'Cannot require module' paths");
+// Replace "Cannot require module" IIFE - this is what Bun throws when local file exists
+// Bun converts require() to throw Error IIFE when it can't find the file at bundle time
+// We need to replace the entire IIFE with a proper __require() call
+// Pattern: nativeBinding = (()=>{throw new Error("Cannot require module " + __KOI_CLIPBOARD_PATH__ + "/clipboard.xxx.node");})();
+const clipboardIIFEPattern = /nativeBinding = \(\(\)=>\{throw new Error\("Cannot require module " \+ __KOI_CLIPBOARD_PATH__ \+ "\/clipboard\.([^"]+)"\);\}\)\(\);/g;
+const clipboardIIFEMatches = content.match(clipboardIIFEPattern);
+if (clipboardIIFEMatches) {
+  content = content.replace(clipboardIIFEPattern, "nativeBinding = __require(__KOI_CLIPBOARD_PATH__ + \"/clipboard.$1\");");
+  console.log(`[postbuild] Fixed ${clipboardIIFEMatches.length} clipboard IIFE require(s)`);
+}
+
+// Also handle the case where __KOI_CLIPBOARD_PATH__ isn't set yet (before initCode runs)
+const clipboardIIFEAltPattern = /nativeBinding = \(\(\)=>\{throw new Error\("Cannot require module " \+ __dirname \+ "\/clipboard\.([^"]+)"\);\}\)\(\);/g;
+const clipboardIIFEAltMatches = content.match(clipboardIIFEAltPattern);
+if (clipboardIIFEAltMatches) {
+  content = content.replace(clipboardIIFEAltPattern, "nativeBinding = __require(__KOI_CLIPBOARD_PATH__ + \"/clipboard.$1\");");
+  console.log(`[postbuild] Fixed ${clipboardIIFEAltMatches.length} clipboard IIFE require(s) (alt pattern)`);
+}
 
 // Clean up dist/node_modules
 const distNodeModules = join(distDir, "node_modules");
