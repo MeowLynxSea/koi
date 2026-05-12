@@ -44,6 +44,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # OS files
 Thumbs.db
 
+# Website (separate git repo)
+website/
+
 patches
 
 reference
