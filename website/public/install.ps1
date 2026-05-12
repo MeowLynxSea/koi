@@ -53,41 +53,22 @@ Write-Host "  Installing KOI..." -ForegroundColor Cyan
 & bun install -g "@meowlynxsea/koi@latest" --ignore-scripts
 
 # ─── Get the installed KOI package path ───
-# Try multiple methods to find the global install location
-$globalBinDir = & bun pm bin -g 2>$null
+# bun pm bin -g gives us .bun/bin, so we go up to .bun, then to the parent where node_modules actually is
+# Global packages are at: C:\Users\Acro node_modules (not in .bun/)
+$globalBinDir = (bun pm bin -g 2>$null)
 
 if ($globalBinDir) {
-    $globalPrefix = Split-Path $globalBinDir -Parent
+    # bin is at .bun/bin, so .bun's parent is the actual node_modules location
+    $bunRoot = Split-Path $globalBinDir -Parent  # .bun
+    $globalPrefix = Split-Path $bunRoot -Parent   # C:\Users\Acro
+    $nodeModulesPath = Join-Path $globalPrefix "node_modules"
 } else {
-    # Fallback: try common Windows global install paths
-    $bunInstall = $env:BUN_INSTALL
-    if (-not $bunInstall) {
-        $possiblePaths = @(
-            "$env:LOCALAPPDATA\Programs\bun",
-            "$env:APPDATA\Programs\bun",
-            "$env:USERPROFILE\.bun"
-        )
-        foreach ($path in $possiblePaths) {
-            if (Test-Path $path) {
-                $bunInstall = $path
-                break
-            }
-        }
-    }
-    if ($bunInstall) {
-        $globalPrefix = Join-Path $bunInstall "lib"
-    } else {
-        # Last resort: use npm global prefix
-        $globalPrefix = & npm config get prefix 2>$null
-    }
+    # Fallback: use user profile as base
+    $globalPrefix = $env:USERPROFILE
+    $nodeModulesPath = Join-Path $globalPrefix "node_modules"
 }
 
-$koiPath = Join-Path $globalPrefix "koi"
-
-# If not found, try the scoped package path
-if (-not (Test-Path $koiPath)) {
-    $koiPath = Join-Path $globalPrefix "@meowlynxsea\koi"
-}
+$koiPath = Join-Path $nodeModulesPath "@meowlynxsea\koi"
 
 Write-Host "  KOI installed at: $koiPath" -ForegroundColor DarkGray
 
@@ -126,10 +107,11 @@ $platformModules = @(
 
 # Install each platform module (they won't conflict since they're different packages)
 foreach ($module in $platformModules) {
-    $modulePath = Join-Path $koiPath "node_modules\$module"
+    $modulePath = Join-Path $nodeModulesPath $module
     if (-not (Test-Path $modulePath)) {
         Write-Host "  Installing $module..." -ForegroundColor DarkGray
-        & bun add $module@$opentuiVersion --global 2>$null
+        # Suppress all output
+        $process = Start-Process -FilePath "bun" -ArgumentList "add", "${module}@${opentuiVersion}", "--global" -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:TEMP\bun_out.txt" -RedirectStandardError "$env:TEMP\bun_err.txt"
     }
 }
 
@@ -143,7 +125,7 @@ Write-Host ""
 Write-Host "  Running postinstall script..." -ForegroundColor Cyan
 $postinstallScript = Join-Path $koiPath "scripts\postinstall.ts"
 if (Test-Path $postinstallScript) {
-    & bun run $postinstallScript 2>$null
+    $process = Start-Process -FilePath "bun" -ArgumentList "run", $postinstallScript -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:TEMP\bun_postinstall_out.txt" -RedirectStandardError "$env:TEMP\bun_postinstall_err.txt"
 }
 
 Write-Host ""
