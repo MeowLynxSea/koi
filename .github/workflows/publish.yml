@@ -4,141 +4,110 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g., 0.2.21)'
+        description: 'Version to publish (e.g., 0.2.30)'
         required: true
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            platform: darwin
-            arch: arm64
-          - os: macos-latest
-            platform: darwin
-            arch: x64
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-          - os: ubuntu-latest
-            platform: linux
-            arch: arm64
-          - os: windows-latest
-            platform: win32
-            arch: x64
-          - os: windows-latest
-            platform: win32
-            arch: arm64
-
-    runs-on: ${{ matrix.os }}
-
+  # Each platform builds and uploads its own native libraries
+  build-darwin-arm64:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
+      - name: Install deps
         run: bun install --frozen-lockfile
-
       - name: Build
         run: bun run build
-
-      - name: Upload native libraries
+      - name: Upload native
         uses: actions/upload-artifact@v4
         with:
-          name: native-${{ matrix.platform }}-${{ matrix.arch }}
+          name: native-darwin-arm64
           path: native/
           retention-days: 7
 
-  prepare-native:
-    needs: build
+  build-darwin-x64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install deps
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: bun run build
+      - name: Upload native
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-darwin-x64
+          path: native/
+          retention-days: 7
+
+  build-linux-x64:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install all optional dependencies (including cross-platform)
-        run: |
-          # Use npm to install all platforms (bun skips OS-specific optional deps)
-          npm install @opentui/core-darwin-arm64@latest @opentui/core-darwin-x64@latest @opentui/core-linux-arm64@latest @opentui/core-linux-x64@latest @opentui/core-win32-arm64@latest @opentui/core-win32-x64@latest onnxruntime-node@latest
-          # Also need bun for build
-          npm install bun@latest
-
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: native/
-          pattern: native-*
-          merge-multiple: true
-
-      - name: Copy all opentui native libraries
-        run: |
-          echo "=== Copying opentui libraries ==="
-          # Darwin arm64
-          if [ -f "node_modules/@opentui/core-darwin-arm64/libopentui.dylib" ]; then
-            mkdir -p native/opentui/darwin/arm64
-            cp node_modules/@opentui/core-darwin-arm64/libopentui.dylib native/opentui/darwin/arm64/
-            echo "Copied darwin-arm64"
-          else
-            echo "WARNING: darwin-arm64 not found"
-          fi
-          # Darwin x64
-          if [ -f "node_modules/@opentui/core-darwin-x64/libopentui.dylib" ]; then
-            mkdir -p native/opentui/darwin/x64
-            cp node_modules/@opentui/core-darwin-x64/libopentui.dylib native/opentui/darwin/x64/
-            echo "Copied darwin-x64"
-          else
-            echo "WARNING: darwin-x64 not found"
-          fi
-          # Linux arm64
-          if [ -f "node_modules/@opentui/core-linux-arm64/libopentui.so" ]; then
-            mkdir -p native/opentui/linux/arm64
-            cp node_modules/@opentui/core-linux-arm64/libopentui.so native/opentui/linux/arm64/
-            echo "Copied linux-arm64"
-          else
-            echo "WARNING: linux-arm64 not found"
-          fi
-          # Linux x64
-          if [ -f "node_modules/@opentui/core-linux-x64/libopentui.so" ]; then
-            mkdir -p native/opentui/linux/x64
-            cp node_modules/@opentui/core-linux-x64/libopentui.so native/opentui/linux/x64/
-            echo "Copied linux-x64"
-          else
-            echo "WARNING: linux-x64 not found"
-          fi
-          # Windows arm64
-          if [ -f "node_modules/@opentui/core-win32-arm64/libopentui.dll" ]; then
-            mkdir -p native/opentui/win32/arm64
-            cp node_modules/@opentui/core-win32-arm64/libopentui.dll native/opentui/win32/arm64/
-            echo "Copied win32-arm64"
-          else
-            echo "WARNING: win32-arm64 not found"
-          fi
-          # Windows x64
-          if [ -f "node_modules/@opentui/core-win32-x64/libopentui.dll" ]; then
-            mkdir -p native/opentui/win32/x64
-            cp node_modules/@opentui/core-win32-x64/libopentui.dll native/opentui/win32/x64/
-            echo "Copied win32-x64"
-          else
-            echo "WARNING: win32-x64 not found"
-          fi
-          echo "=== Verifying native/opentui ===" && ls -laR native/opentui/
-
-      - name: Upload complete native libraries
+      - name: Install deps
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: bun run build
+      - name: Upload native
         uses: actions/upload-artifact@v4
         with:
-          name: native-complete
+          name: native-linux-x64
           path: native/
           retention-days: 7
 
+  build-linux-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install deps
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: bun run build
+      - name: Upload native
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-arm64
+          path: native/
+          retention-days: 7
+
+  build-win32-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install deps
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: bun run build
+      - name: Upload native
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-win32-x64
+          path: native/
+          retention-days: 7
+
+  build-win32-arm64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install deps
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: bun run build
+      - name: Upload native
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-win32-arm64
+          path: native/
+          retention-days: 7
+
+  # Collect all native libraries and publish
   publish:
-    needs: prepare-native
+    needs: [build-darwin-arm64, build-darwin-x64, build-linux-x64, build-linux-arm64, build-win32-x64, build-win32-arm64]
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -146,7 +115,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -157,11 +125,12 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Download complete native libraries
+      - name: Download all native libraries
         uses: actions/download-artifact@v4
         with:
-          name: native-complete
           path: native/
+          pattern: native-*
+          merge-multiple: true
 
       - name: Verify native libraries
         run: |
