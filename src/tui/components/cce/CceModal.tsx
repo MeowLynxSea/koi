@@ -262,11 +262,11 @@ export function CceModal({ isActive, onClose }: CceModalProps) {
                       const formatBytes = (bytes: number) => {
                         if (bytes === 0) return "0 B";
                         const k = 1024;
-                        const sizes = ["B", "KB", "MB", "GB"];
+                        const sizes = ["B", "KB", "MB", "GB"] as const;
                         const i = Math.floor(Math.log(bytes) / Math.log(k));
-                        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+                        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i] ?? "B"}`;
                       };
-                      return formatBytes(downloadProgress.loaded) + " / " + formatBytes(downloadProgress.total) + " @ " + formatBytes(downloadProgress.speed) + "/s";
+                      return `${formatBytes(downloadProgress.loaded)} / ${formatBytes(downloadProgress.total)} @ ${formatBytes(downloadProgress.speed)}/s`;
                     })()}
                   </text>
                 </>
@@ -276,12 +276,12 @@ export function CceModal({ isActive, onClose }: CceModalProps) {
                     const formatBytes = (bytes: number) => {
                       if (bytes === 0) return "0 B";
                       const k = 1024;
-                      const sizes = ["B", "KB", "MB", "GB"];
+                      const sizes = ["B", "KB", "MB", "GB"] as const;
                       const i = Math.floor(Math.log(bytes) / Math.log(k));
-                      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+                      return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i] ?? "B"}`;
                     };
                     return downloadProgress.loaded > 0
-                      ? formatBytes(downloadProgress.loaded) + " @ " + formatBytes(downloadProgress.speed) + "/s"
+                      ? `${formatBytes(downloadProgress.loaded)} @ ${formatBytes(downloadProgress.speed)}/s`
                       : "Downloading...";
                   })()}
                 </text>

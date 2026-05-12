@@ -232,12 +232,12 @@ async function handleApi(req: Request, pathname: string): Promise<Response> {
       const children = childrenRaw
         .filter(c => c['domain'] === domain)
         .map(c => ({
-          domain: c['domain'], path: c['path'],
-          uri: `${c['domain']}://${c['path']}`,
+          domain: String(c['domain']), path: String(c['path']),
+          uri: `${String(c['domain'])}://${String(c['path'])}`,
           name: (c['path'] as string).split("/").pop(),
-          priority: c['priority'], disclosure: c['disclosure'],
-          content_snippet: c['content_snippet'],
-          approx_children_count: c['approx_children_count'] ?? 0,
+          priority: Number(c['priority']), disclosure: c['disclosure'] as string | null,
+          content_snippet: String(c['content_snippet']),
+          approx_children_count: Number(c['approx_children_count']) ?? 0,
         }))
         .sort((a, b) => (((a.priority as number) ?? 999) - ((b.priority as number) ?? 999)) || (a.path as string).localeCompare(b.path as string));
 
@@ -304,7 +304,7 @@ async function handleApi(req: Request, pathname: string): Promise<Response> {
       const urlObj = new URL(req.url);
       const domain = urlObj.searchParams.get("domain") || "code";
       const pathParam = urlObj.searchParams.get("path") || "";
-      const body = await req.json();
+      const body = await req.json() as { content?: string; priority?: number; disclosure?: string | null };
       const mem = await graph.getMemoryByPath(pathParam, domain, ns);
       if (!mem) return Response.json({ detail: `Path not found: ${domain}://${pathParam}` }, { status: 404 });
 
@@ -316,7 +316,7 @@ async function handleApi(req: Request, pathname: string): Promise<Response> {
         body.priority,
         body.disclosure,
       );
-      return Response.json({ success: true, context_id: result['id'] });
+      return Response.json({ success: true, context_id: String(result['id']) });
     }
 
     if (pathname === "/api/browse/glossary" && req.method === "GET") {
@@ -325,13 +325,13 @@ async function handleApi(req: Request, pathname: string): Promise<Response> {
     }
 
     if (pathname === "/api/browse/glossary" && req.method === "POST") {
-      const body = await req.json();
+      const body = await req.json() as { keyword: string; node_uuid: string };
       const result = await glossary.addGlossaryKeyword(body.keyword, body.node_uuid, ns);
       return Response.json({ success: true, ...result });
     }
 
     if (pathname === "/api/browse/glossary" && req.method === "DELETE") {
-      const body = await req.json();
+      const body = await req.json() as { keyword: string; node_uuid: string };
       await glossary.removeGlossaryKeyword(body.keyword, body.node_uuid, ns);
       return Response.json({ success: true });
     }
@@ -441,7 +441,7 @@ async function handleApi(req: Request, pathname: string): Promise<Response> {
 
     if (pathname === "/api/namespaces" && req.method === "PUT") {
       const name = new URL(req.url).searchParams.get("name");
-      const body = await req.json();
+      const body = await req.json() as { new_name?: string };
       const newName = body.new_name?.trim();
       if (!name || !newName) return Response.json({ detail: "Missing name or new_name" }, { status: 400 });
       if (newName === name) return Response.json({ detail: "New name is the same as old" }, { status: 400 });
@@ -517,7 +517,7 @@ async function handleApi(req: Request, pathname: string): Promise<Response> {
       );
       const episodes = rows.map(([id, nu, type, uri, text, snapshot, strength, createdAt]) => ({
         id, node_uuid: nu, episode_type: type, trigger_uri: uri, trigger_text: text,
-        working_memory_snapshot: snapshot ? JSON.parse(snapshot) : [],
+        working_memory_snapshot: snapshot ? (JSON.parse(snapshot) as unknown[]) : [],
         activation_strength: strength, created_at: createdAt,
       }));
       return Response.json({ node_uuid: nodeUuid, episodes });

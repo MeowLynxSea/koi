@@ -5,6 +5,11 @@
  * which would cause parsing errors. This wrapper filters out non-JSON lines.
  */
 
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+
 import spawn from "cross-spawn";
 import process from "node:process";
 import { getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -69,12 +74,15 @@ function isValidJsonRpc(line: string): boolean {
   }
 }
 
+// Type for the spawned process
+type SpawnedProcess = ReturnType<typeof spawn>;
+
 /**
  * Client transport for stdio with JSON filtering.
  * Filters out non-JSON startup messages from MCP servers.
  */
 export class FilteredStdioClientTransport implements Transport {
-  private _process?: ReturnType<typeof spawn>;
+  private _process?: SpawnedProcess;
   private _readBuffer: ReadBuffer;
   private _serverParams: StdioServerParameters;
 

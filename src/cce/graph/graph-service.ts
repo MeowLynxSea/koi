@@ -807,7 +807,7 @@ export class GraphService {
       episode_type: type,
       trigger_uri: uri,
       trigger_text: text,
-      working_memory_snapshot: snapshot ? JSON.parse(snapshot) : [],
+      working_memory_snapshot: snapshot ? (JSON.parse(snapshot) as unknown[]) : [],
       activation_strength: strength,
       created_at: createdAt,
     }));

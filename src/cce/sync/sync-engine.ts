@@ -26,7 +26,7 @@ function loadSummaryCache(cachePath: string): SummaryCache {
   let data: Record<string, { summary: string; path: string }> = {};
   try {
     if (fs.existsSync(cachePath)) {
-      data = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+      data = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as Record<string, { summary: string; path: string }>;
     }
   } catch {
     data = {};

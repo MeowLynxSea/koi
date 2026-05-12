@@ -36,7 +36,7 @@ export class EmbeddingService {
     if (this.extractor) return;
     if (this.readyPromise) return this.readyPromise;
 
-    this.readyPromise = this._loadModel(onProgress).catch((err) => {
+    this.readyPromise = this._loadModel(onProgress).catch((err: unknown) => {
       this.readyPromise = null;
       throw err;
     });
@@ -101,7 +101,7 @@ export class EmbeddingService {
             }
           : undefined,
       });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("[CCE] Failed to load embedding model:", err);
       throw err;
     }

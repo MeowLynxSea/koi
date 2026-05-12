@@ -169,7 +169,7 @@ export class SearchIndexer {
   private async insertSearchDocuments(documents: Array<Record<string, unknown>>): Promise<void> {
     if (documents.length === 0) return;
 
-    const texts = documents.map((d) => `${d['uri']} ${d['content']} ${(d['disclosure'] as string) || ""}`);
+    const texts = documents.map((d) => `${String(d['uri'])} ${String(d['content'])} ${(d['disclosure'] as string) || ""}`);
     const embeddings = await this.embedding.embed(texts);
 
     for (let i = 0; i < documents.length; i++) {

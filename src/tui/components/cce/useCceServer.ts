@@ -44,7 +44,7 @@ export function useCceServer(): {
 
   const stop = useCallback(() => {
     if (globalServer) {
-      globalServer.stop(true);
+      void globalServer.stop(true);
       globalServer = null;
       globalUrl = null;
     }
@@ -57,9 +57,11 @@ export function useCceServer(): {
 async function findFreePort(startPort: number): Promise<number> {
   for (let port = startPort; port < startPort + 100; port++) {
     try {
-      const server = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } });
-      server.stop(true);
-      return port;
+      const server = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }) as { stop: (force: boolean) => void } | null;
+      if (server) {
+        server.stop(true);
+        return port;
+      }
     } catch {
       // port in use, try next
     }

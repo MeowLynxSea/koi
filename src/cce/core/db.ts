@@ -47,7 +47,7 @@ export class DatabaseManager {
     if (this._closed) throw new Error("Database is closed");
     await Promise.resolve(); // yield
     const stmt = this.db.prepare(sql);
-    const result = stmt.run(...(params as any[]));
+    const result = stmt.run(...(params as Parameters<typeof stmt.run>));
     stmt.finalize();
     return { lastInsertRowid: Number(result.lastInsertRowid), changes: result.changes };
   }
@@ -56,7 +56,7 @@ export class DatabaseManager {
     if (this._closed) throw new Error("Database is closed");
     await Promise.resolve();
     const stmt = this.db.prepare(sql);
-    const rows = stmt.values(...(params as any[])) as T[];
+    const rows = stmt.values(...(params as Parameters<typeof stmt.values>)) as T[];
     stmt.finalize();
     return rows[0] ?? null;
   }
@@ -65,7 +65,7 @@ export class DatabaseManager {
     if (this._closed) throw new Error("Database is closed");
     await Promise.resolve();
     const stmt = this.db.prepare(sql);
-    const rows = stmt.values(...(params as any[])) as T[];
+    const rows = stmt.values(...(params as Parameters<typeof stmt.values>)) as T[];
     stmt.finalize();
     return rows;
   }
@@ -130,7 +130,7 @@ export class Transaction {
   async execute(sql: string, params: unknown[] = []): Promise<{ lastInsertRowid: number; changes: number }> {
     await Promise.resolve();
     const stmt = this.db.prepare(sql);
-    const result = stmt.run(...(params as any[]));
+    const result = stmt.run(...(params as Parameters<typeof stmt.run>));
     stmt.finalize();
     return { lastInsertRowid: Number(result.lastInsertRowid), changes: result.changes };
   }
@@ -138,7 +138,7 @@ export class Transaction {
   async fetchone<T = DbRow>(sql: string, params: unknown[] = []): Promise<T | null> {
     await Promise.resolve();
     const stmt = this.db.prepare(sql);
-    const rows = stmt.values(...(params as any[])) as T[];
+    const rows = stmt.values(...(params as Parameters<typeof stmt.values>)) as T[];
     stmt.finalize();
     return rows[0] ?? null;
   }
@@ -146,7 +146,7 @@ export class Transaction {
   async fetchall<T = DbRow>(sql: string, params: unknown[] = []): Promise<T[]> {
     await Promise.resolve();
     const stmt = this.db.prepare(sql);
-    const rows = stmt.values(...(params as any[])) as T[];
+    const rows = stmt.values(...(params as Parameters<typeof stmt.values>)) as T[];
     stmt.finalize();
     return rows;
   }

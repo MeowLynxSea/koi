@@ -87,9 +87,9 @@ export function createCceToolDefinitions(deps: CceToolDeps): ToolDefinition[] {
           "=".repeat(60),
           "",
           `CONTEXT: ${makeUri(domain, path)}`,
-          `Priority: ★${memory['priority']}`,
+          `Priority: ★${String(memory['priority'])}`,
         ];
-        if (memory['disclosure']) lines.push(`When to recall: ${memory['disclosure']}`);
+        if (memory['disclosure']) lines.push(`When to recall: ${String(memory['disclosure'])}`);
         lines.push("", "=".repeat(60), "", memory['content'] as string, "");
 
         const children = await deps.graph.getChildren(memory['node_uuid'] as string, domain, path, namespace);
@@ -97,8 +97,8 @@ export function createCceToolDefinitions(deps: CceToolDeps): ToolDefinition[] {
           lines.push("=".repeat(60), "", "SUB-CONTEXTS", "=".repeat(60), "");
           for (const child of children) {
             const childUri = makeUri(child['domain'] as string, child['path'] as string);
-            lines.push(`- URI: ${childUri} [★${child['priority']}]`);
-            if (child['disclosure']) lines.push(`  When to recall: ${child['disclosure']}`);
+            lines.push(`- URI: ${childUri} [★${String(child['priority'])}]`);
+            if (child['disclosure']) lines.push(`  When to recall: ${String(child['disclosure'])}`);
             else lines.push("  When to recall: (not set)");
             lines.push("");
           }
@@ -172,9 +172,9 @@ export function createCceToolDefinitions(deps: CceToolDeps): ToolDefinition[] {
         const lines = ["# Sub-Contexts", ""];
         for (const child of children) {
           const childUri = makeUri(child['domain'] as string, child['path'] as string);
-          lines.push(`- ${childUri} [★${child['priority']}]`);
-          lines.push(`  ${child['content_snippet']}`);
-          if (child['disclosure']) lines.push(`  When to recall: ${child['disclosure']}`);
+          lines.push(`- ${childUri} [★${String(child['priority'])}]`);
+          lines.push(`  ${String(child['content_snippet'])}`);
+          if (child['disclosure']) lines.push(`  When to recall: ${String(child['disclosure'])}`);
           lines.push("");
         }
         return { details: {}, content: [{ type: "text", text: lines.join("\n") }] };
@@ -369,7 +369,7 @@ export function createCceToolDefinitions(deps: CceToolDeps): ToolDefinition[] {
         const { content } = params as { content: string };
         const namespace = ns();
         const result = await deps.graph.updateBoot(content, namespace);
-        return { details: result, content: [{ type: "text", text: `Updated system://boot (memory id: ${result['id']})` }] };
+        return { details: result, content: [{ type: "text", text: `Updated system://boot (memory id: ${String(result['id'])})` }] };
       },
     }),
 
@@ -399,7 +399,7 @@ async function _generateIndexView(
   const paths = await graph.getAllPaths(domainFilter, namespace);
   const nodeGroups = new Map<string, Array<Record<string, unknown>>>();
   for (const item of paths) {
-    const key = `${item['domain']}::${item['node_uuid']}`;
+    const key = `${String(item['domain'])}::${String(item['node_uuid'])}`;
     if (!nodeGroups.has(key)) nodeGroups.set(key, []);
     nodeGroups.get(key)!.push(item);
   }
@@ -484,9 +484,9 @@ async function _generateGlossaryView(glossary: GlossaryService, namespace: strin
     return lines.join("\n");
   }
   for (const entry of entries) {
-    lines.push(`- ${entry['keyword']}`);
+    lines.push(`- ${String(entry['keyword'])}`);
     for (const node of (entry['nodes'] as Array<Record<string, unknown>>)) {
-      lines.push(`  -> ${node['uri']}`);
+      lines.push(`  -> ${String(node['uri'])}`);
     }
     lines.push("");
   }

@@ -3,14 +3,29 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", ".crush/**"],
+    ignores: [
+      "dist/**",
+      "node_modules/**",
+      ".crush/**",
+      "src/cce/web/frontend/**",
+    ],
   },
-  tseslint.configs.recommendedTypeChecked,
-  tseslint.configs.strictTypeChecked,
+  ...tseslint.configs.recommendedTypeChecked,
+  ...tseslint.configs.strictTypeChecked,
   {
+    files: ["**/*.ts", "**/*.tsx"],
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.crush/**",
+      "src/cce/web/frontend/**",
+    ],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ["*.config.*"],
+          extraFileExtensions: [".tsx", ".jsx"],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
       globals: {
