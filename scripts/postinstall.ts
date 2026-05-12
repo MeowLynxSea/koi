@@ -4,16 +4,18 @@
  * @opentui/core-darwin-arm64 and similar packages use .ts files as entry points,
  * but bun bundler cannot resolve dynamic .ts imports in bundled output.
  * This script creates .js files that can be resolved at runtime.
+ * It also ensures all platform-specific packages are installed (not just the current platform).
  */
 
 import { existsSync, writeFileSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "..");
 
-// Platform-specific modules that need .js shims
+// Platform-specific modules that need .js shims and installation
 const platformModules = [
   "@opentui/core-darwin-arm64",
   "@opentui/core-darwin-x64",
@@ -22,6 +24,32 @@ const platformModules = [
   "@opentui/core-win32-arm64",
   "@opentui/core-win32-x64",
 ];
+
+// Ensure all platform-specific packages are installed first
+// This is needed because @opentui/core uses dynamic imports based on platform,
+// and npm/bun only installs the current platform's optional dependency
+const coreVersion = (() => {
+  const pkgPath = join(rootDir, "node_modules", "@opentui", "core", "package.json");
+  if (!existsSync(pkgPath)) return null;
+  try {
+    return JSON.parse(readFileSync(pkgPath, "utf-8")).version;
+  } catch {
+    return null;
+  }
+})();
+
+if (coreVersion) {
+  for (const pkg of platformModules) {
+    const pkgPath = join(rootDir, "node_modules", pkg);
+    if (existsSync(pkgPath)) continue;
+    console.log(`Installing ${pkg}...`);
+    try {
+      execSync(`bun add ${pkg}@${coreVersion}`, { cwd: rootDir, stdio: "pipe" });
+    } catch (e) {
+      console.warn(`Warning: Failed to install ${pkg}`);
+    }
+  }
+}
 
 const indexJsContent = `const module = await import("./libopentui.dylib", { with: { type: "file" } });
 export default module.default;
