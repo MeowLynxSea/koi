@@ -114,17 +114,14 @@ for (const { platform, arch } of platforms) {
     execSync(`curl -sL "${downloadUrl}" -o "${zipPath}"`, { stdio: "pipe" });
 
     if (existsSync(zipPath)) {
-      // Extract
-      if (platform === "win32") {
-        execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractDir}' -Force"`, { stdio: "pipe" });
-      } else {
-        execSync(`unzip -o "${zipPath}" -d "${extractDir}"`, { stdio: "pipe" });
-      }
+      // Extract - use unzip for all zip files (works on Linux/Mac, unzip is available on GitHub runners)
+      execSync(`unzip -o "${zipPath}" -d "${extractDir}"`, { stdio: "pipe" });
 
       // Find and copy the library
       const files = readdirSync(extractDir);
       for (const f of files) {
-        if (f.startsWith("libopentui")) {
+        // Windows: opentui.dll, others: libopentui.so/dylib
+        if (f.startsWith("libopentui") || f.startsWith("opentui")) {
           cpSync(join(extractDir, f), destPath);
           console.log(`[postbuild]   opentui/${platform}-${arch}: ${f} (downloaded)`);
           break;
