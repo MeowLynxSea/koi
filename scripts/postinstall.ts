@@ -1,19 +1,19 @@
 /**
  * Post-install script to fix @opentui/core platform-specific modules.
- *
- * @opentui/core-darwin-arm64 and similar packages use .ts files as entry points,
- * but bun bundler cannot resolve dynamic .ts imports in bundled output.
- * This script creates .js files that can be resolved at runtime.
- * It also ensures all platform-specific packages are installed (not just the current platform).
  */
 
-import { existsSync, writeFileSync, readFileSync } from "fs";
+import { existsSync, writeFileSync, readFileSync, mkdirSync, cpSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { execSync } from "child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "..");
+
+console.log(`[DEBUG] __dirname: ${__dirname}`);
+console.log(`[DEBUG] rootDir: ${rootDir}`);
+console.log(`[DEBUG] process.cwd(): ${process.cwd()}`);
+console.log(`[DEBUG] process.platform: ${process.platform}`);
+console.log(`[DEBUG] process.arch: ${process.arch}`);
 
 // Platform-specific modules that need .js shims and installation
 const platformModules = [
@@ -25,28 +25,35 @@ const platformModules = [
   "@opentui/core-win32-x64",
 ];
 
-// Platform modules installation is now handled by the installer scripts
-// to avoid infinite recursion when using bun add in postinstall
-// This script creates shim files AND copies platform modules to dist/node_modules
-
-import { mkdirSync, cpSync } from "fs";
-
 const indexJsContent = `const module = await import("./libopentui.dylib", { with: { type: "file" } });
 export default module.default;
 `;
 
-const indexJsWinContent = `const module = await import("./libopentui.dll", { with: { type: "file" } });
+const indexJsWinContent = `const module = await import("./opentui.dll", { with: { type: "file" } });
 export default module.default;
 `;
 
+// Find the actual node_modules path
+// In global install, koi is at: C:\Users\Acro\node_modules\@meowlynxsea\koi
+// Platform modules are at: C:\Users\Acro\node_modules\@opentui\core-win32-x64
+const parentDir = dirname(rootDir);
+console.log(`[DEBUG] parentDir (dirname(rootDir)): ${parentDir}`);
+
+// Check if parentDir has the expected structure
+const parentNodeModulesCheck = join(parentDir, "@opentui");
+console.log(`[DEBUG] Checking if ${parentNodeModulesCheck} exists: ${existsSync(parentNodeModulesCheck)}`);
+
 for (const moduleName of platformModules) {
-  // Platform modules are in the parent node_modules (global install), not in koi's node_modules
-  // rootDir is like C:\Users\Acro\node_modules\@meowlynxsea\koi
-  // dirname(rootDir) = C:\Users\Acro\node_modules
-  const parentDir = dirname(rootDir);
   const modulePath = join(parentDir, moduleName);
   
-  if (!existsSync(modulePath)) continue;
+  console.log(`\n[DEBUG] === Processing ${moduleName} ===`);
+  console.log(`[DEBUG] modulePath: ${modulePath}`);
+  console.log(`[DEBUG] existsSync(modulePath): ${existsSync(modulePath)}`);
+  
+  if (!existsSync(modulePath)) {
+    console.log(`[DEBUG] Skipping ${moduleName} - not found`);
+    continue;
+  }
 
   const indexJsPath = join(modulePath, "index.js");
   const packageJsonPath = join(modulePath, "package.json");
@@ -73,16 +80,29 @@ for (const moduleName of platformModules) {
 
   // Copy platform module to dist/node_modules for proper module resolution
   const distNodeModules = join(rootDir, "dist", "node_modules", moduleName);
+  console.log(`[DEBUG] distNodeModules: ${distNodeModules}`);
+  
   if (!existsSync(distNodeModules)) {
-    mkdirSync(dirname(distNodeModules), { recursive: true });
+    const distDir = join(rootDir, "dist", "node_modules");
+    console.log(`[DEBUG] Creating ${distDir}`);
+    mkdirSync(distDir, { recursive: true });
+    
+    console.log(`[DEBUG] Copying ${modulePath} -> ${distNodeModules}`);
     cpSync(modulePath, distNodeModules, { recursive: true });
     console.log(`Copied ${moduleName} to dist/node_modules/`);
+  } else {
+    console.log(`[DEBUG] ${distNodeModules} already exists, skipping copy`);
   }
 }
 
 // Fix @opentui/core's dynamic import to use .js instead of .ts
-const opentuiCorePath = join(rootDir, "node_modules", "@opentui", "core");
+const opentuiCorePath = join(parentDir, "@opentui", "core");
 const indexHmk8xzt3Path = join(opentuiCorePath, "index-hmk8xzt3.js");
+
+console.log(`\n[DEBUG] Checking for opentui core fix:`);
+console.log(`[DEBUG] opentuiCorePath: ${opentuiCorePath}`);
+console.log(`[DEBUG] indexHmk8xzt3Path: ${indexHmk8xzt3Path}`);
+console.log(`[DEBUG] existsSync(indexHmk8xzt3Path): ${existsSync(indexHmk8xzt3Path)}`);
 
 if (existsSync(indexHmk8xzt3Path)) {
   let content = readFileSync(indexHmk8xzt3Path, "utf-8");
@@ -93,4 +113,4 @@ if (existsSync(indexHmk8xzt3Path)) {
   }
 }
 
-console.log("Postinstall complete.");
+console.log("\nPostinstall complete.");
