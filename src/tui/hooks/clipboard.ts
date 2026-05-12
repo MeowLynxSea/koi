@@ -47,19 +47,10 @@ function ensureAttachmentsDir(sessionId: string | null): string | null {
 
 /** Read file path from clipboard (macOS file copy) */
 export async function readClipboardFilePath(): Promise<string | null> {
-  const log = (...args: unknown[]) => {
-    const fs = require("fs") as typeof import("fs");
-    fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [clipboard] ${args.join(" ")}\n`);
-  };
-
   try {
-    log("checking clipboard file path");
-    
     const formats = Clipboard.availableFormats();
-    log(`formats: ${formats.join(", ")}`);
     
     if (!formats) {
-      log("no formats available");
       return null;
     }
     
@@ -72,7 +63,6 @@ export async function readClipboardFilePath(): Promise<string | null> {
       f === "com.apple.traditional-mac-plain-text"
     );
     
-    log(`hasFile: ${hasFile}`);
     if (!hasFile) return null;
     
     // Get text from clipboard
@@ -83,7 +73,6 @@ export async function readClipboardFilePath(): Promise<string | null> {
     } else if (typeof result === "string") {
       text = result;
     }
-    log(`text from clipboard: "${text ?? ""}"`);
     
     // Check if it's a valid file path
     if (text) {
@@ -92,7 +81,6 @@ export async function readClipboardFilePath(): Promise<string | null> {
         if (existsSync(text)) {
           const stat = statSync(text);
           if (stat.isFile()) {
-            log(`verified file: ${text}`);
             return text;
           }
         }
@@ -104,7 +92,6 @@ export async function readClipboardFilePath(): Promise<string | null> {
         if (existsSync(filePath)) {
           const stat = statSync(filePath);
           if (stat.isFile()) {
-            log(`verified file from URL: ${filePath}`);
             return filePath;
           }
         }
@@ -112,21 +99,14 @@ export async function readClipboardFilePath(): Promise<string | null> {
     }
     
     return null;
-  } catch (e) {
-    log(`error: ${String(e)}`);
+  } catch {
     return null;
   }
 }
 
 /** Read text from system clipboard */
 export async function readClipboardText(): Promise<string | null> {
-  const log = (...args: unknown[]) => {
-    const fs = require("fs") as typeof import("fs");
-    fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [clipboard] ${args.join(" ")}\n`);
-  };
-
   try {
-    log("reading text from clipboard");
     // clipboard-rs getText may be sync or async depending on platform
     let text: string | null = null;
     const result = Clipboard.getText();
@@ -135,10 +115,8 @@ export async function readClipboardText(): Promise<string | null> {
     } else if (typeof result === "string") {
       text = result;
     }
-    log(`text: "${(text ?? "").substring(0, 100)}..."`);
     return text || null;
-  } catch (e) {
-    log(`error reading text: ${String(e)}`);
+  } catch {
     return null;
   }
 }
@@ -173,13 +151,7 @@ export async function checkHasClipboardImage(): Promise<boolean> {
 
 /** Read image from system clipboard as Buffer */
 export async function readClipboardImage(): Promise<Buffer | null> {
-  const log = (...args: unknown[]) => {
-    const fs = require("fs") as typeof import("fs");
-    fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [clipboard] ${args.join(" ")}\n`);
-  };
-
   try {
-    log("checking for image");
     let hasImage: boolean = false;
     const hasImageResult = Clipboard.hasImage();
     if (typeof hasImageResult === "boolean") {
@@ -187,7 +159,6 @@ export async function readClipboardImage(): Promise<Buffer | null> {
     } else {
       hasImage = (await resolveMaybePromise(hasImageResult)) as boolean;
     }
-    log(`hasImage: ${hasImage}`);
     if (!hasImage) return null;
 
     let base64: string | null = null;
@@ -197,16 +168,13 @@ export async function readClipboardImage(): Promise<Buffer | null> {
     } else {
       base64 = base64Result;
     }
-    log(`got base64: ${base64 ? `${base64.length} chars` : "null"}`);
     if (!base64) return null;
 
     // Remove data URL prefix if present
     const base64Data = base64.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
-    log(`image buffer: ${buffer.length} bytes`);
     return buffer;
-  } catch (e) {
-    log(`error reading image: ${String(e)}`);
+  } catch {
     return null;
   }
 }

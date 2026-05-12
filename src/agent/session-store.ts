@@ -435,11 +435,6 @@ async function buildSessionConfig(taskManager: SessionTaskManager, onMcpProgress
   const koiSkillCommands = await loadAllSkills(process.cwd());
   const piSkills = convertKoiSkillsToPiSkills(koiSkillCommands);
   
-  // Debug log
-  const logPath = "/tmp/koi-session-debug.log";
-  const logLine = `[${new Date().toISOString()}] buildSessionConfig: loaded ${koiSkillCommands.length} skills, ${piSkills.length} after filter\n`;
-  try { fs.appendFileSync(logPath, logLine); } catch {}
-  
   return {
     authStorage: getPiAuthStorage(),
     modelRegistry: getPiModelRegistry(),
@@ -664,11 +659,6 @@ You are highly capable and often allow users to complete ambitious tasks that wo
     },
   });
   await resourceLoader.reload();
-  
-  // Debug log
-  const logPath = "/tmp/koi-session-debug.log";
-  const logLine = `[${new Date().toISOString()}] createAgentSessionWithConfig: injecting ${config.skills.length} skills into session\n`;
-  try { fs.appendFileSync(logPath, logLine); } catch {}
   
   const result = await createAgentSession({
     cwd: process.cwd(),

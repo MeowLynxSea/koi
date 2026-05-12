@@ -431,8 +431,6 @@ export const InputBox = forwardRef<InputBoxHandle, InputBoxProps>(function Input
               onSubmit={handleSubmit}
               onKeyDown={handleKeyDown}
               onPaste={onPaste ? (event: PasteEvent) => {
-                const fs = require("fs") as typeof import("fs");
-                fs.appendFileSync("/tmp/koi-paste.log", `[${new Date().toISOString()}] [InputBox] onPaste triggered, bytes: ${event.bytes?.length ?? 0}, metadata: ${JSON.stringify(event.metadata)}\n`);
                 event.preventDefault();
                 void onPaste(event);
               } : undefined}

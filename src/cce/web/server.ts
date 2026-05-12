@@ -655,10 +655,6 @@ async function handleApi(req: Request, pathname: string): Promise<Response> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : "";
-    const logLine = `[${new Date().toISOString()}] ${req.method} ${req.url}\nError: ${msg}\n${stack}\n---\n`;
-    try {
-      fs.appendFileSync("/tmp/koi-cce-web-error.log", logLine);
-    } catch {}
     return Response.json({ error: msg }, { status: 500 });
   }
 }

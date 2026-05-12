@@ -18,7 +18,6 @@ import type { Task } from "./session-tasks.js";
 import type { SessionTaskManager } from "./session-tasks.js";
 import type { AgentMode } from "./mode.js";
 import { setCurrentPlanText } from "./plan-ui.js";
-import fs from "fs";
 
 export interface KoiSnapshotData {
   tasks: Task[];
@@ -63,7 +62,6 @@ export function saveSnapshotIfChanged(
   if (!leafId) return null;
 
   const last = findSnapshotBeforeEntry(session, leafId);
-  fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] saveSnapshotIfChanged leafId=${leafId} last=${last ? last.entryId : "null"} tasks=${data.tasks.length}\n`);
   if (last?.data) {
     const s = last.data;
     const sameTasks =
@@ -81,15 +79,12 @@ export function saveSnapshotIfChanged(
       s.activeTools.length === data.activeTools.length &&
       s.activeTools.every((t, i) => t === data.activeTools[i]);
 
-    fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] saveSnapshotIfChanged compare sameTasks=${sameTasks} samePlan=${samePlan} sameMode=${sameMode} sameTools=${sameTools}\n`);
     if (sameTasks && samePlan && sameMode && sameTools) {
-      fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] saveSnapshotIfChanged -> skip saving (no change)\n`);
       return null;
     }
   }
 
   const id = saveSnapshot(session, data);
-  fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] saveSnapshotIfChanged -> saved new snapshot id=${id}\n`);
   return id;
 }
 
@@ -112,14 +107,12 @@ export function findSnapshotBeforeEntry(
         SNAPSHOT_CUSTOM_TYPE
     ) {
       snapshotIds.push(entry.id);
-      fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] findSnapshotBeforeEntry target=${targetEntryId} found=${entry.id} tasks=${(entry as unknown as { data?: KoiSnapshotData }).data?.tasks?.length ?? 0} taskStatus=${(entry as unknown as { data?: KoiSnapshotData }).data?.tasks?.map(t => t.status).join(",") ?? "none"}\n`);
       return {
         entryId: entry.id,
         data: (entry as unknown as { data?: KoiSnapshotData }).data,
       };
     }
   }
-  fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] findSnapshotBeforeEntry target=${targetEntryId} no snapshot found on branch of ${branch.length} entries\n`);
   return null;
 }
 
@@ -162,7 +155,6 @@ export function findSnapshotAfterEntry(
         SNAPSHOT_CUSTOM_TYPE
     ) {
       visitedSnapshots.push(entry.id);
-      fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] findSnapshotAfterEntry target=${targetEntryId} found=${entry.id} tasks=${(entry as unknown as { data?: KoiSnapshotData }).data?.tasks?.length ?? 0} taskStatus=${(entry as unknown as { data?: KoiSnapshotData }).data?.tasks?.map(t => t.status).join(",") ?? "none"} visitedSnapshots=[${visitedSnapshots.join(",")}]\n`);
       return {
         entryId: entry.id,
         data: (entry as unknown as { data?: KoiSnapshotData }).data,
@@ -173,7 +165,6 @@ export function findSnapshotAfterEntry(
     queue.push(...childIds);
   }
 
-  fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] findSnapshotAfterEntry target=${targetEntryId} no snapshot found in subtree visited=${visited.size} entries\n`);
   return null;
 }
 
@@ -199,15 +190,10 @@ export function restoreSnapshot(
   taskManager: SessionTaskManager
 ): KoiSnapshotData | null {
   let snapshot = findSnapshotAfterEntry(session, targetEntryId);
-  fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] restoreSnapshot entryId=${targetEntryId} forward=${snapshot ? snapshot.entryId : "null"}\n`);
   if (!snapshot?.data) {
     snapshot = findSnapshotBeforeEntry(session, targetEntryId);
-    fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] restoreSnapshot fallback=${snapshot ? snapshot.entryId : "null"}\n`);
   }
   if (!snapshot?.data) return null;
-
-  const taskStatuses = snapshot.data.tasks.map(t => `${t.id}:${t.status}`).join(", ");
-  fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[snapshot] restoreSnapshot -> restoring tasks=[${taskStatuses}] plan=${snapshot.data.planText?.slice(0, 20) ?? "null"} mode=${snapshot.data.agentMode}\n`);
 
   taskManager.setTasks(snapshot.data.tasks);
   setCurrentPlanText(snapshot.data.planText ?? "");

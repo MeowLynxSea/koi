@@ -397,8 +397,6 @@ export async function callAuxiliaryModel(
       }
     );
 
-    fs.appendFileSync("/tmp/koi-debug.log", `[callAuxiliaryModel] result.stopReason: ${result.stopReason}, content: ${JSON.stringify(result.content)}\n`);
-
     if (result.stopReason === "error" || result.stopReason === "aborted") {
       return null;
     }
@@ -407,7 +405,6 @@ export async function callAuxiliaryModel(
       .filter((block): block is { type: "text"; text: string } => block.type === "text")
       .map((block) => block.text)
       .join("");
-    fs.appendFileSync("/tmp/koi-debug.log", `[callAuxiliaryModel] joined text: "${text}"\n`);
     return text;
   } catch {
     return null;

@@ -32,7 +32,6 @@ import {
 } from "./session-store.js";
 import type { McpConnectionProgress } from "../services/mcp/index.js";
 import { globalTaskManager } from "./session-tasks.js";
-import fs from "fs";
 import {
   getAgentMode,
   setAgentMode,
@@ -92,7 +91,6 @@ async function generateSessionNameFromMessages(
   userMessages: string[]
 ): Promise<string | null> {
   if (userMessages.length === 0) {
-    fs.appendFileSync("/tmp/koi-debug.log", "[generateSessionNameFromMessages] No user messages\n");
     return null;
   }
 
@@ -101,22 +99,16 @@ async function generateSessionNameFromMessages(
     .map((msg, i) => `[Message ${i + 1}]\n${msg}`)
     .join("\n\n");
 
-  fs.appendFileSync("/tmp/koi-debug.log", `[generateSessionNameFromMessages] Calling auxiliary model with context: ${userContext.slice(0, 200)}\n`);
-
   const result = await callAuxiliaryModel(
     NAMING_SYSTEM_PROMPT,
     [{ role: "user", content: userContext, timestamp: Date.now() }]
   );
 
-  fs.appendFileSync("/tmp/koi-debug.log", `[generateSessionNameFromMessages] Result: ${result}\n`);
-
   if (!result) {
-    fs.appendFileSync("/tmp/koi-debug.log", "[generateSessionNameFromMessages] No result from auxiliary model\n");
     return null;
   }
 
   const parsed = parseSessionName(result);
-  fs.appendFileSync("/tmp/koi-debug.log", `[generateSessionNameFromMessages] Parsed name: ${parsed}\n`);
   return parsed;
 }
 
@@ -1236,7 +1228,6 @@ export function useKoiAgent(): KoiAgentState {
       const forwardPath = computeForwardPath(session, entryId);
       const branchFromId = findBranchPoint(forwardPath, entryId);
       const branchPath = session.sessionManager.getBranch();
-      fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[fork] entryId=${entryId} branchFromId=${branchFromId} forwardPath=${forwardPath.length} branchPath=${branchPath.length}\n`);
 
       // 2. Execute session branching
       session.sessionManager.branch(branchFromId);
@@ -1254,8 +1245,6 @@ export function useKoiAgent(): KoiAgentState {
       const currentKoiState = loadKoiState(session.sessionId);
 
       // 5. Create and save fork metadata
-      const restoredTaskStatuses = restoredTasks.map(t => `${t.id}:${t.status}`).join(", ");
-      fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[fork] restoredTasks=[${restoredTaskStatuses}] plan=${restoredPlan?.slice(0, 20) ?? "null"} mode=${restoredAgentMode}\n`);
       const forkMetadata = {
         forkId: session.sessionId,
         sourceSessionId: session.sessionId,
@@ -1388,7 +1377,6 @@ export function useKoiAgent(): KoiAgentState {
       // 1. Session hasn't been named yet
       // 2. Current title is the default "New Session"
       // 3. There are user messages to base the name on
-      fs.appendFileSync("/tmp/koi-debug.log", `[triggerSessionNaming] sessionNamedRef: ${sessionNamedRef.current}, sessionTitle: "${sessionTitle}", equals: ${sessionTitle === "New Session"}\n`);
       if (sessionNamedRef.current) return;
       if (sessionTitle !== "New Session") return;
 
@@ -1564,7 +1552,6 @@ export function useKoiAgent(): KoiAgentState {
         return [...withoutOldPlan, { id: generateId("plan"), type: "plan", content }] as UIMessage[];
       });
       // Save snapshot since plan state changed.
-      fs.appendFileSync("/tmp/koi-snapshot-debug.log", `[plan] addPlanMessage calling saveSnapshotIfChanged plan=${content.slice(0, 30)}\n`);
       saveSnapshotIfChanged(session, {
         tasks: globalTaskManager.listTasks(),
         planText: content,
