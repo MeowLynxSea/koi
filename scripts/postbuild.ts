@@ -162,6 +162,7 @@ const initCode = `
 var __KOI_NATIVE_BASE__;
 var __KOI_OPENTUI_PATH__;
 var __KOI_ONNX_PATH__;
+var __KOI_OPENTUI_EXT__;
 (function() {
   var _p = process.platform === 'win32' ? 'win32' : process.platform;
   var _a = process.arch;
@@ -170,6 +171,8 @@ var __KOI_ONNX_PATH__;
   __KOI_NATIVE_BASE__ = _koiNativeBase;
   __KOI_OPENTUI_PATH__ = _koiNativeBase + '/opentui/' + _p + '/' + _a;
   __KOI_ONNX_PATH__ = _koiNativeBase + '/onnx/' + _p + '/' + _a;
+  // Detect opentui extension: .dll (win32), .dylib (darwin), .so (linux)
+  __KOI_OPENTUI_EXT__ = _p === 'win32' ? '.dll' : (_p === 'darwin' ? '.dylib' : '.so');
 })();
 `;
 
@@ -183,10 +186,9 @@ if (!content.includes("__KOI_NATIVE_BASE__")) {
   console.log("[postbuild] Added native module initialization code");
 }
 
-// Replace OpenTUI dynamic import
+// Replace OpenTUI dynamic import - use runtime extension detection
 const opentuiImportPattern = /var module = await import\(`@opentui\/core-[^`]+`\)/g;
-const opentuiLibName = getNativeLibExt(process.platform);
-const opentuiReplacement = `var module = { default: __KOI_OPENTUI_PATH__ + "/libopentui${opentuiLibName}" };`;
+const opentuiReplacement = `var module = { default: __KOI_OPENTUI_PATH__ + "/libopentui" + __KOI_OPENTUI_EXT__ };`;
 
 if (opentuiImportPattern.test(content)) {
   const matches = content.match(opentuiImportPattern);
