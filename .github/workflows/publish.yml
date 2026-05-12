@@ -105,9 +105,32 @@ jobs:
           path: native/
           retention-days: 7
 
-  # Collect all native libraries and publish
-  publish:
+  # Merge all native libraries into one artifact
+  merge-native:
     needs: [build-darwin-arm64, build-darwin-x64, build-linux-x64, build-linux-arm64, build-win32-x64, build-win32-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all native libraries
+        uses: actions/download-artifact@v4
+        with:
+          path: native/
+          pattern: native-*
+          merge-multiple: true
+      - name: Verify merged native libraries
+        run: |
+          echo "=== native/opentui ===" && ls -laR native/opentui/
+          echo "=== native/onnx ===" && ls -laR native/onnx/
+      - name: Upload merged native
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-merged
+          path: native/
+          retention-days: 7
+
+  # Publish to npm using merged native libraries
+  publish:
+    needs: [merge-native]
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -125,12 +148,11 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Download all native libraries
+      - name: Download merged native libraries
         uses: actions/download-artifact@v4
         with:
+          name: native-merged
           path: native/
-          pattern: native-*
-          merge-multiple: true
 
       - name: Verify native libraries
         run: |
