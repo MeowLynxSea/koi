@@ -12,6 +12,7 @@
   "files": [
     "dist",
     "bin",
+    "scripts",
     "src/main.tsx",
     "src/cce",
     "!src/cce/web/frontend/node_modules",
@@ -23,7 +24,6 @@
     "!src/cce/web/frontend/bun.lock",
     "!src/cce/web/frontend/index.html",
     "src/skills",
-    "src/scripts",
     "src/tools",
     "src/styles.css",
     "src/commands",
@@ -73,5 +73,11 @@
     "jimp": "^1.6.1",
     "react": "^19.2.6",
     "turndown": "^7.2.4"
-  }
+  },
+  "trustedDependencies": [
+    "@google/genai",
+    "koffi",
+    "onnxruntime-node",
+    "protobufjs"
+  ]
 }
