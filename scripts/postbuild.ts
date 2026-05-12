@@ -312,6 +312,15 @@ if (clipboardIIFEAltMatches) {
   console.log(`[postbuild] Fixed ${clipboardIIFEAltMatches.length} clipboard IIFE require(s) (alt pattern)`);
 }
 
+// Handle the case where native files don't exist during build (e.g., CI without native downloaded yet)
+// Pattern: nativeBinding = (()=>{throw new Error("Cannot require module "+"./clipboard.xxx.node");})();
+const clipboardIIFEDotPattern = /nativeBinding = \(\(\)=>\{throw new Error\("Cannot require module "\+"\.\/clipboard\.([^"]+)"\);\}\)\(\);/g;
+const clipboardIIFEDotMatches = content.match(clipboardIIFEDotPattern);
+if (clipboardIIFEDotMatches) {
+  content = content.replace(clipboardIIFEDotPattern, "nativeBinding = __require(__KOI_CLIPBOARD_PATH__ + \"/clipboard.$1\");");
+  console.log(`[postbuild] Fixed ${clipboardIIFEDotMatches.length} clipboard IIFE require(s) (dot pattern)`);
+}
+
 // Clean up dist/node_modules
 const distNodeModules = join(distDir, "node_modules");
 if (existsSync(distNodeModules)) {
