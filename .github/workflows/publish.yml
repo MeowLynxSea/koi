@@ -53,8 +53,68 @@ jobs:
           path: native/
           retention-days: 7
 
-  publish:
+  prepare-native:
     needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install all optional dependencies
+        run: |
+          bun add @opentui/core-darwin-arm64 @opentui/core-darwin-x64 @opentui/core-linux-arm64 @opentui/core-linux-x64 @opentui/core-win32-arm64 @opentui/core-win32-x64
+          bun add onnxruntime-node
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: native/
+          pattern: native-*
+          merge-multiple: true
+
+      - name: Copy all opentui native libraries
+        run: |
+          # Darwin
+          if [ -f "node_modules/@opentui/core-darwin-arm64/libopentui.dylib" ]; then
+            mkdir -p native/opentui/darwin/arm64
+            cp node_modules/@opentui/core-darwin-arm64/libopentui.dylib native/opentui/darwin/arm64/
+          fi
+          if [ -f "node_modules/@opentui/core-darwin-x64/libopentui.dylib" ]; then
+            mkdir -p native/opentui/darwin/x64
+            cp node_modules/@opentui/core-darwin-x64/libopentui.dylib native/opentui/darwin/x64/
+          fi
+          # Linux
+          if [ -f "node_modules/@opentui/core-linux-arm64/libopentui.so" ]; then
+            mkdir -p native/opentui/linux/arm64
+            cp node_modules/@opentui/core-linux-arm64/libopentui.so native/opentui/linux/arm64/
+          fi
+          if [ -f "node_modules/@opentui/core-linux-x64/libopentui.so" ]; then
+            mkdir -p native/opentui/linux/x64
+            cp node_modules/@opentui/core-linux-x64/libopentui.so native/opentui/linux/x64/
+          fi
+          # Windows
+          if [ -f "node_modules/@opentui/core-win32-arm64/libopentui.dll" ]; then
+            mkdir -p native/opentui/win32/arm64
+            cp node_modules/@opentui/core-win32-arm64/libopentui.dll native/opentui/win32/arm64/
+          fi
+          if [ -f "node_modules/@opentui/core-win32-x64/libopentui.dll" ]; then
+            mkdir -p native/opentui/win32/x64
+            cp node_modules/@opentui/core-win32-x64/libopentui.dll native/opentui/win32/x64/
+          fi
+          echo "Done copying opentui libraries"
+
+      - name: Upload complete native libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-complete
+          path: native/
+          retention-days: 7
+
+  publish:
+    needs: prepare-native
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -73,16 +133,15 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Download all native libraries
+      - name: Download complete native libraries
         uses: actions/download-artifact@v4
         with:
+          name: native-complete
           path: native/
-          pattern: native-*
-          merge-multiple: true
 
       - name: Verify native libraries
         run: |
-          echo "=== native/opentui ===" && ls -la native/opentui/
+          echo "=== native/opentui ===" && ls -laR native/opentui/
           echo "=== native/onnx ===" && ls -laR native/onnx/
 
       - name: Update version
