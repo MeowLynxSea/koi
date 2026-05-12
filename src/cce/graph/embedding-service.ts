@@ -16,6 +16,14 @@ function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+export interface EmbeddingDownloadProgress {
+  file: string;
+  progress: number;
+  loaded: number;
+  total: number;
+  speed: number;
+}
+
 export class EmbeddingService {
   private extractor: FeatureExtractionPipeline | null = null;
   private readyPromise: Promise<void> | null = null;
@@ -24,20 +32,74 @@ export class EmbeddingService {
   private cache = new Map<string, Float32Array>();
   private cacheLimit = 5000;
 
-  async init(): Promise<void> {
+  async init(onProgress?: (progress: EmbeddingDownloadProgress) => void): Promise<void> {
     if (this.extractor) return;
     if (this.readyPromise) return this.readyPromise;
 
-    this.readyPromise = this._loadModel();
+    this.readyPromise = this._loadModel(onProgress).catch((err) => {
+      this.readyPromise = null;
+      throw err;
+    });
     return this.readyPromise;
   }
 
-  private async _loadModel(): Promise<void> {
+  private async _loadModel(onProgress?: (progress: EmbeddingDownloadProgress) => void): Promise<void> {
     ensureDir(CACHE_DIR);
+    let lastLoaded = 0;
+    let lastTime = Date.now();
+    let currentFile = "";
     try {
       this.extractor = await pipeline("feature-extraction", this.modelName, {
         cache_dir: CACHE_DIR,
         dtype: "fp32",
+        // @ts-expect-error progress_callback exists at runtime but TypeScript inference from JS source is incomplete
+        progress_callback: onProgress
+          ? (data: unknown) => {
+              const d = data as Record<string, unknown>;
+              const file = String(d["file"] ?? this.modelName);
+              const status = d["status"] as string | undefined;
+
+              // Reset speed tracking when a new file starts
+              if (file !== currentFile) {
+                currentFile = file;
+                lastLoaded = 0;
+                lastTime = Date.now();
+              }
+
+              // Handle progress events (from FileCache.put or readResponse)
+              const hasProgress = typeof d["progress"] === "number";
+              const hasLoaded = typeof d["loaded"] === "number";
+              const hasTotal = typeof d["total"] === "number";
+              if (hasProgress && hasLoaded && hasTotal) {
+                const now = Date.now();
+                const elapsed = (now - lastTime) / 1000;
+                const loaded = d["loaded"] as number;
+                const speed = elapsed > 0 ? Math.round((loaded - lastLoaded) / elapsed) : 0;
+                lastLoaded = loaded;
+                lastTime = now;
+                onProgress({
+                  file,
+                  progress: Number(d["progress"] ?? 0),
+                  loaded,
+                  total: d["total"] as number,
+                  speed,
+                });
+                return;
+              }
+
+              // For initiate/download/done events without numeric progress, send a 0% pulse
+              // so the UI knows which file is being processed
+              if (status === "initiate" || status === "download") {
+                onProgress({
+                  file,
+                  progress: 0,
+                  loaded: 0,
+                  total: 0,
+                  speed: 0,
+                });
+              }
+            }
+          : undefined,
       });
     } catch (err) {
       console.error("[CCE] Failed to load embedding model:", err);
@@ -104,6 +166,12 @@ export class EmbeddingService {
 
   deserialize(buf: Buffer): Float32Array {
     return new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+  }
+
+  reset(): void {
+    this.extractor = null;
+    this.readyPromise = null;
+    this.cache.clear();
   }
 }
 

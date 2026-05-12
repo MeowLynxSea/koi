@@ -23,6 +23,14 @@ import { PromptInjector } from "./agent-bridge/prompt-injector.js";
 import { DisclosureEngine } from "./agent-bridge/disclosure-engine.js";
 import { getNamespaceContext } from "./agent-bridge/namespace-context.js";
 
+export interface CceDownloadProgress {
+  file: string;
+  progress: number;
+  loaded: number;
+  total: number;
+  speed: number;
+}
+
 export interface CceSystem {
   db: ReturnType<typeof getDbManager>;
   graph: GraphService;
@@ -47,7 +55,10 @@ let _dreamTimer: ReturnType<typeof setInterval> | null = null;
  * This is the heavy-lifting phase that may trigger model downloads.
  * Idempotent: returns cached system if already initialized.
  */
-export async function initCceSystem(onProgress?: (msg: string) => void): Promise<CceSystem> {
+export async function initCceSystem(
+  onProgress?: (msg: string) => void,
+  onDownloadProgress?: (progress: CceDownloadProgress) => void,
+): Promise<CceSystem> {
   if (_system) return _system;
 
   const namespace = getNamespaceContext().current;
@@ -57,7 +68,9 @@ export async function initCceSystem(onProgress?: (msg: string) => void): Promise
 
   onProgress?.("Loading embedding model (first run may download ~100 MB)...");
   const embedding = getEmbeddingService();
-  await embedding.init();
+  await embedding.init((p) => {
+    onDownloadProgress?.(p);
+  });
 
   onProgress?.("Building search index...");
   const search = new SearchIndexer(db, embedding);
@@ -150,6 +163,7 @@ export function resetCceSystem(): void {
     try { _system.db.close(); } catch { /* ignore */ }
   }
   _system = null;
+  getEmbeddingService().reset();
 }
 
 // Re-exports

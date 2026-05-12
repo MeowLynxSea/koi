@@ -41,6 +41,8 @@ import { openExternalEditor } from "./components/external-editor.js";
 import { MCPSettings } from "./components/mcp/MCPSettings.js";
 import { SkillsMenu } from "../skills/SkillsMenu.js";
 import { CceModal } from "./components/cce/CceModal.js";
+import { CceInitModal } from "./components/cce/CceInitModal.js";
+import type { CceDownloadProgress } from "../cce/index.js";
 import { 
   getActiveSkills, 
   detectSkillInvocation, 
@@ -242,6 +244,9 @@ export function App({ renderer, onExit }: AppProps) {
   const [externalEditorResult, setExternalEditorResult] = useState<string | null | undefined>(undefined);
   const [externalEditorError, setExternalEditorError] = useState<string | null>(null);
   const [showCceModal, setShowCceModal] = useState(false);
+  const [showCceInitModal, setShowCceInitModal] = useState(false);
+  const [cceInitMessage, setCceInitMessage] = useState("");
+  const [cceInitDownloadProgress, setCceInitDownloadProgress] = useState<CceDownloadProgress | null>(null);
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -264,6 +269,34 @@ export function App({ renderer, onExit }: AppProps) {
       setSkills(activeSkills as SkillCommand[]);
       
       console.log("[skills] Loaded:", getSkillCountBySource());
+    })();
+  }, []);
+
+  // Auto-initialize CCE on startup if enabled in settings
+  useEffect(() => {
+    void (async () => {
+      const settingsMod: { isCceEnabled: () => boolean } = await import("../config/settings.js");
+      const cceMod: {
+        initCceSystem: (onProgress?: (msg: string) => void, onDownloadProgress?: (progress: CceDownloadProgress) => void) => Promise<import("../cce/index.js").CceSystem>;
+        startCceServices: () => void;
+        isCceSystemReady: () => boolean;
+      } = await import("../cce/index.js");
+      if (!settingsMod.isCceEnabled() || cceMod.isCceSystemReady()) return;
+
+      setShowCceInitModal(true);
+      try {
+        await cceMod.initCceSystem(
+          (msg) => setCceInitMessage(msg),
+          (p) => setCceInitDownloadProgress(p),
+        );
+        cceMod.startCceServices();
+      } catch (err) {
+        console.error("[CCE] Auto-init failed on startup:", err);
+      } finally {
+        setShowCceInitModal(false);
+        setCceInitMessage("");
+        setCceInitDownloadProgress(null);
+      }
     })();
   }, []);
 
@@ -782,7 +815,7 @@ export function App({ renderer, onExit }: AppProps) {
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
-    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal || showExternalEditorModal || externalEditorBusy || externalEditorError !== null || showCceModal;
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal || showExternalEditorModal || externalEditorBusy || externalEditorError !== null || showCceModal || showCceInitModal;
 
   // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
@@ -1231,6 +1264,11 @@ export function App({ renderer, onExit }: AppProps) {
         isActive={isConnectingMcp}
         progress={mcpConnectionProgress}
       />
+      <CceInitModal
+        isActive={showCceInitModal}
+        message={cceInitMessage}
+        downloadProgress={cceInitDownloadProgress}
+      />
       <ForkModal
         isActive={showForkModal}
         onClose={() => setShowForkModal(false)}
@@ -1274,9 +1312,8 @@ export function App({ renderer, onExit }: AppProps) {
       />
       {showCceModal && (
         <CceModal
+          isActive={showCceModal}
           onClose={() => setShowCceModal(false)}
-          width={width}
-          height={height}
         />
       )}
     </box>
