@@ -1,10 +1,8 @@
 /**
  * Post-build script to fix native module paths in the bundle.
  *
- * This script:
- * 1. Downloads ALL platform-specific opentui native libraries from GitHub releases
-  * 2. Copies onnxruntime native libraries from node_modules
- * 3. Patches the bundle to use the correct paths
+ * Downloads all platform-specific opentui native libraries from GitHub releases
+ * and patches the bundle to use the correct paths.
  */
 
 import {
@@ -18,6 +16,7 @@ import {
 } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "..");
@@ -70,8 +69,8 @@ function getOsName(platform: string): string {
 const nativeDir = join(rootDir, "native");
 const opentuiNativeDir = join(nativeDir, "opentui");
 
-// Copy opentui native libraries - download from GitHub releases
-console.log("[postbuild] Downloading/Copying opentui native libraries...");
+// Download opentui native libraries
+console.log("[postbuild] Copying/Downloading opentui native libraries...");
 for (const { platform, arch } of platforms) {
   const destDir = join(opentuiNativeDir, platform, arch);
   mkdirSync(destDir, { recursive: true });
@@ -93,55 +92,50 @@ for (const { platform, arch } of platforms) {
   if (existsSync(srcPath)) {
     cpSync(srcPath, destPath);
     console.log(`[postbuild]   opentui/${platform}-${arch}: ${nativeLibName} (from node_modules)`);
-  } else {
-    // Download from GitHub releases
-    const osName = getOsName(platform);
-    const zipName = `opentui-native-v0.2.7-${osName}-${arch}.zip`;
-    const downloadUrl = `https://github.com/anomalyco/opentui/releases/download/v0.2.7/${zipName}`;
-    console.log(`[postbuild]   opentui/${platform}-${arch}: downloading...`);
+    continue;
+  }
 
-    // Use curl to download
-    const { execSync } = require("child_process");
-    const { existsSync: fsExists, mkdtempSync, readdirSync: fsReaddir } = require("fs");
-    const path = require("path");
-    const os = require("os");
+  // Download from GitHub releases
+  const osName = getOsName(platform);
+  const zipName = `opentui-native-v0.2.7-${osName}-${arch}.zip`;
+  const downloadUrl = `https://github.com/anomalyco/opentui/releases/download/v0.2.7/${zipName}`;
+  console.log(`[postbuild]   opentui/${platform}-${arch}: downloading...`);
 
-    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "koi-"));
-    const zipPath = path.join(tmpDir, zipName);
-    const extractDir = path.join(tmpDir, "extracted");
+  const os = require("os");
+  const tmpDir = join(os.tmpdir(), `koi-download-${Date.now()}`);
+  const zipPath = join(tmpDir, zipName);
+  const extractDir = join(tmpDir, "extracted");
 
-    try {
-      // Download with curl
-      execSync(`curl -sL "${downloadUrl}" -o "${zipPath}"`, { stdio: "pipe" });
+  try {
+    mkdirSync(tmpDir, { recursive: true });
+    mkdirSync(extractDir, { recursive: true });
 
-      if (fsExists(zipPath)) {
-        // Extract with tar (for .tar.gz) or unzip (for .zip)
-        mkdirSync(extractDir, { recursive: true });
+    // Download using curl
+    execSync(`curl -sL "${downloadUrl}" -o "${zipPath}"`, { stdio: "pipe" });
 
-        if (zipName.endsWith(".zip")) {
-          execSync(`unzip -o "${zipPath}" -d "${extractDir}"`, { stdio: "pipe" });
-        } else {
-          execSync(`tar -xzf "${zipPath}" -C "${extractDir}"`, { stdio: "pipe" });
-        }
-
-        // Find and copy the library
-        const extractFiles = fsReaddir(extractDir);
-        for (const f of extractFiles) {
-          if (f.startsWith("libopentui")) {
-            cpSync(path.join(extractDir, f), destPath);
-            console.log(`[postbuild]   opentui/${platform}-${arch}: ${f} (downloaded)`);
-            break;
-          }
-        }
+    if (existsSync(zipPath)) {
+      // Extract
+      if (platform === "win32") {
+        execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractDir}' -Force"`, { stdio: "pipe" });
       } else {
-        console.log(`[postbuild]   opentui/${platform}-${arch}: download failed`);
+        execSync(`unzip -o "${zipPath}" -d "${extractDir}"`, { stdio: "pipe" });
       }
-    } catch (e: unknown) {
-      const error = e as Error;
-      console.log(`[postbuild]   opentui/${platform}-${arch}: download failed - ${error.message}`);
-    }
 
-    // Cleanup
+      // Find and copy the library
+      const files = readdirSync(extractDir);
+      for (const f of files) {
+        if (f.startsWith("libopentui")) {
+          cpSync(join(extractDir, f), destPath);
+          console.log(`[postbuild]   opentui/${platform}-${arch}: ${f} (downloaded)`);
+          break;
+        }
+      }
+    } else {
+      console.log(`[postbuild]   opentui/${platform}-${arch}: download failed`);
+    }
+  } catch (e) {
+    console.log(`[postbuild]   opentui/${platform}-${arch}: failed - ${(e as Error).message}`);
+  } finally {
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 }
