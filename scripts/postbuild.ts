@@ -249,7 +249,7 @@ const clipboardExistsPattern = /existsSync4\(join35\(__dirname, "clipboard\.([^"
 if (clipboardExistsPattern.test(content)) {
   const matches = content.match(clipboardExistsPattern);
   if (matches) {
-    content = content.replace(clipboardExistsPattern, `existsSync4(__KOI_CLIPBOARD_PATH__ + "/clipboard.$1"`);
+    content = content.replace(clipboardExistsPattern, `existsSync4(__KOI_CLIPBOARD_PATH__ + "/clipboard.$1")`);
     console.log(`[postbuild] Replaced clipboard existsSync paths`);
   }
 }
@@ -260,7 +260,7 @@ const clipboardRequirePattern = /require\("\.\/clipboard\.([^"]+)"\)/g;
 if (clipboardRequirePattern.test(content)) {
   const matches = content.match(clipboardRequirePattern);
   if (matches) {
-    content = content.replace(clipboardRequirePattern, `require(__KOI_CLIPBOARD_PATH__ + "/clipboard.$1"`);
+    content = content.replace(clipboardRequirePattern, `require(__KOI_CLIPBOARD_PATH__ + "/clipboard.$1")`);
     console.log(`[postbuild] Replaced clipboard require paths`);
   }
 }
