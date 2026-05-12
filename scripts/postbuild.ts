@@ -80,7 +80,11 @@ let content = readFileSync(mainJsPath, "utf-8");
 // Original: var module = await import(`@opentui/core-${process.platform}-${process.arch}/index.js`);
 // Replace with: a function that resolves the correct native lib path at runtime
 
-const dynamicImportPattern = /var module = await import\(`@opentui\/core-\$\{process\.platform\}-\$\{process\.arch\}\/index\.js`\);?/g;
+// Match various patterns of the dynamic import
+const dynamicImportPatterns = [
+  /var module = await import\(`@opentui\/core-[^`]+`\)/g,
+  /await import\(`@opentui\/core-[^`]+`\)/g,
+];
 
 // Create a runtime path resolver function
 const runtimeResolver = `// Runtime resolver for OpenTUI native library
@@ -98,12 +102,19 @@ var _opentuiNativePath = (function() {
 })();
 var module = { default: _opentuiNativePath };`;
 
-if (content.includes("@opentui/core-")) {
-  const matches = content.match(dynamicImportPattern);
-  if (matches) {
-    content = content.replace(dynamicImportPattern, runtimeResolver);
-    console.log(`[postbuild] Replaced ${matches.length} dynamic import(s) with runtime resolver`);
+let replaced = false;
+for (const pattern of dynamicImportPatterns) {
+  if (pattern.test(content)) {
+    const matches = content.match(pattern);
+    if (matches) {
+      content = content.replace(pattern, runtimeResolver);
+      console.log(`[postbuild] Replaced ${matches.length} dynamic import(s) matching pattern`);
+      replaced = true;
+    }
   }
+}
+if (!replaced) {
+  console.log("[postbuild] Warning: No dynamic imports found for replacement");
 }
 
 // Fix onnxruntime-node path - use same runtime resolver pattern
