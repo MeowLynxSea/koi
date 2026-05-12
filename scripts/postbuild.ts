@@ -121,10 +121,10 @@ if (content.includes("../bin/napi-v3/")) {
 var __KOI_NATIVE_ONNX__ = (function() {
   var p = process.platform === 'win32' ? 'win32' : process.platform;
   var a = process.arch;
-  var base = typeof import !== 'undefined' && import.meta && import.meta.dirname ? import.meta.dirname : (typeof __dirname !== 'undefined' ? __dirname : '.');
-  var parts = base.split(/[\\\\/]/);
+  var m = typeof globalThis !== 'undefined' && globalThis.__dirname ? globalThis.__dirname : (typeof __dirname !== 'undefined' ? __dirname : '.');
+  var parts = m.split(/[\\\\/]/);
   var idx = parts.lastIndexOf('dist');
-  var root = idx > 0 ? parts.slice(0, idx).join('/') : base;
+  var root = idx > 0 ? parts.slice(0, idx).join('/') : m;
   return root + '/native/onnx/' + p + '/' + a;
 })();
 `;
