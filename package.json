@@ -35,7 +35,7 @@
   "scripts": {
     "dev": "bun run src/main.tsx",
     "postinstall": "bun run scripts/postinstall.ts",
-    "build": "bun build src/main.tsx --outdir dist --target bun && cp node_modules/@opentui/core/parser.worker.js dist/ && cp -r node_modules/@opentui/core/assets dist/opentui-assets && mkdir -p dist/cce-frontend && cp -r src/cce/web/frontend/dist/* dist/cce-frontend/ && cp src/cce/core/schema.sql dist/ && bun run scripts/postbuild.ts",
+    "build": "bun build src/main.tsx --outdir dist --target bun && cp node_modules/@opentui/core/parser.worker.js dist/ && cp -r node_modules/@opentui/core/assets dist/opentui-assets && mkdir -p dist/cce-frontend && [ -d src/cce/web/frontend/dist ] && cp -r src/cce/web/frontend/dist/* dist/cce-frontend/ || true && cp src/cce/core/schema.sql dist/ && bun run scripts/postbuild.ts",
     "check": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"
