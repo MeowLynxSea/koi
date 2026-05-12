@@ -2,8 +2,9 @@
  * Post-build script to fix native module paths in the bundle.
  *
  * This script:
- * 1. Copies ALL platform-specific native libraries to native/ directory
- * 2. Patches the bundle to use absolute paths for native modules
+ * 1. Downloads ALL platform-specific opentui native libraries from GitHub releases
+  * 2. Copies onnxruntime native libraries from node_modules
+ * 3. Patches the bundle to use the correct paths
  */
 
 import {
@@ -52,32 +53,102 @@ function getNativeLibExt(platform: string): string {
   }
 }
 
-const nativeDir = join(rootDir, "native");
-
-// Copy native libraries for ALL platforms
-console.log("[postbuild] Copying native libraries for all platforms...");
-
-// Copy @opentui/core native libraries
-const opentuiNativeDir = join(nativeDir, "opentui");
-for (const { platform, arch } of platforms) {
-  const platformModule = `@opentui/core-${platform}-${arch}`;
-  const platformModulePath = join(nodeModulesDir, platformModule);
-  const nativeLibExt = getNativeLibExt(platform);
-  const nativeLibName = `libopentui${nativeLibExt}`;
-  const srcPath = join(platformModulePath, nativeLibName);
-  const destDir = join(opentuiNativeDir, platform, arch);
-  const destPath = join(destDir, nativeLibName);
-
-  if (existsSync(srcPath)) {
-    mkdirSync(destDir, { recursive: true });
-    cpSync(srcPath, destPath);
-    console.log(`[postbuild]   opentui/${platform}-${arch}: ${nativeLibName}`);
+// Detect OS name for GitHub releases
+function getOsName(platform: string): string {
+  switch (platform) {
+    case "darwin":
+      return "darwin";
+    case "linux":
+      return "linux";
+    case "win32":
+      return "windows";
+    default:
+      return platform;
   }
 }
 
-// Copy onnxruntime native libraries
+const nativeDir = join(rootDir, "native");
+const opentuiNativeDir = join(nativeDir, "opentui");
+
+// Copy opentui native libraries - download from GitHub releases
+console.log("[postbuild] Downloading/Copying opentui native libraries...");
+for (const { platform, arch } of platforms) {
+  const destDir = join(opentuiNativeDir, platform, arch);
+  mkdirSync(destDir, { recursive: true });
+
+  const nativeLibExt = getNativeLibExt(platform);
+  const nativeLibName = `libopentui${nativeLibExt}`;
+  const destPath = join(destDir, nativeLibName);
+
+  // Check if already exists
+  if (existsSync(destPath)) {
+    console.log(`[postbuild]   opentui/${platform}-${arch}: ${nativeLibName} (exists)`);
+    continue;
+  }
+
+  // Try to copy from node_modules first
+  const platformModule = `@opentui/core-${platform}-${arch}`;
+  const srcPath = join(nodeModulesDir, platformModule, nativeLibName);
+
+  if (existsSync(srcPath)) {
+    cpSync(srcPath, destPath);
+    console.log(`[postbuild]   opentui/${platform}-${arch}: ${nativeLibName} (from node_modules)`);
+  } else {
+    // Download from GitHub releases
+    const osName = getOsName(platform);
+    const zipName = `opentui-native-v0.2.7-${osName}-${arch}.zip`;
+    const downloadUrl = `https://github.com/anomalyco/opentui/releases/download/v0.2.7/${zipName}`;
+    console.log(`[postbuild]   opentui/${platform}-${arch}: downloading...`);
+
+    // Use curl to download
+    const { execSync } = require("child_process");
+    const { existsSync: fsExists, mkdtempSync, readdirSync: fsReaddir } = require("fs");
+    const path = require("path");
+    const os = require("os");
+
+    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "koi-"));
+    const zipPath = path.join(tmpDir, zipName);
+    const extractDir = path.join(tmpDir, "extracted");
+
+    try {
+      // Download with curl
+      execSync(`curl -sL "${downloadUrl}" -o "${zipPath}"`, { stdio: "pipe" });
+
+      if (fsExists(zipPath)) {
+        // Extract with tar (for .tar.gz) or unzip (for .zip)
+        mkdirSync(extractDir, { recursive: true });
+
+        if (zipName.endsWith(".zip")) {
+          execSync(`unzip -o "${zipPath}" -d "${extractDir}"`, { stdio: "pipe" });
+        } else {
+          execSync(`tar -xzf "${zipPath}" -C "${extractDir}"`, { stdio: "pipe" });
+        }
+
+        // Find and copy the library
+        const extractFiles = fsReaddir(extractDir);
+        for (const f of extractFiles) {
+          if (f.startsWith("libopentui")) {
+            cpSync(path.join(extractDir, f), destPath);
+            console.log(`[postbuild]   opentui/${platform}-${arch}: ${f} (downloaded)`);
+            break;
+          }
+        }
+      } else {
+        console.log(`[postbuild]   opentui/${platform}-${arch}: download failed`);
+      }
+    } catch (e: unknown) {
+      const error = e as Error;
+      console.log(`[postbuild]   opentui/${platform}-${arch}: download failed - ${error.message}`);
+    }
+
+    // Cleanup
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+}
+
+// Copy onnxruntime native libraries from node_modules
 const onnxNativeDir = join(nativeDir, "onnx");
-console.log("[postbuild] Copying onnxruntime native libraries for all platforms...");
+console.log("[postbuild] Copying onnxruntime native libraries...");
 for (const { platform, arch } of platforms) {
   const onnxSrcDir = join(nodeModulesDir, "onnxruntime-node", "bin", "napi-v3", platform, arch);
   const onnxDestDir = join(onnxNativeDir, platform, arch);
@@ -95,7 +166,6 @@ for (const { platform, arch } of platforms) {
 let content = readFileSync(mainJsPath, "utf-8");
 
 // Add initialization code at the very beginning of the file
-// This defines paths to native libraries based on the current platform
 const initCode = `
 // KOI native module initialization
 var __KOI_NATIVE_BASE__;
@@ -113,7 +183,6 @@ var __KOI_ONNX_PATH__;
 `;
 
 if (!content.includes("__KOI_NATIVE_BASE__")) {
-  // Insert after the first line/bang comment if present
   if (content.startsWith("#!")) {
     const firstNewline = content.indexOf("\n");
     content = content.slice(0, firstNewline + 1) + initCode + content.slice(firstNewline + 1);
@@ -124,7 +193,6 @@ if (!content.includes("__KOI_NATIVE_BASE__")) {
 }
 
 // Replace OpenTUI dynamic import
-// Original: var module = await import(`@opentui/core-${process.platform}-${process.arch}/index.js`);
 const opentuiImportPattern = /var module = await import\(`@opentui\/core-[^`]+`\)/g;
 const opentuiLibName = getNativeLibExt(process.platform);
 const opentuiReplacement = `var module = { default: __KOI_OPENTUI_PATH__ + "/libopentui${opentuiLibName}" };`;
@@ -138,7 +206,6 @@ if (opentuiImportPattern.test(content)) {
 }
 
 // Replace onnxruntime path
-// Original: __require(`../bin/napi-v3/${process.platform}/${process.arch}/file.node`)
 const onnxPattern = /`\.\.\/bin\/napi-v3\/\$\{process\.platform\}\/\$\{process\.arch\}\/([^`]+)`/g;
 const onnxReplacement = `__KOI_ONNX_PATH__ + "/$1"`;
 
@@ -150,7 +217,7 @@ if (onnxPattern.test(content)) {
   }
 }
 
-// Clean up dist/node_modules (if it exists from old builds)
+// Clean up dist/node_modules
 const distNodeModules = join(distDir, "node_modules");
 if (existsSync(distNodeModules)) {
   rmSync(distNodeModules, { recursive: true, force: true });
