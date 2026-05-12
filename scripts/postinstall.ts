@@ -25,31 +25,9 @@ const platformModules = [
   "@opentui/core-win32-x64",
 ];
 
-// Ensure all platform-specific packages are installed first
-// This is needed because @opentui/core uses dynamic imports based on platform,
-// and npm/bun only installs the current platform's optional dependency
-const coreVersion = (() => {
-  const pkgPath = join(rootDir, "node_modules", "@opentui", "core", "package.json");
-  if (!existsSync(pkgPath)) return null;
-  try {
-    return JSON.parse(readFileSync(pkgPath, "utf-8")).version;
-  } catch {
-    return null;
-  }
-})();
-
-if (coreVersion) {
-  for (const pkg of platformModules) {
-    const pkgPath = join(rootDir, "node_modules", pkg);
-    if (existsSync(pkgPath)) continue;
-    console.log(`Installing ${pkg}...`);
-    try {
-      execSync(`bun add ${pkg}@${coreVersion}`, { cwd: rootDir, stdio: "pipe" });
-    } catch (e) {
-      console.warn(`Warning: Failed to install ${pkg}`);
-    }
-  }
-}
+// Platform modules installation is now handled by the installer scripts
+// to avoid infinite recursion when using bun add in postinstall
+// This script only creates the shim files for existing platform modules
 
 const indexJsContent = `const module = await import("./libopentui.dylib", { with: { type: "file" } });
 export default module.default;
