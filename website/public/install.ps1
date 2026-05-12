@@ -101,8 +101,15 @@ $opentuiVersion = & bun pm ls "@opentui/core" --global 2>$null | Select-String -
 }
 
 if (-not $opentuiVersion) {
-    # Fallback: get from npm
-    $opentuiVersion = (irm "https://registry.npmjs.org/@opentui/core/latest" | ConvertFrom-Json).version
+    # Fallback: get from npm using web request
+    try {
+        $response = Invoke-WebRequest -Uri "https://registry.npmjs.org/@opentui/core/latest" -UseBasicParsing
+        $json = $response.Content | ConvertFrom-Json
+        $opentuiVersion = $json.version
+    } catch {
+        # Last resort: use a known good version
+        $opentuiVersion = "latest"
+    }
 }
 
 Write-Host "  OpenTUI version: $opentuiVersion" -ForegroundColor DarkGray
