@@ -93,8 +93,13 @@ function extractTextFromBlocks(content: unknown): string {
     .join("");
 }
 
+function stripKoiContext(content: string): string {
+  return content.replace(/<koi_context>[\s\S]*?<\/koi_context>/g, "").trimEnd();
+}
+
 function extractUserText(content: unknown): string {
-  return extractTextFromBlocks(content) || "(empty)";
+  const text = extractTextFromBlocks(content) || "(empty)";
+  return stripKoiContext(text);
 }
 
 function extractAssistantText(msg: { content: unknown }): string {

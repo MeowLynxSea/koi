@@ -537,6 +537,28 @@ function handleAgentEnd(event: Extract<AgentSessionEvent, { type: "agent_end" }>
       activeTools: getActiveToolNamesForMode(getAgentMode()),
     });
   }
+
+  // ─── CCE: Post-turn associative processing ───
+  // Feed the agent's own response back into CCE so discoveries, insights,
+  // and references made by the agent enter Working Memory and the associative network.
+  void (async () => {
+    try {
+      const fullHistory = ctx.sessionRef.current?.messages ?? event.messages;
+      const lastAssistant = [...fullHistory].reverse().find(isAssistantMessage);
+      if (lastAssistant) {
+        const { text } = extractTextAndThinking(lastAssistant);
+        if (text && text.trim().length > 0) {
+          const { getCceSystem } = await import("../cce/index.js");
+          const cce = getCceSystem();
+          if (cce) {
+            await cce.injector.processAgentResponse(text);
+          }
+        }
+      }
+    } catch {
+      // ignore CCE post-turn errors
+    }
+  })();
 }
 
 /** Creates a blank streaming placeholder for the incoming assistant message.
@@ -1396,12 +1418,12 @@ export function useKoiAgent(): KoiAgentState {
         const { getCceSystem } = await import("../cce/index.js");
         const cce = getCceSystem();
         if (cce) {
-          const injection = await cce.injector.buildInjection(text);
-          if (injection) {
+          const result = await cce.injector.buildInjection(text);
+          if (result.injection) {
             // Append CCE context as a system message for this turn only
             // Pi's AgentSession may support temporary context injection
             // Fallback: prepend to the user message
-            text = `${text}\n\n${injection}`;
+            text = `${text}\n\n${result.injection}`;
           }
         }
       } catch {

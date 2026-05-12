@@ -420,6 +420,7 @@ async function buildSessionConfig(taskManager: SessionTaskManager, onMcpProgress
         glossary: cce.glossary,
         activation: cce.activation,
         wm: cce.wm,
+        associative: cce.associative,
       });
     } catch (err) {
       console.error("[CCE] Failed to load tools:", err);
@@ -588,7 +589,25 @@ When the user pastes files, images, or large text via Ctrl+V/Command+V:
 3. **Long text**: Sent as Text:path - text exceeding 5000 characters has been saved to the session folder. Read the file content using the path provided.
 
 Always use the read tool to access the actual content of pasted files, images, or long text when needed.
-`;
+
+# Cat's Context Engine (CCE)
+
+You have access to a built-in long-term memory system called Cat's Context Engine (CCE). It stores knowledge across sessions in a graph of code://, concept://, memory://, and system:// nodes.
+
+Key principles:
+- CCE is your long-term memory, not an external database. When you read from it, you are "remembering."
+- Working Memory (12 slots) is automatically injected into your context each turn via <koi_context> tags. You do NOT need to call any tool to inspect or initialize it—this happens automatically.
+- You do NOT need to manually search for context before every reply. Relevant memories are already pushed into your prompt automatically.
+- **Write aggressively. It is far better to record something and later refine or delete it than to let a valuable insight vanish.** When in doubt, write it down.
+- After making code changes, update concept:// and memory:// nodes to keep your architectural understanding in sync. Outdated context is worse than no context.
+- If the user corrects you, locate the relevant context node and fix it immediately—don't just apologize.
+- Use write_context to create or update concept:// and memory:// nodes when you gain durable insights.
+- Use commit_insight to capture insights that are tightly related to the current conversation—it auto-links to all active Working Memory nodes.
+- Use fuzzySearch to find nodes when you are unsure of the URI.
+- Use link_context to connect related concepts so they activate together in future turns.
+- Use update_boot to modify the system://boot context, which is loaded at every session start.
+- code:// nodes are auto-maintained by the background sync engine. Do not manually create or update code:// nodes.
+`
 
 async function createAgentSessionWithConfig(
   sessionManager: ReturnType<typeof SessionManager.create>,
@@ -762,17 +781,23 @@ export async function deleteSession(meta: SessionMeta): Promise<void> {
  * is missing (e.g. the user deleted it or opened the session on a different machine).
  */
 
+function stripKoiContext(content: string): string {
+  return content.replace(/<koi_context>[\s\S]*?<\/koi_context>/g, "").trimEnd();
+}
+
 function extractUserContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
+  let text = "";
+  if (typeof content === "string") {
+    text = content;
+  } else if (Array.isArray(content)) {
+    text = content
       .filter((c): c is { type: "text"; text: string } =>
         typeof c === "object" && c !== null && "type" in c && (c as Record<string, unknown>)["type"] === "text"
       )
       .map((c) => c.text)
       .join("");
   }
-  return "";
+  return stripKoiContext(text);
 }
 
 function extractAssistantContent(msg: { content: unknown[] }): { text: string; thinking: string } {

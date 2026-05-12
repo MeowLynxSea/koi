@@ -863,6 +863,41 @@ export class GraphService {
     return rows.map(([uid, weight, type]) => ({ node_uuid: uid, weight, edge_type: type }));
   }
 
+  async deletePath(path: string, domain = "code", namespace = ""): Promise<{ deleted_uri: string; node_uuid: string | null }> {
+    const mem = await this.getMemoryByPath(path, domain, namespace);
+    const nodeUuid = mem ? (mem['node_uuid'] as string) : null;
+    await this.removePath(path, domain, namespace);
+    if (nodeUuid) {
+      await this.search.refreshSearchDocumentsForNode(nodeUuid, namespace);
+    }
+    return { deleted_uri: `${domain}://${path}`, node_uuid: nodeUuid };
+  }
+
+  async updateBoot(content: string, namespace = ""): Promise<Record<string, unknown>> {
+    const boot = await this.getMemoryByPath("boot", "system", namespace);
+    if (boot) {
+      return this.updateMemory("boot", content, "system", namespace);
+    }
+    // Create boot node under root if not exists
+    const newUuid = randomUUID();
+    await this._ensureNode(newUuid);
+    const memoryId = await this._insertMemory(newUuid, content);
+    await this._createEdgeWithPaths(ROOT_NODE_UUID, newUuid, "boot", "system", "boot", 0, null, namespace);
+    await this.search.refreshSearchDocumentsForNode(newUuid, namespace);
+    return {
+      id: memoryId,
+      node_uuid: newUuid,
+      domain: "system",
+      path: "boot",
+      uri: "system://boot",
+    };
+  }
+
+  async getMemoryIdByPath(path: string, domain = "code", namespace = ""): Promise<number | null> {
+    const mem = await this.getMemoryByPath(path, domain, namespace);
+    return mem ? (mem['id'] as number) : null;
+  }
+
   async getActivationState(nodeUuid: string): Promise<Record<string, unknown> | null> {
     const row = await this.db.fetchone<
       [number, number, number, string | null]

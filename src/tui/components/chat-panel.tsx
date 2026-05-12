@@ -436,6 +436,10 @@ function parseMarkdownSegments(content: string): MarkdownSegment[] {
  * Message Renderers
  */
 
+function stripKoiContext(content: string): string {
+  return content.replace(/<koi_context>[\s\S]*?<\/koi_context>/g, "").trimEnd();
+}
+
 function UserMessage({
   msg,
   contentWidth,
@@ -449,7 +453,7 @@ function UserMessage({
   const prefix = "> ";
   const prefixWidth = stringWidth(prefix);
   const available = Math.max(1, contentWidth - 2 - prefixWidth);
-  const wrapped = wrapText(msg.content, available, prefixWidth);
+  const wrapped = wrapText(stripKoiContext(msg.content), available, prefixWidth);
 
   return (
     <box flexDirection="column" width={contentWidth} marginTop={marginTop}>

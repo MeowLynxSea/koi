@@ -13,6 +13,7 @@ import type { SearchIndexer } from "../graph/search-indexer.js";
 import type { GlossaryService } from "../graph/glossary-service.js";
 import type { ActivationEngine } from "../brain/activation-engine.js";
 import type { WorkingMemoryManager } from "../brain/working-memory.js";
+import type { AssociativeNetwork } from "../brain/associative-network.js";
 import { getNamespaceContext } from "./namespace-context.js";
 
 const DEFAULT_DOMAIN = "code";
@@ -41,6 +42,7 @@ export interface CceToolDeps {
   glossary: GlossaryService;
   activation: ActivationEngine;
   wm: WorkingMemoryManager;
+  associative: AssociativeNetwork;
 }
 
 export function createCceToolDefinitions(deps: CceToolDeps): ToolDefinition[] {
@@ -134,33 +136,6 @@ export function createCceToolDefinitions(deps: CceToolDeps): ToolDefinition[] {
         const title = path.includes("/") ? path.slice(path.lastIndexOf("/") + 1) : path;
         await deps.graph.createMemory(parentPath, content, priority, title, disclosure ?? null, domain, namespace);
         return { details: {}, content: [{ type: "text", text: `Created ${uri}` }] };
-      },
-    }),
-
-    // ─── search_context ───
-    defineTool({
-      name: "search_context",
-      label: "CCE: Search contexts",
-      description: "Hybrid search across all context nodes using keyword + semantic fusion.",
-      parameters: Type.Object({
-        query: Type.String(),
-        limit: Type.Number({ default: 10 }),
-      }),
-      execute: async (_id, params) => {
-        const { query, limit } = params as { query: string; limit: number };
-        const namespace = ns();
-        const results = await deps.search.search(query, limit, null, namespace);
-        if (results.length === 0) {
-          return { details: {}, content: [{ type: "text", text: "No results found." }] };
-        }
-        const lines = [`# Search Results for "${query}"`, ""];
-        for (const r of results) {
-          const scoreStr = r['score'] !== undefined ? ` (score: ${(r['score'] as number).toFixed(2)})` : "";
-          lines.push(`- ${r['uri']}${scoreStr}`);
-          lines.push(`  ${r['snippet']}`);
-          lines.push("");
-        }
-        return { details: {}, content: [{ type: "text", text: lines.join("\n") }] };
       },
     }),
 
@@ -276,97 +251,128 @@ export function createCceToolDefinitions(deps: CceToolDeps): ToolDefinition[] {
       },
     }),
 
-    // ─── session_start ───
+    // ─── delete_context ───
     defineTool({
-      name: "session_start",
-      label: "CCE: Initialize session memory",
-      description: "Initializes Working Memory with core contexts for the current project.",
-      parameters: Type.Object({}),
-      execute: async () => {
+      name: "delete_context",
+      label: "CCE: Delete context by URI",
+      description: "Deletes a context node and its sub-tree by URI. Use with care.",
+      parameters: Type.Object({
+        uri: Type.String({ description: "Context URI to delete, e.g. concept://old_idea" }),
+      }),
+      execute: async (_id, params) => {
+        const { uri } = params as { uri: string };
         const namespace = ns();
-        // Load system://boot into WM
-        const boot = await deps.graph.getMemoryByPath("boot", "system", namespace);
-        if (boot) {
-          await deps.wm.manualInject(namespace, "system://boot", boot['content'] as string, 0.9);
+        const [domain, path] = parseUri(uri);
+        if (domain === "system") {
+          return { details: {}, content: [{ type: "text", text: "Cannot delete system:// nodes." }], isError: true };
+        }
+        const result = await deps.graph.deletePath(path, domain, namespace);
+        return { details: result, content: [{ type: "text", text: `Deleted ${result.deleted_uri}${result.node_uuid ? ` (node: ${result.node_uuid})` : ""}` }] };
+      },
+    }),
+
+    // ─── link_context ───
+    defineTool({
+      name: "link_context",
+      label: "CCE: Link two context nodes",
+      description: "Creates an associative link between any two context nodes (bidirectional).",
+      parameters: Type.Object({
+        from_uri: Type.String(),
+        to_uri: Type.String(),
+      }),
+      execute: async (_id, params) => {
+        const { from_uri, to_uri } = params as { from_uri: string; to_uri: string };
+        const namespace = ns();
+        const [fd, fp] = parseUri(from_uri);
+        const [td, tp] = parseUri(to_uri);
+        const fromMem = await deps.graph.getMemoryByPath(fp, fd, namespace);
+        const toMem = await deps.graph.getMemoryByPath(tp, td, namespace);
+        if (!fromMem) return { details: {}, content: [{ type: "text", text: `From URI '${from_uri}' not found.` }], isError: true };
+        if (!toMem) return { details: {}, content: [{ type: "text", text: `To URI '${to_uri}' not found.` }], isError: true };
+
+        await deps.associative.reinforce(fromMem['node_uuid'] as string, toMem['node_uuid'] as string, 0.05);
+        await deps.associative.reinforce(toMem['node_uuid'] as string, fromMem['node_uuid'] as string, 0.05);
+        return { details: {}, content: [{ type: "text", text: `Linked ${from_uri} <-> ${to_uri}` }] };
+      },
+    }),
+
+    // ─── commit_insight ───
+    defineTool({
+      name: "commit_insight",
+      label: "CCE: Commit insight to memory",
+      description:
+        "Captures a durable insight and links it to all currently active Working Memory nodes. " +
+        "Prefer this over write_context when the insight is related to the current conversation. " +
+        "Automatically creates a memory:// node and associative links.",
+      parameters: Type.Object({
+        title: Type.String({ description: "Short semantic title for the insight" }),
+        content: Type.String({ description: "The insight text to preserve" }),
+        linked_code_uris: Type.Optional(Type.Array(Type.String(), { description: "Optional code:// URIs to link as evidence" })),
+      }),
+      execute: async (_id, params) => {
+        const { title, content, linked_code_uris } = params as { title: string; content: string; linked_code_uris?: string[] };
+        const namespace = ns();
+        const uri = `memory://${title}`;
+
+        // Create or update memory:// node
+        const [domain, path] = parseUri(uri);
+        const existing = await deps.graph.getMemoryByPath(path, domain, namespace);
+        let nodeUuid: string;
+        if (existing) {
+          await deps.graph.updateMemory(path, content, domain, namespace);
+          nodeUuid = existing['node_uuid'] as string;
+        } else {
+          const result = await deps.graph.createMemory("", content, 1, title, null, domain, namespace);
+          nodeUuid = result['node_uuid'] as string;
         }
 
-        const wmText = deps.wm.formatPool(namespace);
+        // Link to all current WM slots
+        const pool = deps.wm.getPool(namespace);
+        const linked: string[] = [];
+        for (const slot of pool.slots) {
+          if (slot.node_uuid === nodeUuid) continue;
+          await deps.associative.reinforce(nodeUuid, slot.node_uuid, 0.05);
+          linked.push(slot.uri);
+        }
+
+        // Optional code evidence links
+        let codeLinked = 0;
+        if (linked_code_uris && linked_code_uris.length > 0) {
+          const codeUuids: string[] = [];
+          for (const cu of linked_code_uris) {
+            const [cd, cp] = parseUri(cu);
+            const codeMem = await deps.graph.getMemoryByPath(cp, cd, namespace);
+            if (codeMem) codeUuids.push(codeMem['node_uuid'] as string);
+          }
+          if (codeUuids.length > 0) {
+            await deps.graph.linkCodeNodes(nodeUuid, codeUuids, namespace);
+            codeLinked = codeUuids.length;
+          }
+        }
+
         return {
-          details: {},
-          content: [{
-            type: "text",
-            text: wmText
-              ? `=== Working Memory Initialized ===\n\n${wmText}`
-              : "(No active contexts in Working Memory)",
-          }],
+          details: { uri, linked_count: linked.length, code_linked: codeLinked },
+          content: [{ type: "text", text: `Insight committed to ${uri}. Linked to ${linked.length} WM node(s)${codeLinked > 0 ? `, ${codeLinked} code node(s)` : ""}.` }],
         };
       },
     }),
 
-    // ─── get_working_memory ───
+    // ─── update_boot ───
     defineTool({
-      name: "get_working_memory",
-      label: "CCE: Inspect Working Memory",
-      description: "Shows the current Working Memory pool contents.",
-      parameters: Type.Object({}),
-      execute: async () => {
-        const namespace = ns();
-        const state = deps.wm.getPoolDict(namespace);
-        const lines = [
-          `=== Working Memory — ${state['occupied']}/${state['capacity']} slots ===`,
-          "",
-        ];
-        for (const slot of (state['slots'] as Array<Record<string, unknown>>)) {
-          lines.push(`- ${slot['uri']} [score: ${slot['relevance_score']}, source: ${slot['activation_source']}]`);
-        }
-        lines.push("");
-        return { details: {}, content: [{ type: "text", text: lines.join("\n") }] };
-      },
-    }),
-
-    // ─── process_utterance ───
-    defineTool({
-      name: "process_utterance",
-      label: "CCE: Process utterance for memory",
-      description: "Processes a user message or agent thought to update Working Memory via the Activation Engine.",
+      name: "update_boot",
+      label: "CCE: Update system boot context",
+      description: "Updates the system://boot context, which is loaded into Working Memory at session start.",
       parameters: Type.Object({
-        text: Type.String(),
+        content: Type.String({ description: "New boot context content" }),
       }),
       execute: async (_id, params) => {
-        const { text } = params as { text: string };
+        const { content } = params as { content: string };
         const namespace = ns();
-        const activated = await deps.activation.computeActivations(text, namespace, 50);
-        const changes = await deps.wm.updateFromActivations(namespace, activated, text);
-
-        // Record episode for top node
-        if (changes.activated_nodes.length > 0) {
-          const top = changes.activated_nodes.reduce((a, b) => ((a['score'] as number) > (b['score'] as number) ? a : b));
-          try {
-            await deps.graph.recordEpisode(
-              top['node_uuid'] as string,
-              "conversation",
-              top['uri'] as string,
-              text.slice(0, 500),
-              deps.wm.getPool(namespace).slots.map((s) => s.node_uuid),
-              top['score'] as number
-            );
-          } catch {
-            // ignore
-          }
-        }
-
-        const lines = [
-          "=== Memory Update ===",
-          `Inserted: ${changes.inserted.length}`,
-          `Refreshed: ${changes.refreshed.length}`,
-          `Evicted: ${changes.evicted.length}`,
-          `Rejected: ${changes.rejected.length}`,
-          "",
-          deps.wm.formatPool(namespace),
-        ];
-        return { details: {}, content: [{ type: "text", text: lines.join("\n") }] };
+        const result = await deps.graph.updateBoot(content, namespace);
+        return { details: result, content: [{ type: "text", text: `Updated system://boot (memory id: ${result['id']})` }] };
       },
     }),
+
   ];
 }
 

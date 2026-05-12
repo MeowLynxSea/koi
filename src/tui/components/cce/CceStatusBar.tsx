@@ -36,7 +36,7 @@ export function CceStatusBar({ onClick }: CceStatusBarProps) {
   return (
     <box flexDirection="row" gap={1} onMouseUp={onClick}>
       <text fg="#8be9fd" attributes={createTextAttributes({ bold: true })}>
-        🧠 CCE
+        CCE
       </text>
       <text fg="#a5b4fc">
         {slotCount} slots

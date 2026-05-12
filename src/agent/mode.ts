@@ -104,7 +104,18 @@ const ALL_TOOLS = [
   "agent",
   "CreateMonitor",
   "CancelMonitor",
-  "SendToMonitor"
+  "SendToMonitor",
+  "fuzzySearch",
+  // CCE tools
+  "read_context",
+  "write_context",
+  "delete_context",
+  "browse_context",
+  "commit_insight",
+  "link_context",
+  "link_code",
+  "manage_triggers",
+  "update_boot",
 ];
 
 const READONLY_TOOLS = [
@@ -115,6 +126,10 @@ const READONLY_TOOLS = [
   "webfetch",
   "taskGet",
   "taskList",
+  "fuzzySearch",
+  // CCE read-only tools
+  "read_context",
+  "browse_context",
 ];
 
 const PLAN_TOOLS = [
@@ -130,6 +145,11 @@ const PLAN_TOOLS = [
   "askUserQuestion",
   "enterPlanMode",
   "exitPlanMode",
+  "fuzzySearch",
+  // CCE read-only + planning tools
+  "read_context",
+  "browse_context",
+  "commit_insight",
 ];
 
 /**

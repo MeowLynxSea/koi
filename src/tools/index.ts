@@ -32,6 +32,7 @@ import {
 } from "./monitor.js";
 import { createSendToMonitorToolDefinition } from "./send-to-monitor.js";
 import { createSkillToolDefinition } from "./skill.js";
+import { createFuzzySearchToolDefinition } from "./fuzzy-search.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 export function createCodingToolDefinitions(
@@ -59,6 +60,7 @@ export function createCodingToolDefinitions(
     createCancelMonitorToolDefinition(),
     createSendToMonitorToolDefinition(),
     createSkillToolDefinition(),
+    createFuzzySearchToolDefinition(_cwd),
   ] as ToolDefinition[];
 }
 
@@ -69,6 +71,7 @@ export function createReadOnlyToolDefinitions(_cwd: string): ToolDefinition[] {
     createGlobToolDefinition(_cwd),
     createLsToolDefinition(_cwd),
     createWebFetchToolDefinition(_cwd),
+    createFuzzySearchToolDefinition(_cwd),
   ] as ToolDefinition[];
 }
 

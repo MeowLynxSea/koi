@@ -809,7 +809,14 @@ export function App({ renderer, onExit }: AppProps) {
   // These messages are still present in the session state (so the LLM sees
   // them), but we don't want to clutter the UI with XML task notifications.
   const visibleMessages = useMemo(
-    () => messages.filter((m) => !(m.type === "user" && isInternalNotification(m.content))),
+    () =>
+      messages
+        .map((m) =>
+          m.type === "user"
+            ? { ...m, content: m.content.replace(/<koi_context>[\s\S]*?<\/koi_context>/g, "").trimEnd() }
+            : m
+        )
+        .filter((m) => !(m.type === "user" && isInternalNotification(m.content))),
     [messages]
   );
 

@@ -409,7 +409,7 @@ ${sf.content_preview}`;
     for (const item of sorted) {
       lines.push(`- ${item.path}: ${item.summary.slice(0, 120)}...`);
     }
-    lines.push("", "## Protocols", "- Start each session with session_start() instead of manually reading this node.", "- After code changes, affected code:// nodes are updated automatically.");
+    lines.push("", "## Protocols", "- Working Memory and context activation are handled automatically by the framework.", "- After code changes, affected code:// nodes are updated automatically.");
 
     const content = lines.join("\n");
     const existing = await this.graph.getMemoryByPath("boot", "system", namespace);
