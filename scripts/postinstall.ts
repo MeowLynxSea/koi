@@ -36,8 +36,11 @@ export default module.default;
 // Find the actual node_modules path
 // In global install, koi is at: C:\Users\Acro\node_modules\@meowlynxsea\koi
 // Platform modules are at: C:\Users\Acro\node_modules\@opentui\core-win32-x64
-const parentDir = dirname(rootDir);
-console.log(`[DEBUG] parentDir (dirname(rootDir)): ${parentDir}`);
+// rootDir is: C:\Users\Acro\node_modules\@meowlynxsea\koi
+// dirname(rootDir) is: C:\Users\Acro\node_modules\@meowlynxsea (WRONG)
+// We need to go up two levels to get: C:\Users\Acro\node_modules
+const parentDir = dirname(dirname(rootDir));
+console.log(`[DEBUG] parentDir (dirname(dirname(rootDir))): ${parentDir}`);
 
 // Check if parentDir has the expected structure
 const parentNodeModulesCheck = join(parentDir, "@opentui");
