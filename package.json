@@ -34,7 +34,7 @@
   "scripts": {
     "dev": "bun run src/main.tsx",
     "postinstall": "bun run scripts/postinstall.ts",
-    "build": "bun build src/main.tsx --outdir dist --target bun && cp node_modules/@opentui/core/parser.worker.js dist/ && cp -r node_modules/@opentui/core/assets dist/opentui-assets && mkdir -p dist/cce-frontend && cp -r src/cce/web/frontend/dist/* dist/cce-frontend/ && mkdir -p dist/onnx-bin/napi-v3/darwin/arm64 && cp node_modules/onnxruntime-node/bin/napi-v3/darwin/arm64/* dist/onnx-bin/napi-v3/darwin/arm64/ && cp src/cce/core/schema.sql dist/ && mkdir -p dist/node_modules && for pkg in '@opentui/core-darwin-arm64' '@opentui/core-darwin-x64' '@opentui/core-linux-arm64' '@opentui/core-linux-x64' '@opentui/core-win32-arm64' '@opentui/core-win32-x64'; do if [ -d \"node_modules/$pkg\" ]; then mkdir -p \"dist/node_modules/$pkg\" && cp -r \"node_modules/$pkg/\"* \"dist/node_modules/$pkg/\"; fi; done && bun run scripts/postbuild.ts",
+    "build": "bun build src/main.tsx --outdir dist --target bun && cp node_modules/@opentui/core/parser.worker.js dist/ && cp -r node_modules/@opentui/core/assets dist/opentui-assets && mkdir -p dist/cce-frontend && cp -r src/cce/web/frontend/dist/* dist/cce-frontend/ && mkdir -p dist/onnx-bin/napi-v3/darwin/arm64 && cp node_modules/onnxruntime-node/bin/napi-v3/darwin/arm64/* dist/onnx-bin/napi-v3/darwin/arm64/ && cp src/cce/core/schema.sql dist/ && mkdir -p dist/node_modules && cp -r node_modules/@opentui/core-darwin-arm64 dist/node_modules/ && cp -r node_modules/@opentui/core-darwin-x64 dist/node_modules/ 2>/dev/null || true && cp -r node_modules/@opentui/core-linux-arm64 dist/node_modules/ 2>/dev/null || true && cp -r node_modules/@opentui/core-linux-x64 dist/node_modules/ 2>/dev/null || true && cp -r node_modules/@opentui/core-win32-arm64 dist/node_modules/ 2>/dev/null || true && cp -r node_modules/@opentui/core-win32-x64 dist/node_modules/ 2>/dev/null || true && bun run scripts/postbuild.ts",
     "check": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"
@@ -52,6 +52,7 @@
     "typescript-eslint": "^8.59.2"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.5.0",
     "@mariozechner/clipboard": "^0.3.5",
     "@mariozechner/pi-agent-core": "0.73.0",
     "@mariozechner/pi-ai": "0.73.0",
@@ -60,6 +61,11 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@opentui-ui/dialog": "latest",
     "@opentui/core": "latest",
+    "@opentui/core-darwin-x64": "^0.2.7",
+    "@opentui/core-linux-arm64": "0.2.7",
+    "@opentui/core-linux-x64": "0.2.7",
+    "@opentui/core-win32-arm64": "0.2.7",
+    "@opentui/core-win32-x64": "0.2.7",
     "@opentui/react": "latest",
     "@types/diff": "^8.0.0",
     "@types/node": "^25.6.2",
@@ -68,7 +74,6 @@
     "clipboard-image": "^0.1.0",
     "commander": "^14.0.3",
     "diff": "^9.0.0",
-    "@huggingface/transformers": "^3.5.0",
     "fast-glob": "^3.3.3",
     "jimp": "^1.6.1",
     "react": "^19.2.6",
