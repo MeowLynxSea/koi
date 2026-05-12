@@ -137,12 +137,28 @@ export class EmbeddingService {
       for (let i = 0; i < uncachedTexts.length; i += batchSize) {
         const batch = uncachedTexts.slice(i, i + batchSize);
         const outputs = await this.extractor(batch, { pooling: "mean", normalize: true });
-        for (let j = 0; j < batch.length; j++) {
-          const vec = outputs[j]! as Float32Array;
-          const idx = uncachedIndices[i + j]!;
+        const outTensor = outputs as unknown as { data: Float32Array; dims: number[] };
+        const data = outTensor.data;
+        const dims = outTensor.dims;
+
+        if (dims.length === 1) {
+          // Single embedding [embedding_dim]
+          const vec = data;
+          const idx = uncachedIndices[i]!;
           results[idx] = vec;
           if (this.cache.size < this.cacheLimit) {
-            this.cache.set(batch[j]!.slice(0, 200), vec);
+            this.cache.set(batch[0]!.slice(0, 200), vec);
+          }
+        } else {
+          // Batch of embeddings [batch_size, embedding_dim]
+          const embedDim = dims[1]!;
+          for (let j = 0; j < batch.length; j++) {
+            const vec = data.slice(j * embedDim, (j + 1) * embedDim);
+            const idx = uncachedIndices[i + j]!;
+            results[idx] = vec;
+            if (this.cache.size < this.cacheLimit) {
+              this.cache.set(batch[j]!.slice(0, 200), vec);
+            }
           }
         }
       }
