@@ -265,6 +265,11 @@ if (clipboardRequirePattern.test(content)) {
   }
 }
 
+// Replace "Cannot require module" paths - this is what Bun throws when local file exists
+content = content.replace(/"Cannot require module "\+"\.\/clipboard\.([^"]+)"/g,
+  `"Cannot require module " + __KOI_CLIPBOARD_PATH__ + "/clipboard.$1"`);
+console.log("[postbuild] Replaced clipboard 'Cannot require module' paths");
+
 // Clean up dist/node_modules
 const distNodeModules = join(distDir, "node_modules");
 if (existsSync(distNodeModules)) {
