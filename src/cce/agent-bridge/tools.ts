@@ -357,19 +357,54 @@ export function createCceToolDefinitions(deps: CceToolDeps): ToolDefinition[] {
       },
     }),
 
-    // ─── update_boot ───
+    // ─── manage_boot_links ───
     defineTool({
-      name: "update_boot",
-      label: "CCE: Update system boot context",
-      description: "Updates the system://boot context, which is loaded into Working Memory at session start.",
+      name: "manage_boot_links",
+      label: "CCE: Manage boot memory links",
+      description: "Add, remove, or list memory nodes linked to boot. Linked nodes are automatically injected into Working Memory at session start.",
       parameters: Type.Object({
-        content: Type.String({ description: "New boot context content" }),
+        action: Type.Union([Type.Literal("add"), Type.Literal("remove"), Type.Literal("list")], {
+          description: "Action to perform: 'add' links a memory, 'remove' unlinks it, 'list' shows all links",
+        }),
+        uri: Type.Optional(Type.String({ description: "Memory URI to link/unlink (required for add/remove)" })),
       }),
       execute: async (_id, params) => {
-        const { content } = params as { content: string };
+        const { action, uri } = params as { action: "add" | "remove" | "list"; uri?: string };
         const namespace = ns();
-        const result = await deps.graph.updateBoot(content, namespace);
-        return { details: result, content: [{ type: "text", text: `Updated system://boot (memory id: ${String(result['id'])})` }] };
+
+        if (action === "list") {
+          const links = await deps.graph.getBootLinks(namespace);
+          if (links.length === 0) {
+            return { details: {}, content: [{ type: "text", text: "No boot links configured." }] };
+          }
+          const lines = ["# Boot Links", "", "Currently linked memories:", ""];
+          for (const link of links) {
+            lines.push(`- ${link.target_uri} (added: ${link.created_at ?? "unknown"})`);
+          }
+          return { details: {}, content: [{ type: "text", text: lines.join("\n") }] };
+        }
+
+        if (action === "add" || action === "remove") {
+          if (!uri) {
+            return { details: {}, content: [{ type: "text", text: "URI is required for add/remove actions." }], isError: true };
+          }
+
+          if (action === "add") {
+            const result = await deps.graph.addBootLink(uri, namespace);
+            // Refresh boot cache
+            const { refreshBootCache } = await import("../index.js");
+            await refreshBootCache(namespace, deps.graph);
+            return { details: result, content: [{ type: "text", text: `Added boot link: ${uri}` }] };
+          } else {
+            const result = await deps.graph.removeBootLink(uri, namespace);
+            // Refresh boot cache
+            const { refreshBootCache } = await import("../index.js");
+            await refreshBootCache(namespace, deps.graph);
+            return { details: result, content: [{ type: "text", text: `Removed boot link: ${uri}` }] };
+          }
+        }
+
+        return { details: {}, content: [{ type: "text", text: "Invalid action" }], isError: true };
       },
     }),
 
@@ -379,14 +414,29 @@ export function createCceToolDefinitions(deps: CceToolDeps): ToolDefinition[] {
 // ─── View generators ───
 
 async function _generateBootView(graph: GraphService, namespace: string): Promise<string> {
-  const lines = ["# Core Contexts", ""];
-  const boot = await graph.getMemoryByPath("boot", "system", namespace);
-  if (boot) {
-    lines.push(boot['content'] as string);
+  const lines = ["# Boot Memory Links", "", "Linked memories that are injected at session start:", ""];
+  
+  const links = await graph.getBootLinks(namespace);
+  if (links.length === 0) {
+    lines.push("(No boot links configured. Use manage_boot_links to add memories.)");
   } else {
-    lines.push("(No boot context found. Run sync to generate one.)");
+    for (const link of links) {
+      lines.push(`## ${link.target_uri}`);
+      const [domain, path] = link.target_uri.match(/^([a-zA-Z_][a-zA-Z0-9_]*):\/\/(.*)$/)
+        ? [link.target_uri.split("://")[0], link.target_uri.split("://")[1]]
+        : ["code", link.target_uri];
+      const memory = await graph.getMemoryByPath(path, domain, namespace);
+      if (memory && memory['content']) {
+        lines.push("");
+        lines.push(memory['content'] as string);
+      } else {
+        lines.push("_(memory not found or deleted)_");
+      }
+      lines.push("");
+    }
   }
-  lines.push("");
+  
+  lines.push("", "---", "", "Recent Memories:", "");
   lines.push(await _generateRecentView(graph, namespace, 5));
   return lines.join("\n");
 }

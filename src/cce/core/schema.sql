@@ -167,5 +167,12 @@ CREATE TABLE IF NOT EXISTS memory_episodes (
 CREATE INDEX IF NOT EXISTS idx_episodes_node ON memory_episodes(node_uuid, created_at);
 CREATE INDEX IF NOT EXISTS idx_episodes_type ON memory_episodes(episode_type, created_at);
 
+-- Boot 链接表：存储链接到 boot 的记忆节点 URI
+CREATE TABLE IF NOT EXISTS boot_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_uri TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Schema version marker
 INSERT OR IGNORE INTO _schema_version (version) VALUES (1);

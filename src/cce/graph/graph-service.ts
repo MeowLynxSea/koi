@@ -873,39 +873,77 @@ export class GraphService {
     return { deleted_uri: `${domain}://${path}`, node_uuid: nodeUuid };
   }
 
-  async updateBoot(content: string, namespace = ""): Promise<Record<string, unknown>> {
-    const boot = await this.getMemoryByPath("boot", "system", namespace);
-    if (boot) {
-      const result = await this.updateMemory("boot", content, "system", namespace);
-      // Update synchronous cache for system prompt injection
-      this._updateBootCache(namespace, content);
-      return result;
+  // =====================================================================
+  // Boot Links Management
+  // =====================================================================
+
+  async addBootLink(uri: string, namespace = ""): Promise<{ id: number; target_uri: string }> {
+    const targetUri = uri.trim();
+    if (!targetUri) throw new Error("URI cannot be empty");
+    
+    await this.db.execute(
+      "INSERT OR IGNORE INTO boot_links (target_uri) VALUES (?)",
+      [targetUri]
+    );
+    
+    const row = await this.db.fetchone<[number, string]>(
+      "SELECT id, target_uri FROM boot_links WHERE target_uri = ?",
+      [targetUri]
+    );
+    
+    if (!row) throw new Error(`Failed to add boot link: ${targetUri}`);
+    return { id: row[0], target_uri: row[1] };
+  }
+
+  async removeBootLink(uri: string, namespace = ""): Promise<{ removed_uri: string }> {
+    const targetUri = uri.trim();
+    await this.db.execute("DELETE FROM boot_links WHERE target_uri = ?", [targetUri]);
+    return { removed_uri: targetUri };
+  }
+
+  async getBootLinks(namespace = ""): Promise<Array<{ id: number; target_uri: string; created_at: string | null }>> {
+    const rows = await this.db.fetchall<[number, string, string | null]>(
+      "SELECT id, target_uri, created_at FROM boot_links ORDER BY created_at DESC"
+    );
+    return rows.map(([id, target_uri, created_at]) => ({ id, target_uri, created_at }));
+  }
+
+  async resolveBootLinks(namespace = ""): Promise<{
+    content: string;
+    missingLinks: string[];
+    links: Array<{ uri: string; content: string; found: boolean }>;
+  }> {
+    const links = await this.getBootLinks(namespace);
+    const missingLinks: string[] = [];
+    const resolvedLinks: Array<{ uri: string; content: string; found: boolean }> = [];
+    const contentParts: string[] = [];
+
+    for (const link of links) {
+      const [domain, path] = this._parseUri(link.target_uri);
+      const memory = await this.getMemoryByPath(path, domain, namespace);
+      
+      if (memory && memory['content']) {
+        contentParts.push(`\n${'='.repeat(60)}\n[BOOT LINK] ${link.target_uri}\n${'='.repeat(60)}\n\n${memory['content'] as string}\n`);
+        resolvedLinks.push({ uri: link.target_uri, content: memory['content'] as string, found: true });
+      } else {
+        missingLinks.push(link.target_uri);
+        resolvedLinks.push({ uri: link.target_uri, content: "", found: false });
+      }
     }
-    // Create boot node under root if not exists
-    const newUuid = randomUUID();
-    await this._ensureNode(newUuid);
-    const memoryId = await this._insertMemory(newUuid, content);
-    await this._createEdgeWithPaths(ROOT_NODE_UUID, newUuid, "boot", "system", "boot", 0, null, namespace);
-    await this.search.refreshSearchDocumentsForNode(newUuid, namespace);
-    // Update synchronous cache for system prompt injection
-    this._updateBootCache(namespace, content);
+
     return {
-      id: memoryId,
-      node_uuid: newUuid,
-      domain: "system",
-      path: "boot",
-      uri: "system://boot",
+      content: contentParts.join("\n"),
+      missingLinks,
+      links: resolvedLinks,
     };
   }
 
-  private _updateBootCache(namespace: string, content: string): void {
-    try {
-      // Dynamically import to avoid circular dependency
-      const module = require("../index.js") as { updateBootContentCache?: (ns: string, c: string) => void };
-      module.updateBootContentCache?.(namespace, content);
-    } catch {
-      // ignore - cache will be refreshed on next CCE init
+  private _parseUri(uri: string): [string, string] {
+    const m = uri.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*):\/\/(.*)$/);
+    if (m) {
+      return [m[1]!.toLowerCase(), m[2]!.trim().replace(/^\/+/, "")];
     }
+    return ["code", uri.trim().replace(/^\/+/, "")];
   }
 
   async getMemoryIdByPath(path: string, domain = "code", namespace = ""): Promise<number | null> {

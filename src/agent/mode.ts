@@ -115,7 +115,7 @@ const ALL_TOOLS = [
   "link_context",
   "link_code",
   "manage_triggers",
-  "update_boot",
+  "manage_boot_links",
 ];
 
 const READONLY_TOOLS = [

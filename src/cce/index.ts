@@ -23,15 +23,32 @@ import { PromptInjector } from "./agent-bridge/prompt-injector.js";
 import { DisclosureEngine } from "./agent-bridge/disclosure-engine.js";
 import { getNamespaceContext } from "./agent-bridge/namespace-context.js";
 
-// ─── Boot Memory Cache (synchronous access for system prompt injection) ───
-const _bootContentCache = new Map<string, string>();
+// ─── Boot Links Cache (synchronous access for system prompt injection) ───
+const _bootLinksCache = new Map<string, Array<{ uri: string; content: string }>>();
 
-export function getCachedBootContent(namespace: string): string | null {
-  return _bootContentCache.get(namespace) ?? null;
+export function getCachedBootLinks(namespace: string): Array<{ uri: string; content: string }> {
+  return _bootLinksCache.get(namespace) ?? [];
 }
 
-export function updateBootContentCache(namespace: string, content: string): void {
-  _bootContentCache.set(namespace, content);
+export async function refreshBootCache(namespace: string, graph: GraphService): Promise<{
+  content: string;
+  missingLinks: string[];
+}> {
+  const resolved = await graph.resolveBootLinks(namespace);
+  _bootLinksCache.set(namespace, resolved.links.filter(l => l.found).map(l => ({ uri: l.uri, content: l.content })));
+  return {
+    content: resolved.content,
+    missingLinks: resolved.missingLinks,
+  };
+}
+
+export function getResolvedBootContent(namespace: string): string {
+  const links = _bootLinksCache.get(namespace) ?? [];
+  const contentParts: string[] = [];
+  for (const link of links) {
+    contentParts.push(`\n${'='.repeat(60)}\n[BOOT LINK] ${link.uri}\n${'='.repeat(60)}\n\n${link.content}\n`);
+  }
+  return contentParts.join("\n");
 }
 
 export interface CceDownloadProgress {
@@ -113,14 +130,11 @@ export async function initCceSystem(
     disclosure,
   };
 
-  // Load boot content into synchronous cache for system prompt injection
+  // Load boot links into synchronous cache for system prompt injection
   try {
-    const bootMem = await graph.getMemoryByPath("boot", "system", namespace);
-    if (bootMem && bootMem['content'] && (bootMem['content'] as string).trim()) {
-      updateBootContentCache(namespace, (bootMem['content'] as string).trim());
-    }
+    await refreshBootCache(namespace, graph);
   } catch {
-    // ignore - boot memory will be loaded on demand
+    // ignore - boot links will be loaded on demand
   }
 
   return _system;
@@ -184,7 +198,7 @@ export function resetCceSystem(): void {
     try { _system.db.close(); } catch { /* ignore */ }
   }
   _system = null;
-  _bootContentCache.clear();
+  _bootLinksCache.clear();
   getEmbeddingService().reset();
 }
 

@@ -37,7 +37,7 @@ import {
   type SkillCommand,
 } from "../skills/index.js";
 import { createToolOutputGuard } from "./tool-output-guard.js";
-import { getCachedBootContent } from "../cce/index.js";
+import { getResolvedBootContent } from "../cce/index.js";
 import { getNamespaceContext } from "../cce/agent-bridge/namespace-context.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
@@ -607,7 +607,7 @@ Key principles:
 - Use commit_insight to capture insights that are tightly related to the current conversation—it auto-links to all active Working Memory nodes.
 - Use fuzzySearch to find nodes when you are unsure of the URI.
 - Use link_context to connect related concepts so they activate together in future turns.
-- Use update_boot to modify the system://boot context, which is loaded at every session start.
+- Use manage_boot_links to add, remove, or list memory nodes linked to boot.
 - code:// nodes are auto-maintained by the background sync engine. Do not manually create or update code:// nodes.
 `
 
@@ -648,12 +648,12 @@ You are highly capable and often allow users to complete ambitious tasks that wo
         newPrompt = koiIdentity + "\n\n" + base;
       }
       
-      // ─── Inject CCE Boot Memory (synchronous cache) ───
+      // ─── Inject CCE Boot Memory Links (synchronous cache) ───
       try {
         const namespace = getNamespaceContext().current;
-        const bootContent = getCachedBootContent(namespace);
+        const bootContent = getResolvedBootContent(namespace);
         if (bootContent) {
-          newPrompt += "\n\n=== Boot Memory ===\n\n" + bootContent;
+          newPrompt += "\n\n=== Boot Memory Links ===\n\n" + bootContent;
         }
       } catch {
         // CCE not ready or boot memory not found — continue without it
