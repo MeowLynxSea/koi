@@ -37,6 +37,8 @@ import {
   type SkillCommand,
 } from "../skills/index.js";
 import { createToolOutputGuard } from "./tool-output-guard.js";
+import { getCachedBootContent } from "../cce/index.js";
+import { getNamespaceContext } from "../cce/agent-bridge/namespace-context.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
 const KOI_SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
@@ -644,6 +646,17 @@ You are highly capable and often allow users to complete ambitious tasks that wo
       // If replacement didn't happen, prepend Koi's identity at the start
       if (newPrompt === base) {
         newPrompt = koiIdentity + "\n\n" + base;
+      }
+      
+      // ─── Inject CCE Boot Memory (synchronous cache) ───
+      try {
+        const namespace = getNamespaceContext().current;
+        const bootContent = getCachedBootContent(namespace);
+        if (bootContent) {
+          newPrompt += "\n\n=== Boot Memory ===\n\n" + bootContent;
+        }
+      } catch {
+        // CCE not ready or boot memory not found — continue without it
       }
       
       // Append Koi's custom guidelines

@@ -876,7 +876,10 @@ export class GraphService {
   async updateBoot(content: string, namespace = ""): Promise<Record<string, unknown>> {
     const boot = await this.getMemoryByPath("boot", "system", namespace);
     if (boot) {
-      return this.updateMemory("boot", content, "system", namespace);
+      const result = await this.updateMemory("boot", content, "system", namespace);
+      // Update synchronous cache for system prompt injection
+      this._updateBootCache(namespace, content);
+      return result;
     }
     // Create boot node under root if not exists
     const newUuid = randomUUID();
@@ -884,6 +887,8 @@ export class GraphService {
     const memoryId = await this._insertMemory(newUuid, content);
     await this._createEdgeWithPaths(ROOT_NODE_UUID, newUuid, "boot", "system", "boot", 0, null, namespace);
     await this.search.refreshSearchDocumentsForNode(newUuid, namespace);
+    // Update synchronous cache for system prompt injection
+    this._updateBootCache(namespace, content);
     return {
       id: memoryId,
       node_uuid: newUuid,
@@ -891,6 +896,16 @@ export class GraphService {
       path: "boot",
       uri: "system://boot",
     };
+  }
+
+  private _updateBootCache(namespace: string, content: string): void {
+    try {
+      // Dynamically import to avoid circular dependency
+      const module = require("../index.js") as { updateBootContentCache?: (ns: string, c: string) => void };
+      module.updateBootContentCache?.(namespace, content);
+    } catch {
+      // ignore - cache will be refreshed on next CCE init
+    }
   }
 
   async getMemoryIdByPath(path: string, domain = "code", namespace = ""): Promise<number | null> {

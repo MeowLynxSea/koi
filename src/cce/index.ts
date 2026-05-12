@@ -23,6 +23,17 @@ import { PromptInjector } from "./agent-bridge/prompt-injector.js";
 import { DisclosureEngine } from "./agent-bridge/disclosure-engine.js";
 import { getNamespaceContext } from "./agent-bridge/namespace-context.js";
 
+// ─── Boot Memory Cache (synchronous access for system prompt injection) ───
+const _bootContentCache = new Map<string, string>();
+
+export function getCachedBootContent(namespace: string): string | null {
+  return _bootContentCache.get(namespace) ?? null;
+}
+
+export function updateBootContentCache(namespace: string, content: string): void {
+  _bootContentCache.set(namespace, content);
+}
+
 export interface CceDownloadProgress {
   file: string;
   progress: number;
@@ -102,6 +113,16 @@ export async function initCceSystem(
     disclosure,
   };
 
+  // Load boot content into synchronous cache for system prompt injection
+  try {
+    const bootMem = await graph.getMemoryByPath("boot", "system", namespace);
+    if (bootMem && bootMem['content'] && (bootMem['content'] as string).trim()) {
+      updateBootContentCache(namespace, (bootMem['content'] as string).trim());
+    }
+  } catch {
+    // ignore - boot memory will be loaded on demand
+  }
+
   return _system;
 }
 
@@ -163,6 +184,7 @@ export function resetCceSystem(): void {
     try { _system.db.close(); } catch { /* ignore */ }
   }
   _system = null;
+  _bootContentCache.clear();
   getEmbeddingService().reset();
 }
 
