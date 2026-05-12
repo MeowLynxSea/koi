@@ -165,25 +165,53 @@ const clipboardPlatformSuffixes: Record<string, string> = {
   "win32-arm64": "win32-arm64-msvc",
   "win32-x64": "win32-x64-msvc",
 };
+const clipboardOs = require("os");
+const clipboardTmpDir = join(clipboardOs.tmpdir(), `koi-clipboard-${Date.now()}`);
+
 for (const { platform, arch } of platforms) {
   const suffix = clipboardPlatformSuffixes[`${platform}-${arch}`];
   const clipboardPkg = `@mariozechner/clipboard-${suffix}`;
   const clipboardPkgPath = join(nodeModulesDir, clipboardPkg);
+  const destDir = join(clipboardNativeDir, platform, arch);
+  mkdirSync(destDir, { recursive: true });
 
   if (existsSync(clipboardPkgPath)) {
-    // Find the .node file in the package
+    // Copy from node_modules
     const pkgFiles = readdirSync(clipboardPkgPath);
     const nodeFiles = pkgFiles.filter(f => f.endsWith(".node"));
     if (nodeFiles.length > 0) {
-      const destDir = join(clipboardNativeDir, platform, arch);
-      mkdirSync(destDir, { recursive: true });
       for (const file of nodeFiles) {
         cpSync(join(clipboardPkgPath, file), join(destDir, file));
       }
-      console.log(`[postbuild]   clipboard/${platform}-${arch}: ${nodeFiles.join(", ")}`);
+      console.log(`[postbuild]   clipboard/${platform}-${arch}: ${nodeFiles.join(", ")} (from node_modules)`);
+    }
+  } else {
+    // Download from npm
+    console.log(`[postbuild]   clipboard/${platform}-${arch}: downloading ${clipboardPkg}...`);
+    const pkgTmpDir = join(clipboardTmpDir, clipboardPkg.replace("/", "_"));
+    try {
+      execSync(`npm pack ${clipboardPkg} --pack-destination "${pkgTmpDir}"`, { stdio: "pipe" });
+      const tarball = readdirSync(pkgTmpDir).find(f => f.endsWith(".tgz"));
+      if (tarball) {
+        execSync(`tar -xzf "${join(pkgTmpDir, tarball)}" -C "${pkgTmpDir}"`, { stdio: "pipe" });
+        const packageDir = join(pkgTmpDir, "package");
+        if (existsSync(packageDir)) {
+          const pkgFiles = readdirSync(packageDir);
+          const nodeFiles = pkgFiles.filter(f => f.endsWith(".node"));
+          for (const file of nodeFiles) {
+            cpSync(join(packageDir, file), join(destDir, file));
+          }
+          console.log(`[postbuild]   clipboard/${platform}-${arch}: ${nodeFiles.join(", ")} (downloaded)`);
+        }
+      }
+    } catch (e) {
+      console.log(`[postbuild]   clipboard/${platform}-${arch}: download failed - ${(e as Error).message}`);
     }
   }
 }
+
+// Cleanup
+try { rmSync(clipboardTmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
 
 let content = readFileSync(mainJsPath, "utf-8");
 
