@@ -1,6 +1,6 @@
 {
   "name": "@meowlynxsea/koi",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "A coding agent built on Pi SDK with TUI + Bun runtime",
   "module": "src/main.tsx",
   "type": "module",
