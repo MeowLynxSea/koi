@@ -15,7 +15,7 @@ import {
   readdirSync,
   rmSync,
 } from "fs";
-import { join, dirname, basename } from "path";
+import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -127,7 +127,7 @@ if (!content.includes("__KOI_NATIVE_BASE__")) {
 // Original: var module = await import(`@opentui/core-${process.platform}-${process.arch}/index.js`);
 const opentuiImportPattern = /var module = await import\(`@opentui\/core-[^`]+`\)/g;
 const opentuiLibName = getNativeLibExt(process.platform);
-const opentuiReplacement = `var module = { default: window.__KOI_OPENTUI_PATH__ + "/libopentui${opentuiLibName}" };`;
+const opentuiReplacement = `var module = { default: __KOI_OPENTUI_PATH__ + "/libopentui${opentuiLibName}" };`;
 
 if (opentuiImportPattern.test(content)) {
   const matches = content.match(opentuiImportPattern);
@@ -140,7 +140,7 @@ if (opentuiImportPattern.test(content)) {
 // Replace onnxruntime path
 // Original: __require(`../bin/napi-v3/${process.platform}/${process.arch}/file.node`)
 const onnxPattern = /`\.\.\/bin\/napi-v3\/\$\{process\.platform\}\/\$\{process\.arch\}\/([^`]+)`/g;
-const onnxReplacement = `window.__KOI_ONNX_PATH__ + "/$1"`;
+const onnxReplacement = `__KOI_ONNX_PATH__ + "/$1"`;
 
 if (onnxPattern.test(content)) {
   const matches = content.match(onnxPattern);
