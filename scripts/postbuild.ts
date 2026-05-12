@@ -114,7 +114,7 @@ for (const { platform, arch } of platforms) {
     execSync(`curl -sL "${downloadUrl}" -o "${zipPath}"`, { stdio: "pipe" });
 
     if (existsSync(zipPath)) {
-      // Extract - use unzip for all zip files (works on Linux/Mac, unzip is available on GitHub runners)
+      // Extract - use unzip for all zip files
       execSync(`unzip -o "${zipPath}" -d "${extractDir}"`, { stdio: "pipe" });
 
       // Find and copy the library
@@ -154,6 +154,37 @@ for (const { platform, arch } of platforms) {
   }
 }
 
+// Copy clipboard native bindings for all platforms
+const clipboardNativeDir = join(nativeDir, "clipboard");
+console.log("[postbuild] Copying clipboard native bindings...");
+const clipboardPlatformSuffixes: Record<string, string> = {
+  "darwin-arm64": "darwin-arm64",
+  "darwin-x64": "darwin-universal",
+  "linux-arm64": "linux-arm64-gnu",
+  "linux-x64": "linux-x64-gnu",
+  "win32-arm64": "win32-arm64-msvc",
+  "win32-x64": "win32-x64-msvc",
+};
+for (const { platform, arch } of platforms) {
+  const suffix = clipboardPlatformSuffixes[`${platform}-${arch}`];
+  const clipboardPkg = `@mariozechner/clipboard-${suffix}`;
+  const clipboardPkgPath = join(nodeModulesDir, clipboardPkg);
+
+  if (existsSync(clipboardPkgPath)) {
+    // Find the .node file in the package
+    const pkgFiles = readdirSync(clipboardPkgPath);
+    const nodeFiles = pkgFiles.filter(f => f.endsWith(".node"));
+    if (nodeFiles.length > 0) {
+      const destDir = join(clipboardNativeDir, platform, arch);
+      mkdirSync(destDir, { recursive: true });
+      for (const file of nodeFiles) {
+        cpSync(join(clipboardPkgPath, file), join(destDir, file));
+      }
+      console.log(`[postbuild]   clipboard/${platform}-${arch}: ${nodeFiles.join(", ")}`);
+    }
+  }
+}
+
 let content = readFileSync(mainJsPath, "utf-8");
 
 // Add initialization code at the very beginning of the file
@@ -163,6 +194,7 @@ var __KOI_NATIVE_BASE__;
 var __KOI_OPENTUI_PATH__;
 var __KOI_ONNX_PATH__;
 var __KOI_OPENTUI_EXT__;
+var __KOI_CLIPBOARD_PATH__;
 (function() {
   var _p = process.platform === 'win32' ? 'win32' : process.platform;
   var _a = process.arch;
@@ -171,6 +203,7 @@ var __KOI_OPENTUI_EXT__;
   __KOI_NATIVE_BASE__ = _koiNativeBase;
   __KOI_OPENTUI_PATH__ = _koiNativeBase + '/opentui/' + _p + '/' + _a;
   __KOI_ONNX_PATH__ = _koiNativeBase + '/onnx/' + _p + '/' + _a;
+  __KOI_CLIPBOARD_PATH__ = _koiNativeBase + '/clipboard/' + _p + '/' + _a;
   // Detect opentui extension: .dll (win32), .dylib (darwin), .so (linux)
   __KOI_OPENTUI_EXT__ = _p === 'win32' ? '.dll' : (_p === 'darwin' ? '.dylib' : '.so');
 })();
@@ -207,6 +240,28 @@ if (onnxPattern.test(content)) {
   if (matches) {
     content = content.replace(onnxPattern, onnxReplacement);
     console.log(`[postbuild] Replaced ${matches.length} onnxruntime path(s)`);
+  }
+}
+
+// Replace clipboard NAPI require - redirect to __KOI_CLIPBOARD_PATH__
+// Pattern: existsSync4(join35(__dirname, "clipboard.platform-arch.node"))
+const clipboardExistsPattern = /existsSync4\(join35\(__dirname, "clipboard\.([^"]+)"\)\)/g;
+if (clipboardExistsPattern.test(content)) {
+  const matches = content.match(clipboardExistsPattern);
+  if (matches) {
+    content = content.replace(clipboardExistsPattern, `existsSync4(__KOI_CLIPBOARD_PATH__ + "/clipboard.$1"`);
+    console.log(`[postbuild] Replaced clipboard existsSync paths`);
+  }
+}
+
+// Replace clipboard require path
+// Pattern: require("./clipboard.platform-arch.node")
+const clipboardRequirePattern = /require\("\.\/clipboard\.([^"]+)"\)/g;
+if (clipboardRequirePattern.test(content)) {
+  const matches = content.match(clipboardRequirePattern);
+  if (matches) {
+    content = content.replace(clipboardRequirePattern, `require(__KOI_CLIPBOARD_PATH__ + "/clipboard.$1"`);
+    console.log(`[postbuild] Replaced clipboard require paths`);
   }
 }
 
