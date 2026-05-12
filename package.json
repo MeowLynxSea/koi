@@ -17,7 +17,8 @@
   ],
   "scripts": {
     "dev": "bun run src/main.tsx",
-    "build": "bun build src/main.tsx --outdir dist --target bun && cp node_modules/@opentui/core/parser.worker.js dist/ && cp -r node_modules/@opentui/core/assets dist/opentui-assets && mkdir -p dist/cce-frontend && cp -r src/cce/web/frontend/dist/* dist/cce-frontend/",
+    "postinstall": "bun run scripts/postinstall.ts",
+    "build": "bun build src/main.tsx --outdir dist --target bun && cp node_modules/@opentui/core/parser.worker.js dist/ && cp -r node_modules/@opentui/core/assets dist/opentui-assets && mkdir -p dist/cce-frontend && cp -r src/cce/web/frontend/dist/* dist/cce-frontend/ && mkdir -p dist/onnx-bin/napi-v3/darwin/arm64 && cp node_modules/onnxruntime-node/bin/napi-v3/darwin/arm64/* dist/onnx-bin/napi-v3/darwin/arm64/ && bun run scripts/postbuild.ts",
     "check": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"
