@@ -40,7 +40,12 @@ export default module.default;
 `;
 
 for (const moduleName of platformModules) {
-  const modulePath = join(rootDir, "node_modules", moduleName);
+  // Platform modules are in the parent node_modules (global install), not in koi's node_modules
+  // rootDir is like C:\Users\Acro\node_modules\@meowlynxsea\koi
+  // dirname(rootDir) = C:\Users\Acro\node_modules
+  const parentDir = dirname(rootDir);
+  const modulePath = join(parentDir, moduleName);
+  
   if (!existsSync(modulePath)) continue;
 
   const indexJsPath = join(modulePath, "index.js");
