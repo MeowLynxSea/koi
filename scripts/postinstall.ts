@@ -131,7 +131,7 @@ if (existsSync(mainJsPath)) {
     modified = true;
   }
   
-  // Copy onnxruntime native modules for the current platform
+  // Copy native modules for the current platform
   // Source: parentDir/onnxruntime-node/bin/napi-v3/{os}/{arch}/*
   // Dest:   rootDir/dist/onnx-bin/napi-v3/{os}/{arch}/*
   const onnxSrcDir = join(parentDir, "onnxruntime-node", "bin", "napi-v3", process.platform, process.arch);
@@ -150,6 +150,29 @@ if (existsSync(mainJsPath)) {
     }
   } else {
     console.log(`[DEBUG] onnxruntime source not found: ${onnxSrcDir}`);
+  }
+  
+  // Copy clipboard native module
+  // Source: parentDir/@mariozechner/clipboard-{platform}/*
+  // Dest:   rootDir/dist/clipboard.{platform}.node
+  const clipboardPattern = `clipboard.${process.platform}-${process.arch}-msvc.node`;
+  const clipboardSrcDirs = [
+    join(parentDir, "@mariozechner"),
+  ];
+  
+  for (const srcBase of clipboardSrcDirs) {
+    if (!existsSync(srcBase)) continue;
+    const entries = readdirSync(srcBase, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith("clipboard-")) {
+        const clipboardSrc = join(srcBase, entry.name, clipboardPattern);
+        const clipboardDest = join(rootDir, "dist", clipboardPattern);
+        if (existsSync(clipboardSrc) && !existsSync(clipboardDest)) {
+          cpSync(clipboardSrc, clipboardDest);
+          console.log(`Copied clipboard: ${entry.name}/${clipboardPattern}`);
+        }
+      }
+    }
   }
   
   if (modified) {
