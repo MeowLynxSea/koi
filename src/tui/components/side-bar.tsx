@@ -8,6 +8,7 @@
 import { createTextAttributes } from "@opentui/core";
 import { getMcpConnections, getMcpStatusSummary } from "../../services/mcp/index.js";
 import { VERSION } from "../../config/version.js";
+import { CceStatusBar } from "./cce/CceStatusBar.js";
 
 const KOI_LOGO = [
   "██   ███   ███████   ██████",
@@ -148,6 +149,7 @@ interface SideBarProps {
   tasks?: TaskItem[];
   subagents?: SubagentItem[];
   monitors?: MonitorItem[];
+  onOpenCce?: () => void;
 }
 
 export function SideBar({
@@ -163,6 +165,7 @@ export function SideBar({
   tasks = [],
   subagents = [],
   monitors = [],
+  onOpenCce,
 }: SideBarProps) {
   const usableWidth = Math.max(1, width - 1);
 
@@ -314,6 +317,11 @@ export function SideBar({
             </text>
           )}
         </>
+      )}
+
+      {/* CCE Status */}
+      {onOpenCce && (
+        <CceStatusBar onClick={onOpenCce} />
       )}
 
       {/* Monitors section */}

@@ -47,6 +47,7 @@ interface SettingsFile {
   currentModel: ModelRef | null;
   auxiliaryModel?: ModelRef | null;
   externalEditor?: string;
+  cceEnabled?: boolean;
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
@@ -58,6 +59,7 @@ let providerConfigs = new Map<string, ProviderConfig>();
 let currentModel: ModelRef | null = null;
 let auxiliaryModel: ModelRef | null = null;
 let externalEditor: string | null = null;
+let cceEnabled = false;
 
 // Pi infrastructure (lazy-initialized)
 let piAuthStorage: AuthStorage | null = null;
@@ -161,6 +163,7 @@ export function saveSettings(): void {
       currentModel,
       auxiliaryModel,
       externalEditor: externalEditor ?? undefined,
+      cceEnabled,
     };
     const json = JSON.stringify(data, null, 2);
     fs.writeFileSync(SETTINGS_PATH, json + "\n", { mode: 0o600 });
@@ -194,6 +197,9 @@ export function loadSettings(): void {
     }
     if (data.externalEditor) {
       externalEditor = data.externalEditor;
+    }
+    if (data.cceEnabled) {
+      cceEnabled = data.cceEnabled;
     }
     syncCredentialsToPi();
   } catch {
@@ -406,4 +412,15 @@ export async function callAuxiliaryModel(
   } catch {
     return null;
   }
+}
+
+/* ───────── CCE (Cat's Context Engine) toggle ───────── */
+
+export function isCceEnabled(): boolean {
+  return cceEnabled;
+}
+
+export function setCceEnabled(enabled: boolean): void {
+  cceEnabled = enabled;
+  saveSettings();
 }

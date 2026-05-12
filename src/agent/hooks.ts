@@ -1390,6 +1390,24 @@ export function useKoiAgent(): KoiAgentState {
   const prompt = useCallback(
     async (text: string) => {
       if (!session) return;
+
+      // ─── CCE: Auto process utterance + inject context ───
+      try {
+        const { getCceSystem } = await import("../cce/index.js");
+        const cce = getCceSystem();
+        if (cce) {
+          const injection = await cce.injector.buildInjection(text);
+          if (injection) {
+            // Append CCE context as a system message for this turn only
+            // Pi's AgentSession may support temporary context injection
+            // Fallback: prepend to the user message
+            text = `${text}\n\n${injection}`;
+          }
+        }
+      } catch {
+        // CCE not initialized or error — continue normally
+      }
+
       setMessages((prev) => {
         const updated = prev.concat({ id: generateId("user"), type: "user", content: text });
         // Trigger naming asynchronously after state update

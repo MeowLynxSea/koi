@@ -40,6 +40,7 @@ import { AlertModal } from "./components/alert-modal.js";
 import { openExternalEditor } from "./components/external-editor.js";
 import { MCPSettings } from "./components/mcp/MCPSettings.js";
 import { SkillsMenu } from "../skills/SkillsMenu.js";
+import { CceModal } from "./components/cce/CceModal.js";
 import { 
   getActiveSkills, 
   detectSkillInvocation, 
@@ -240,6 +241,7 @@ export function App({ renderer, onExit }: AppProps) {
   const [externalEditorBusy, setExternalEditorBusy] = useState(false);
   const [externalEditorResult, setExternalEditorResult] = useState<string | null | undefined>(undefined);
   const [externalEditorError, setExternalEditorError] = useState<string | null>(null);
+  const [showCceModal, setShowCceModal] = useState(false);
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -780,7 +782,7 @@ export function App({ renderer, onExit }: AppProps) {
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
-    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal || showExternalEditorModal || externalEditorBusy || externalEditorError !== null;
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal || showExternalEditorModal || externalEditorBusy || externalEditorError !== null || showCceModal;
 
   // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
@@ -797,6 +799,12 @@ export function App({ renderer, onExit }: AppProps) {
       if (text.trim() === "/exit" || text.trim() === "/quit") {
         saveCurrentState();
         onExit();
+        return;
+      }
+
+      // Handle /cce command - open CCE modal
+      if (text.trim() === "/cce") {
+        setShowCceModal(true);
         return;
       }
 
@@ -953,6 +961,7 @@ export function App({ renderer, onExit }: AppProps) {
       { id: "/mcp", label: "Open MCP settings", section: "Extensions", action: () => setShowMCPSettings(true) },
       { id: "/skills", label: "List and manage skills", section: "Extensions", action: () => setShowSkillsModal(true) },
       { id: "/editor", label: "Set external editor for prompts", section: "Settings", action: () => setShowExternalEditorModal(true) },
+      { id: "/cce", label: "Open Cat's Context Engine", section: "Extensions", action: () => setShowCceModal(true) },
       ...skillCommands,
     ],
     [isStreaming, session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode, skillCommands]
@@ -1177,6 +1186,7 @@ export function App({ renderer, onExit }: AppProps) {
             tasks={tasks}
             subagents={subagents}
             monitors={monitors}
+            onOpenCce={() => setShowCceModal(true)}
           />
         </box>
       </box>
@@ -1262,6 +1272,13 @@ export function App({ renderer, onExit }: AppProps) {
         message={externalEditorError ?? ""}
         onClose={() => setExternalEditorError(null)}
       />
+      {showCceModal && (
+        <CceModal
+          onClose={() => setShowCceModal(false)}
+          width={width}
+          height={height}
+        />
+      )}
     </box>
   );
 }

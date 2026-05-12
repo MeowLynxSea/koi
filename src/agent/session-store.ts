@@ -407,6 +407,26 @@ async function buildSessionConfig(taskManager: SessionTaskManager, onMcpProgress
   // Combine coding tools with MCP tools
   const codingTools = createCodingToolDefinitions(process.cwd(), taskManager);
   
+  // CCE tools are only available if the user has already enabled & initialized CCE
+  // (lazy-loaded via the CCE modal, not blocking session creation)
+  const cceTools = await (async () => {
+    try {
+      const { getCceSystem, createCceToolDefinitions } = await import("../cce/index.js");
+      const cce = getCceSystem();
+      if (!cce) return [];
+      return createCceToolDefinitions({
+        graph: cce.graph,
+        search: cce.search,
+        glossary: cce.glossary,
+        activation: cce.activation,
+        wm: cce.wm,
+      });
+    } catch (err) {
+      console.error("[CCE] Failed to load tools:", err);
+      return [];
+    }
+  })();
+  
   // Initialize bundled skills and load all skills
   initBundledSkills();
   const koiSkillCommands = await loadAllSkills(process.cwd());
@@ -422,7 +442,7 @@ async function buildSessionConfig(taskManager: SessionTaskManager, onMcpProgress
     modelRegistry: getPiModelRegistry(),
     settingsManager: getPiSettingsManager(),
     currentModel: getCurrentPiModel(),
-    customTools: [...codingTools, ...mcpToolDefs],
+    customTools: [...codingTools, ...mcpToolDefs, ...cceTools],
     skills: piSkills,
   };
 }

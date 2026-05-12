@@ -51,6 +51,7 @@
     "clipboard-image": "^0.1.0",
     "commander": "^14.0.3",
     "diff": "^9.0.0",
+    "@huggingface/transformers": "^3.5.0",
     "fast-glob": "^3.3.3",
     "jimp": "^1.6.1",
     "react": "^19.2.6",
