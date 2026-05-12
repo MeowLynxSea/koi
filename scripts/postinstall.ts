@@ -2,7 +2,7 @@
  * Post-install script to fix @opentui/core platform-specific modules.
  */
 
-import { existsSync, writeFileSync, readFileSync, mkdirSync, cpSync } from "fs";
+import { existsSync, writeFileSync, readFileSync, mkdirSync, cpSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -122,10 +122,37 @@ console.log("\nPostinstall complete.");
 const mainJsPath = join(rootDir, "dist", "main.js");
 if (existsSync(mainJsPath)) {
   let content = readFileSync(mainJsPath, "utf-8");
+  let modified = false;
+  
   // Replace: import(`@opentui/core-${platform}-${arch}/index.js`)
   // With:    import(`./node_modules/@opentui/core-${platform}-${arch}/index.js`)
   if (content.includes("`@opentui/core-")) {
     content = content.replace(/`@opentui\/core-/g, "`./node_modules/@opentui/core-");
+    modified = true;
+  }
+  
+  // Copy onnxruntime native modules for the current platform
+  // Source: parentDir/onnxruntime-node/bin/napi-v3/{os}/{arch}/*
+  // Dest:   rootDir/dist/onnx-bin/napi-v3/{os}/{arch}/*
+  const onnxSrcDir = join(parentDir, "onnxruntime-node", "bin", "napi-v3", process.platform, process.arch);
+  const onnxDestDir = join(rootDir, "dist", "onnx-bin", "napi-v3", process.platform, process.arch);
+  
+  if (existsSync(onnxSrcDir)) {
+    const files = readdirSync(onnxSrcDir);
+    for (const file of files) {
+      const src = join(onnxSrcDir, file);
+      const dest = join(onnxDestDir, file);
+      if (!existsSync(dest)) {
+        mkdirSync(onnxDestDir, { recursive: true });
+        cpSync(src, dest);
+        console.log(`Copied onnxruntime: ${file}`);
+      }
+    }
+  } else {
+    console.log(`[DEBUG] onnxruntime source not found: ${onnxSrcDir}`);
+  }
+  
+  if (modified) {
     writeFileSync(mainJsPath, content);
     console.log("Fixed dynamic imports in main.js for Windows compatibility");
   }
