@@ -65,14 +65,10 @@ jobs:
 
       - name: Install all optional dependencies (including cross-platform)
         run: |
-          # Install all platforms' native libraries
-          bun add @opentui/core-darwin-arm64@latest
-          bun add @opentui/core-darwin-x64@latest
-          bun add @opentui/core-linux-arm64@latest
-          bun add @opentui/core-linux-x64@latest
-          bun add @opentui/core-win32-arm64@latest
-          bun add @opentui/core-win32-x64@latest
-          bun add onnxruntime-node@latest
+          # Use npm to install all platforms (bun skips OS-specific optional deps)
+          npm install @opentui/core-darwin-arm64@latest @opentui/core-darwin-x64@latest @opentui/core-linux-arm64@latest @opentui/core-linux-x64@latest @opentui/core-win32-arm64@latest @opentui/core-win32-x64@latest onnxruntime-node@latest
+          # Also need bun for build
+          npm install bun@latest
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
