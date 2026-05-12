@@ -12,7 +12,15 @@
   "files": [
     "dist",
     "bin",
-    "src",
+    "src/main.tsx",
+    "src/cce",
+    "src/skills",
+    "src/scripts",
+    "src/tools",
+    "src/styles.css",
+    "src/commands",
+    "src/mcp",
+    "src/providers",
     "NOTICE"
   ],
   "scripts": {
