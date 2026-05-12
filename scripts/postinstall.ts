@@ -27,7 +27,9 @@ const platformModules = [
 
 // Platform modules installation is now handled by the installer scripts
 // to avoid infinite recursion when using bun add in postinstall
-// This script only creates the shim files for existing platform modules
+// This script creates shim files AND copies platform modules to dist/node_modules
+
+import { mkdirSync, cpSync } from "fs";
 
 const indexJsContent = `const module = await import("./libopentui.dylib", { with: { type: "file" } });
 export default module.default;
@@ -62,6 +64,14 @@ for (const moduleName of platformModules) {
       writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2) + "\n");
       console.log(`Updated ${moduleName}/package.json`);
     }
+  }
+
+  // Copy platform module to dist/node_modules for proper module resolution
+  const distNodeModules = join(rootDir, "dist", "node_modules", moduleName);
+  if (!existsSync(distNodeModules)) {
+    mkdirSync(dirname(distNodeModules), { recursive: true });
+    cpSync(modulePath, distNodeModules, { recursive: true });
+    console.log(`Copied ${moduleName} to dist/node_modules/`);
   }
 }
 
