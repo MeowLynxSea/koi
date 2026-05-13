@@ -52,7 +52,7 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
   private proc: ReturnType<typeof Bun.spawn>;
   private textDecoder = new TextDecoder();
   private _isRunning = true;
-  private stdinWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
+  private stdinFile: Bun.FileSink | null = null;
 
   constructor(options: PtyOptions) {
     super();
@@ -62,8 +62,6 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
     // -NoLogo: no banner
     // -EncodedCommand: Base64-encoded command, avoids escaping issues
     // -OutputFormat Text: ensures text output format
-    // Wrap command with "$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8"
-    // to disable buffering
     const psCommand = options.command ?? "";
     const wrappedCommand = `$ProgressPreference = 'SilentlyContinue'; ${psCommand}`;
     const encodedCommand = Buffer.from(wrappedCommand, "utf16le").toString("base64");
@@ -88,12 +86,13 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
 
     this.pid = this.proc.pid;
 
-    // Get stdin writer for efficient repeated writes
+    // Store stdin FileSink for writing
+    // Bun.spawn returns a FileSink for stdin when stdin: "pipe"
     if (this.proc.stdin) {
-      this.stdinWriter = (this.proc.stdin as WritableStream<Uint8Array>).getWriter();
+      this.stdinFile = this.proc.stdin as Bun.FileSink;
     }
 
-    // Handle stdout
+    // Handle stdout - it's a ReadableStream
     if (this.proc.stdout) {
       this.readStream(this.proc.stdout);
     }
@@ -128,9 +127,10 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
   }
 
   write(data: string): void {
-    if (this._isRunning && this.stdinWriter) {
+    if (this._isRunning && this.stdinFile) {
       try {
-        this.stdinWriter.write(new TextEncoder().encode(data));
+        // FileSink.write() returns a Promise, but we don't need to await
+        this.stdinFile.write(data);
       } catch {
         // stdin may be closed
       }
@@ -144,7 +144,6 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
   kill(signal?: string): void {
     if (this._isRunning) {
       try {
-        this.stdinWriter?.close();
         this.proc.kill(signal as number | NodeJS.Signals);
       } catch {
         // ignore
