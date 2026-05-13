@@ -52,18 +52,22 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
   private proc: ReturnType<typeof Bun.spawn>;
   private textDecoder = new TextDecoder();
   private _isRunning = true;
-  private stdoutPipe: WritableStream<Uint8Array> | null = null;
+  private stdinWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
 
   constructor(options: PtyOptions) {
     super();
 
-    // Use PowerShell with encoded command for proper escaping
+    // Use PowerShell with encoded command and disable output buffering
     // -NoProfile: skip profile scripts for faster startup
     // -NoLogo: no banner
-    // -Command: execute command
-    // Using -Command with proper encoding handles complex commands better
+    // -EncodedCommand: Base64-encoded command, avoids escaping issues
+    // -OutputFormat Text: ensures text output format
+    // Wrap command with "$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8"
+    // to disable buffering
     const psCommand = options.command ?? "";
-    const psArgs = ["-NoProfile", "-NoLogo", "-Command", psCommand];
+    const wrappedCommand = `$ProgressPreference = 'SilentlyContinue'; ${psCommand}`;
+    const encodedCommand = Buffer.from(wrappedCommand, "utf16le").toString("base64");
+    const psArgs = ["-NoProfile", "-NoLogo", "-OutputFormat", "Text", "-EncodedCommand", encodedCommand];
 
     this.proc = Bun.spawn(["powershell.exe", ...psArgs], {
       cwd: options.cwd ?? process.cwd(),
@@ -83,7 +87,11 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
     });
 
     this.pid = this.proc.pid;
-    this.stdoutPipe = this.proc.stdout as WritableStream<Uint8Array> | null;
+
+    // Get stdin writer for efficient repeated writes
+    if (this.proc.stdin) {
+      this.stdinWriter = (this.proc.stdin as WritableStream<Uint8Array>).getWriter();
+    }
 
     // Handle stdout
     if (this.proc.stdout) {
@@ -120,11 +128,9 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
   }
 
   write(data: string): void {
-    if (this._isRunning && this.proc.stdin) {
+    if (this._isRunning && this.stdinWriter) {
       try {
-        const writer = (this.proc.stdin as WritableStream<Uint8Array>).getWriter();
-        writer.write(new TextEncoder().encode(data));
-        writer.releaseLock();
+        this.stdinWriter.write(new TextEncoder().encode(data));
       } catch {
         // stdin may be closed
       }
@@ -132,13 +138,13 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
   }
 
   resize(_cols: number, _rows: number): void {
-    // PowerShell doesn't support resize in the same way, but we could
-    // send mode con cols=... rows=... if needed
+    // PowerShell doesn't support resize in the same way
   }
 
   kill(signal?: string): void {
     if (this._isRunning) {
       try {
+        this.stdinWriter?.close();
         this.proc.kill(signal as number | NodeJS.Signals);
       } catch {
         // ignore

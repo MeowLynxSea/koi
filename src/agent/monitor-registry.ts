@@ -103,9 +103,9 @@ class MonitorRegistryImpl extends EventEmitter {
     this.monitors.set(id, entry);
 
     // Create PTY and session
+    // Note: spawnPty handles platform differences internally
     const pty = spawnPty({
-      command: "bash",
-      args: ["-c", command],
+      command: command,
     });
 
     const session = new PtySession(id, pty, command);
