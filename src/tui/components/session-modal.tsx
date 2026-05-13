@@ -16,6 +16,7 @@ interface SessionModalProps {
   onClose: () => void;
   sessions: SessionMeta[];
   currentSessionId: string | null;
+  currentCwd: string;
   onSelect: (sessionFile: string) => void;
   onNewSession: () => void;
   onDelete?: (sessionId: string) => void;
@@ -46,6 +47,7 @@ export function SessionModal({
   onClose,
   sessions,
   currentSessionId,
+  currentCwd,
   onSelect,
   onNewSession,
   onDelete,
@@ -97,16 +99,31 @@ export function SessionModal({
   useKeyboard((key) => {
     if (!isActive || keyboardDisabled) return;
 
+    // Helper to find next/prev selectable index (same path)
+    const findSelectableIndex = (current: number, direction: "up" | "down"): number => {
+      if (sessions.length === 0) return 0;
+      const step = direction === "up" ? -1 : 1;
+      let idx = current + step;
+      while (idx >= 0 && idx < sessions.length) {
+        const session = sessions[idx];
+        if (session && session.cwd === currentCwd) {
+          return idx;
+        }
+        idx += step;
+      }
+      return current; // No selectable found, stay at current
+    };
+
     if (key.name === "escape") {
       onClose();
       return;
     }
     if (key.name === "up") {
-      setSelectedIndex((prev) => Math.max(0, prev - 1));
+      setSelectedIndex((prev) => Math.max(0, findSelectableIndex(prev, "up")));
       return;
     }
     if (key.name === "down") {
-      setSelectedIndex((prev) => Math.max(0, Math.min(sessions.length - 1, prev + 1)));
+      setSelectedIndex((prev) => Math.min(sessions.length - 1, findSelectableIndex(prev, "down")));
       return;
     }
     if (key.name === "n") {
@@ -115,7 +132,7 @@ export function SessionModal({
     }
     if (key.name === "return") {
       const s = sessions[safeIndex];
-      if (s) {
+      if (s && s.cwd === currentCwd) {
         onSelect(s.filePath);
       }
       return;
@@ -179,6 +196,7 @@ export function SessionModal({
             const flatIndex = scrollOffset + idx;
             const isSelected = flatIndex === safeIndex;
             const isCurrent = s.id === currentSessionId;
+            const isSamePath = s.cwd === currentCwd;
 
             // Ensure safe string values for rendering
             const safeTitle = s.title ?? "Untitled Session";
@@ -189,25 +207,41 @@ export function SessionModal({
                 ? s.updatedAt
                 : new Date();
 
+            // Determine text color based on state
+            let textColor = "#f8f8f2";
+            if (!isSamePath) {
+              textColor = "#4a4a5a"; // Gray for different run path
+            } else if (isSelected) {
+              textColor = "#ff79c6";
+            } else if (isCurrent) {
+              textColor = "#00f5ff";
+            }
+
+            // Short path for display (show last 2 segments)
+            const pathDisplay = isSamePath ? "" : ` [${s.cwd.split("/").slice(-2).join("/")}]`;
+
             return (
               <box
                 key={`s-${s.id}-${flatIndex}`}
                 height={1}
-                backgroundColor={isSelected ? "#44475a" : undefined}
+                backgroundColor={isSelected && isSamePath ? "#44475a" : undefined}
                 flexDirection="row"
                 onMouseUp={(e: MouseEvent) => {
                   e.stopPropagation();
-                  onSelect(s.filePath);
+                  if (isSamePath) {
+                    onSelect(s.filePath);
+                  }
                 }}
               >
                 <text
-                  fg={isSelected ? "#ff79c6" : isCurrent ? "#00f5ff" : "#f8f8f2"}
-                  attributes={createTextAttributes({ bold: isCurrent })}
+                  fg={textColor}
+                  attributes={createTextAttributes({ bold: isCurrent && isSamePath })}
                   width={Math.max(1, layout.panelWidth - 24)}
                   truncate={true}
                 >
-                  {isCurrent ? "● " : "  "}
+                  {isCurrent ? "● " : isSamePath ? "  " : "○ "}
                   {safeTitle}
+                  {pathDisplay}
                 </text>
                 <box flexDirection="row" gap={1}>
                   <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>

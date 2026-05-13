@@ -1293,6 +1293,7 @@ export function App({ renderer, onExit }: AppProps) {
         onClose={() => setShowSessionModal(false)}
         sessions={sessionList}
         currentSessionId={currentSessionId}
+        currentCwd={process.cwd()}
         onSelect={handleSwitchSession}
         onNewSession={handleNewSession}
         onDelete={handleDeleteRequest}
