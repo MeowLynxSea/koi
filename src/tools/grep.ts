@@ -1,8 +1,11 @@
 /**
  * GrepTool — ripgrep wrapper for content search
  *
- * Built on ripgrep with safe defaults:
+ * Built on @vscode/ripgrep with safe defaults:
  *   --hidden, --glob !VCS, --max-columns 500, auto -e prefix for patterns starting with -
+ *
+ * Uses @vscode/ripgrep which bundles platform-specific ripgrep binaries,
+ * so no external ripgrep installation is required.
  */
 
 import { Type } from "typebox";
@@ -42,84 +45,57 @@ export type GrepToolInput = {
 const VCS_DIRS = [".git", ".svn", ".hg", ".bzr", ".jj", ".sl"];
 const DEFAULT_HEAD_LIMIT = 250;
 
-/**
- * Argument Builders
- *
- * buildRgArgs builds ripgrep flags; buildGrepArgs is the POSIX-grep fallback.
- * addVcsExcludes, addModeFlags, addPattern are shared building blocks.
- */
+let rgPath: string | null = null;
 
-function addVcsExcludes(args: string[], cmd: "rg" | "grep"): void {
-  if (cmd === "rg") {
-    for (const dir of VCS_DIRS) {
-      args.push("--glob", `!${dir}`);
-    }
-  } else {
-    for (const dir of VCS_DIRS) {
-      args.push("--exclude-dir", dir);
-    }
-  }
-}
+async function getRgPath(): Promise<string> {
+  if (rgPath) return rgPath;
 
-function addModeFlags(args: string[], mode: string, cmd: "rg" | "grep", context?: number): void {
-  if (mode === "files_with_matches") {
-    args.push("-l");
-  } else if (mode === "count") {
-    args.push("-c");
-  }
-
-  if (mode === "content") {
-    if (context !== undefined && context > 0) {
-      args.push("-C", String(context));
-    }
-    if (cmd === "rg") args.push("-n");
-  }
-}
-
-function addPattern(args: string[], pattern: string): void {
-  if (pattern.startsWith("-")) {
-    args.push("-e", pattern);
-  } else {
-    args.push(pattern);
+  try {
+    const rgModule = await import("@vscode/ripgrep");
+    rgPath = rgModule.rgPath;
+    return rgPath;
+  } catch (err) {
+    throw new Error(
+      "Failed to load @vscode/ripgrep. Please ensure the package is installed with `bun add @vscode/ripgrep`."
+    );
   }
 }
 
 function buildRgArgs(input: GrepToolInput): string[] {
   const args: string[] = ["--hidden", "--max-columns", "500"];
-  addVcsExcludes(args, "rg");
+
+  for (const dir of VCS_DIRS) {
+    args.push("--glob", `!${dir}`);
+  }
 
   if (input.multiline) args.push("-U", "--multiline-dotall");
   if (input["-i"]) args.push("-i");
 
-  addModeFlags(args, input.output_mode ?? "content", "rg", input.context);
+  if (input.output_mode === "files_with_matches") {
+    args.push("-l");
+  } else if (input.output_mode === "count") {
+    args.push("-c");
+  }
+
+  if (input.output_mode === "content" || !input.output_mode) {
+    if (input.context !== undefined && input.context > 0) {
+      args.push("-C", String(input.context));
+    }
+    args.push("-n");
+  }
 
   if (input.glob) args.push("--glob", input.glob);
-  addPattern(args, input.pattern);
+
+  if (input.pattern.startsWith("-")) {
+    args.push("-e", input.pattern);
+  } else {
+    args.push(input.pattern);
+  }
+
   args.push(input.path ? resolve(input.path) : process.cwd());
 
   return args;
 }
-
-function buildGrepArgs(input: GrepToolInput): string[] {
-  const args: string[] = ["-r", "-n"];
-  addVcsExcludes(args, "grep");
-
-  if (input["-i"]) args.push("-i");
-  addModeFlags(args, input.output_mode ?? "content", "grep", input.context);
-
-  if (input.glob) args.push("--include", input.glob);
-  args.push("-e", input.pattern);
-  args.push(input.path ? resolve(input.path) : process.cwd());
-
-  return args;
-}
-
-/**
- * Execution
- *
- * Tries ripgrep first; on ENOENT falls back to system grep.
- * Exit code 1 from ripgrep means "no matches" — not an error.
- */
 
 interface SearchResult {
   stdout: string;
@@ -165,17 +141,9 @@ export async function executeGrep(params: GrepToolInput): Promise<{
   content: TextContent[];
   details: { matches: number; truncated: boolean };
 }> {
-  let result: SearchResult;
-
-  try {
-    result = await execSearch("rg", buildRgArgs(params));
-  } catch (err: unknown) {
-    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
-      result = await execSearch("grep", buildGrepArgs(params));
-    } else {
-      throw err;
-    }
-  }
+  const rgExe = await getRgPath();
+  const args = buildRgArgs(params);
+  const result = await execSearch(rgExe, args);
 
   if (result.exitCode !== 0 && result.exitCode !== 1) {
     throw new Error(result.stderr || `ripgrep exited with code ${result.exitCode}`);
@@ -190,8 +158,6 @@ export async function executeGrep(params: GrepToolInput): Promise<{
     details: { matches: matchCount, truncated },
   };
 }
-
-/** Factory helpers for permission-denied tool results. */
 
 function buildDeniedResult(): ToolResultWithError<{ matches: number; truncated: boolean }> {
   return {
@@ -208,12 +174,6 @@ function buildUserDeniedResult(): ToolResultWithError<{ matches: number; truncat
     isError: true,
   };
 }
-
-/**
- * ToolDefinition Factory
- *
- * Registers the grep tool with the Pi agent runtime.
- */
 
 export function createGrepToolDefinition(_cwd: string): ToolDefinition<typeof grepSchema, { matches: number; truncated: boolean }> {
   return {
