@@ -74,6 +74,8 @@ import {
   getExternalEditor,
   setExternalEditor,
   resolvePiModel,
+  getConfiguredProviders,
+  isProviderConfigured,
 } from "../config/settings.js";
 import { useKoiAgent, isInternalNotification } from "../agent/hooks.js";
 import type { SessionMeta } from "../agent/session-store.js";
@@ -247,6 +249,8 @@ export function App({ renderer, onExit }: AppProps) {
   const [showCceInitModal, setShowCceInitModal] = useState(false);
   const [cceInitMessage, setCceInitMessage] = useState("");
   const [cceInitDownloadProgress, setCceInitDownloadProgress] = useState<CceDownloadProgress | null>(null);
+  const [showModelAlert, setShowModelAlert] = useState(false);
+  const [modelAlertMessage, setModelAlertMessage] = useState("");
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -829,6 +833,25 @@ export function App({ renderer, onExit }: AppProps) {
     (text: string) => {
       if (!text.trim() || !isReady) return;
 
+      // Check if model is configured before sending message
+      if (!currentModel) {
+        const hasProviders = getConfiguredProviders().length > 0;
+        if (hasProviders) {
+          setModelAlertMessage("No model selected. Use /model to select a model for the current provider.");
+        } else {
+          setModelAlertMessage("No provider configured. Use /config to add an API provider and model.");
+        }
+        setShowModelAlert(true);
+        return;
+      }
+
+      // Check if the provider has API key configured
+      if (!isProviderConfigured(currentModel.provider)) {
+        setModelAlertMessage(`No API key configured for ${currentModel.provider}. Use /config to add credentials.`);
+        setShowModelAlert(true);
+        return;
+      }
+
       // Handle /plan command to switch to plan mode
       if (text.trim() === "/plan") {
         applyAgentMode("plan");
@@ -868,19 +891,39 @@ export function App({ renderer, onExit }: AppProps) {
         void prompt(text);
       }
     },
-    [isReady, isStreaming, steer, prompt, applyAgentMode, session]
+    [isReady, isStreaming, steer, prompt, applyAgentMode, session, currentModel]
   );
 
   const handleQueueSubmit = useCallback(
     (text: string) => {
       if (!text.trim() || !isReady) return;
+
+      // Check if model is configured before sending message
+      if (!currentModel) {
+        const hasProviders = getConfiguredProviders().length > 0;
+        if (hasProviders) {
+          setModelAlertMessage("No model selected. Use /model to select a model for the current provider.");
+        } else {
+          setModelAlertMessage("No provider configured. Use /config to add an API provider and model.");
+        }
+        setShowModelAlert(true);
+        return;
+      }
+
+      // Check if the provider has API key configured
+      if (!isProviderConfigured(currentModel.provider)) {
+        setModelAlertMessage(`No API key configured for ${currentModel.provider}. Use /config to add credentials.`);
+        setShowModelAlert(true);
+        return;
+      }
+
       if (isStreaming) {
         void followUp(text);
       } else {
         void prompt(text);
       }
     },
-    [isReady, isStreaming, followUp, prompt]
+    [isReady, isStreaming, followUp, prompt, currentModel]
   );
 
   const handleRename = useCallback((newTitle: string) => {
@@ -1316,6 +1359,12 @@ export function App({ renderer, onExit }: AppProps) {
         title="External Editor Error"
         message={externalEditorError ?? ""}
         onClose={() => setExternalEditorError(null)}
+      />
+      <AlertModal
+        isActive={showModelAlert}
+        title="Model Not Configured"
+        message={modelAlertMessage}
+        onClose={() => setShowModelAlert(false)}
       />
       {showCceModal && (
         <CceModal
