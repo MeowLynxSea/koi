@@ -155,6 +155,10 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
 
 /**
  * Bun PTY 适配器 — 使用 Bun.spawn 的 terminal 选项
+ * 
+ * Command execution modes:
+ * - Full command string (e.g., "python -c 'code'"): bash -c "command"
+ * - Executable path with args (e.g., { command: "/bin/ls", args: ["-la"] }): executable args
  */
 class BunPty extends EventEmitter implements IPty {
   readonly pid: number;
@@ -163,13 +167,42 @@ class BunPty extends EventEmitter implements IPty {
 
   constructor(options: PtyOptions) {
     super();
-    const shell = process.platform === "win32" ? "powershell.exe" : "bash";
-    const args = process.platform === "win32" ? [] : ["--login"];
 
-    const command = options.command ?? shell;
-    const commandArgs = options.args ?? args;
+    // Detect if command is a full command string that needs shell interpretation
+    // A full command contains: spaces, pipes, redirects, or variable references
+    const commandStr = options.command ?? "";
+    const needsShell =
+      commandStr.includes(" ") ||
+      commandStr.includes("|") ||
+      commandStr.includes(";") ||
+      commandStr.includes("&&") ||
+      commandStr.includes(">") ||
+      commandStr.includes("<") ||
+      commandStr.includes("$") ||
+      commandStr.includes("(") ||
+      commandStr.includes(")") ||
+      commandStr.includes("'") ||
+      commandStr.includes('"') ||
+      commandStr.includes("`");
 
-    this.proc = Bun.spawn([command, ...commandArgs], {
+    let cmd: string;
+    let args: string[];
+
+    if (needsShell) {
+      // Full command string: execute via bash -c
+      cmd = "bash";
+      args = ["-c", commandStr];
+    } else if (options.args && options.args.length > 0) {
+      // Executable path with separate args: run executable directly
+      cmd = commandStr;
+      args = options.args;
+    } else {
+      // Simple executable with no args: run directly (like /usr/bin/true)
+      cmd = commandStr;
+      args = [];
+    }
+
+    this.proc = Bun.spawn([cmd, ...args], {
       cwd: options.cwd ?? process.cwd(),
       env: {
         ...process.env,
