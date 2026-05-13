@@ -5,11 +5,6 @@
  * which would cause parsing errors. This wrapper filters out non-JSON lines.
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-
 import spawn from "cross-spawn";
 import process from "node:process";
 import { getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";

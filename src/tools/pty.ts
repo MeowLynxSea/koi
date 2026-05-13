@@ -93,13 +93,13 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
     }
 
     // Handle stdout - it's a ReadableStream
-    if (this.proc.stdout) {
-      this.readStream(this.proc.stdout);
+    if (this.proc.stdout && typeof this.proc.stdout !== "number") {
+      void this.readStream(this.proc.stdout);
     }
 
     // Handle stderr
-    if (this.proc.stderr) {
-      this.readStream(this.proc.stderr);
+    if (this.proc.stderr && typeof this.proc.stderr !== "number") {
+      void this.readStream(this.proc.stderr);
     }
   }
 
@@ -130,7 +130,7 @@ class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
     if (this._isRunning && this.stdinFile) {
       try {
         // FileSink.write() returns a Promise, but we don't need to await
-        this.stdinFile.write(data);
+        void this.stdinFile.write(data);
       } catch {
         // stdin may be closed
       }

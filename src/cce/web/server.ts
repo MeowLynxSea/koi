@@ -654,7 +654,6 @@ async function handleApi(req: Request, pathname: string): Promise<Response> {
     return new Response("Not Found", { status: 404 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const stack = err instanceof Error ? err.stack : "";
     return Response.json({ error: msg }, { status: 500 });
   }
 }

@@ -54,7 +54,7 @@ async function getRgPath(): Promise<string> {
     const rgModule = await import("@vscode/ripgrep");
     rgPath = rgModule.rgPath;
     return rgPath;
-  } catch (err) {
+  } catch (_err) {
     throw new Error(
       "Failed to load @vscode/ripgrep. Please ensure the package is installed with `bun add @vscode/ripgrep`."
     );
