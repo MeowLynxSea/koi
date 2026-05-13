@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/meowlynxsea/koi/main/assets/koi-banner.svg" alt="KOI" width="700">
+<img src="https://raw.githubusercontent.com/MeowLynxSea/koi/refs/heads/main/assets/koi-banner.svg" alt="KOI" width="700">
 
 <br><br>
 
