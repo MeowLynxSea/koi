@@ -6,7 +6,7 @@
  * embedding model downloads.
  */
 
-import { getDbManager } from "./core/db.js";
+import { getDbManager, closeDbManager } from "./core/db.js";
 import { initDb } from "./core/init.js";
 import { setWorkingMemoryManager } from "./brain/working-memory.js";
 import { GraphService } from "./graph/graph-service.js";
@@ -196,6 +196,7 @@ export function resetCceSystem(): void {
   stopCceServices();
   if (_system) {
     try { _system.db.close(); } catch { /* ignore */ }
+    closeDbManager();
   }
   _system = null;
   _bootLinksCache.clear();

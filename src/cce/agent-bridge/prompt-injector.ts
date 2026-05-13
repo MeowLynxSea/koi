@@ -111,6 +111,17 @@ export class PromptInjector {
     bodyLines.push("When you gain any durable insight, pattern, or assumption—WRITE IT DOWN immediately. commit_insight and write_context are cheap; losing context is expensive.");
     bodyLines.push("");
 
+    // ─── Search & Memory Strategy ───
+    bodyLines.push("=== Search & Memory Strategy ===");
+    bodyLines.push("**Before using grep or glob**, try fuzzySearch first to find relevant code, concepts, or memories.");
+    bodyLines.push("fuzzySearch understands natural language and searches your codebase + CCE graph simultaneously—faster and more context-aware than raw pattern matching.");
+    bodyLines.push("");
+    bodyLines.push("**Memory Discipline**: Read relevant context nodes before acting. Use fuzzySearch to locate concept:// or memory:// nodes, then read them with the file path provided.");
+    bodyLines.push("After completing significant tasks, capture key insights: architecture decisions, patterns discovered, or unresolved questions.");
+    bodyLines.push("");
+    bodyLines.push("**Boot Memory**: Actively manage boot-linked memories (linked via manage_boot_links). Promote useful insights to boot, demote outdated ones. Strong boot memory means better context at session start.");
+    bodyLines.push("");
+
     // ─── Reflection Prompt ───
     if (isCorrective) {
       bodyLines.push("=== Reflection Trigger (Corrective) ===");
