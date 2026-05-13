@@ -97,8 +97,8 @@ for (const { platform, arch } of platforms) {
 
   // Download from GitHub releases
   const osName = getOsName(platform);
-  const zipName = `opentui-native-v0.2.7-${osName}-${arch}.zip`;
-  const downloadUrl = `https://github.com/anomalyco/opentui/releases/download/v0.2.7/${zipName}`;
+  const zipName = `opentui-native-v0.2.8-${osName}-${arch}.zip`;
+  const downloadUrl = `https://github.com/anomalyco/opentui/releases/download/v0.2.8/${zipName}`;
   console.log(`[postbuild]   opentui/${platform}-${arch}: downloading...`);
 
   const os = require("os");
