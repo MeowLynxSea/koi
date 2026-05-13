@@ -15,9 +15,9 @@
 
 <a href="https://koi.ink">🌐&nbsp;&nbsp;koi.ink</a>
 &nbsp;·&nbsp;
-<a href="https://koi.ink/docs">📖&nbsp;&nbsp;Docs</a>
+<a href="https://koi.ink/#/docs">📖&nbsp;&nbsp;Docs</a>
 &nbsp;·&nbsp;
-<a href="https://github.com/meowlynxsea/koi/releases">📦&nbsp;&nbsp;Releases</a>
+<a href="https://www.npmjs.com/package/@meowlynxsea/koi">📦&nbsp;&nbsp;npm</a>
 
 <br><br>
 
@@ -224,35 +224,35 @@ Full documentation at **[koi.ink](https://koi.ink)**
 <details>
 <summary><b>Getting Started</b></summary>
 
-- [Quick Start](https://koi.ink/docs/quickstart) · [Installation](https://koi.ink/docs/installation) · [First Run](https://koi.ink/docs/first-run) · [FAQ](https://koi.ink/docs/faq)
+- [Quick Start](https://koi.ink/#/docs/quickstart) · [Installation](https://koi.ink/#/docs/installation) · [First Run](https://koi.ink/#/docs/first-run) · [FAQ](https://koi.ink/#/docs/faq)
 
 </details>
 
 <details>
 <summary><b>Core Concepts</b></summary>
 
-- [Interface](https://koi.ink/docs/interface) · [Agent Modes](https://koi.ink/docs/modes) · [Sessions](https://koi.ink/docs/sessions) · [Tools](https://koi.ink/docs/tools) · [Keyboard](https://koi.ink/docs/keyboard)
+- [Interface](https://koi.ink/#/docs/interface) · [Agent Modes](https://koi.ink/#/docs/modes) · [Sessions](https://koi.ink/#/docs/sessions) · [Tools](https://koi.ink/#/docs/tools) · [Keyboard](https://koi.ink/#/docs/keyboard)
 
 </details>
 
 <details>
 <summary><b>Memory System (CCE)</b></summary>
 
-- [CCE Overview](https://koi.ink/docs/cce) · [Working Memory](https://koi.ink/docs/working-memory) · [Knowledge Graph](https://koi.ink/docs/knowledge-graph) · [Boot Links](https://koi.ink/docs/boot-links) · [Semantic Search](https://koi.ink/docs/search)
+- [CCE Overview](https://koi.ink/#/docs/cce) · [Working Memory](https://koi.ink/#/docs/working-memory) · [Knowledge Graph](https://koi.ink/#/docs/knowledge-graph) · [Boot Links](https://koi.ink/#/docs/boot-links) · [Semantic Search](https://koi.ink/#/docs/search)
 
 </details>
 
 <details>
 <summary><b>Skills & Integrations</b></summary>
 
-- [Using Skills](https://koi.ink/docs/skills) · [Creating Skills](https://koi.ink/docs/creating-skills) · [MCP Servers](https://koi.ink/docs/mcp) · [LLM Providers](https://koi.ink/docs/providers) · [External Editor](https://koi.ink/docs/editor)
+- [Using Skills](https://koi.ink/#/docs/skills) · [Creating Skills](https://koi.ink/#/docs/creating-skills) · [MCP Servers](https://koi.ink/#/docs/mcp) · [LLM Providers](https://koi.ink/#/docs/providers) · [External Editor](https://koi.ink/#/docs/editor)
 
 </details>
 
 <details>
 <summary><b>Advanced</b></summary>
 
-- [Configuration](https://koi.ink/docs/configuration) · [Subagents](https://koi.ink/docs/subagents) · [Permissions](https://koi.ink/docs/permissions) · [Context Compaction](https://koi.ink/docs/compaction)
+- [Configuration](https://koi.ink/#/docs/configuration) · [Subagents](https://koi.ink/#/docs/subagents) · [Permissions](https://koi.ink/#/docs/permissions) · [Context Compaction](https://koi.ink/#/docs/compaction)
 
 </details>
 
@@ -262,7 +262,7 @@ Full documentation at **[koi.ink](https://koi.ink)**
 
 <br>
 
-**[🌐 koi.ink](https://koi.ink)** · **[📖 Docs](https://koi.ink/docs)** · **[💻 GitHub](https://github.com/meowlynxsea/koi)** · **[⚖️ GPL-3.0](https://github.com/meowlynxsea/koi/blob/main/LICENSE)**
+**[🌐 koi.ink](https://koi.ink)** · **[📖 Docs](https://koi.ink/#/docs)** · **[💻 GitHub](https://github.com/meowlynxsea/koi)** · **[⚖️ GPL-3.0](https://github.com/meowlynxsea/koi/blob/main/LICENSE)**
 
 <br>
 
