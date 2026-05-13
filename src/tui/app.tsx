@@ -839,7 +839,7 @@ export function App({ renderer, onExit }: AppProps) {
         if (hasProviders) {
           setModelAlertMessage("No model selected. Use /model to select a model for the current provider.");
         } else {
-          setModelAlertMessage("No provider configured. Use /config to add an API provider and model.");
+          setModelAlertMessage("No provider configured. Use /connect to add an API provider and model.");
         }
         setShowModelAlert(true);
         return;
@@ -847,7 +847,7 @@ export function App({ renderer, onExit }: AppProps) {
 
       // Check if the provider has API key configured
       if (!isProviderConfigured(currentModel.provider)) {
-        setModelAlertMessage(`No API key configured for ${currentModel.provider}. Use /config to add credentials.`);
+        setModelAlertMessage(`No API key configured for ${currentModel.provider}. Use /connect to add credentials.`);
         setShowModelAlert(true);
         return;
       }
@@ -904,7 +904,7 @@ export function App({ renderer, onExit }: AppProps) {
         if (hasProviders) {
           setModelAlertMessage("No model selected. Use /model to select a model for the current provider.");
         } else {
-          setModelAlertMessage("No provider configured. Use /config to add an API provider and model.");
+          setModelAlertMessage("No provider configured. Use /connect to add an API provider and model.");
         }
         setShowModelAlert(true);
         return;
@@ -912,7 +912,7 @@ export function App({ renderer, onExit }: AppProps) {
 
       // Check if the provider has API key configured
       if (!isProviderConfigured(currentModel.provider)) {
-        setModelAlertMessage(`No API key configured for ${currentModel.provider}. Use /config to add credentials.`);
+        setModelAlertMessage(`No API key configured for ${currentModel.provider}. Use /connect to add credentials.`);
         setShowModelAlert(true);
         return;
       }
