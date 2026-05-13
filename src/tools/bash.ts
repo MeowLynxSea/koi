@@ -79,10 +79,9 @@ async function execBashWithPty(
   let timedOut = false;
   let resolvePromise: ((value: ExecBashResult) => void) | undefined;
 
-  // Create PTY
+  // Create PTY - spawnPty handles platform differences internally
   const ptyProcess = spawnPty({
-    command: "bash",
-    args: ["-c", command],
+    command: command,
   });
 
   // Collect output directly from PTY (no PtySession wrapper)

@@ -44,6 +44,111 @@ export interface IPty {
 }
 
 /**
+ * Windows PowerShell subprocess with stdin/stdout pipe support
+ * Uses PowerShell to execute commands with proper I/O handling
+ */
+class WindowsPowerShellSubprocess extends EventEmitter implements IPty {
+  readonly pid: number;
+  private proc: ReturnType<typeof Bun.spawn>;
+  private textDecoder = new TextDecoder();
+  private _isRunning = true;
+  private stdoutPipe: WritableStream<Uint8Array> | null = null;
+
+  constructor(options: PtyOptions) {
+    super();
+
+    // Use PowerShell with encoded command for proper escaping
+    // -NoProfile: skip profile scripts for faster startup
+    // -NoLogo: no banner
+    // -Command: execute command
+    // Using -Command with proper encoding handles complex commands better
+    const psCommand = options.command ?? "";
+    const psArgs = ["-NoProfile", "-NoLogo", "-Command", psCommand];
+
+    this.proc = Bun.spawn(["powershell.exe", ...psArgs], {
+      cwd: options.cwd ?? process.cwd(),
+      env: {
+        ...process.env,
+        ...options.env,
+        CLAUDECODE: "1",
+        TERM: "xterm-256color",
+      } as Record<string, string>,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      onExit: (_subprocess: unknown, exitCode: number | null, signalCode: number | null) => {
+        this._isRunning = false;
+        this.emit("exit", { exitCode: exitCode ?? 0, signal: signalCode !== null ? String(signalCode) : "" });
+      },
+    });
+
+    this.pid = this.proc.pid;
+    this.stdoutPipe = this.proc.stdout as WritableStream<Uint8Array> | null;
+
+    // Handle stdout
+    if (this.proc.stdout) {
+      this.readStream(this.proc.stdout);
+    }
+
+    // Handle stderr
+    if (this.proc.stderr) {
+      this.readStream(this.proc.stderr);
+    }
+  }
+
+  private async readStream(stream: ReadableStream<Uint8Array>): Promise<void> {
+    try {
+      const reader = stream.getReader();
+      while (this._isRunning) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          this.emit("data", this.textDecoder.decode(value));
+        }
+      }
+    } catch {
+      // Stream closed or error
+    }
+  }
+
+  onData(handler: (data: string) => void): void {
+    this.on("data", handler);
+  }
+
+  onExit(handler: (exit: { exitCode: number; signal: string }) => void): void {
+    this.on("exit", handler);
+  }
+
+  write(data: string): void {
+    if (this._isRunning && this.proc.stdin) {
+      try {
+        const writer = (this.proc.stdin as WritableStream<Uint8Array>).getWriter();
+        writer.write(new TextEncoder().encode(data));
+        writer.releaseLock();
+      } catch {
+        // stdin may be closed
+      }
+    }
+  }
+
+  resize(_cols: number, _rows: number): void {
+    // PowerShell doesn't support resize in the same way, but we could
+    // send mode con cols=... rows=... if needed
+  }
+
+  kill(signal?: string): void {
+    if (this._isRunning) {
+      try {
+        this.proc.kill(signal as number | NodeJS.Signals);
+      } catch {
+        // ignore
+      }
+      this._isRunning = false;
+    }
+  }
+}
+
+/**
  * Bun PTY 适配器 — 使用 Bun.spawn 的 terminal 选项
  */
 class BunPty extends EventEmitter implements IPty {
@@ -117,8 +222,14 @@ class BunPty extends EventEmitter implements IPty {
  * 注意：这个函数不设置任何监听器。调用者应该：
  * 1. 直接使用 pty.onData/pty.onExit 设置监听器
  * 2. 或者用 PtySession 包装（它会自动设置监听器）
+ * 
+ * Windows 平台使用 PowerShell subprocess，支持 stdin/stdout pipe。
  */
 export function spawnPty(options: PtyOptions): IPty {
+  // Windows 不支持 Bun.spawn 的 terminal 选项，使用 PowerShell subprocess
+  if (process.platform === "win32") {
+    return new WindowsPowerShellSubprocess(options);
+  }
   return new BunPty(options);
 }
 
