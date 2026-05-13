@@ -91,11 +91,10 @@ export function CceModal({ isActive, onClose }: CceModalProps) {
     setStatus("initializing");
     setInitMsg("Starting CCE...");
     setDownloadProgress(null);
+    setStatusMsg("");
     try {
-      const { setCceEnabled } = await import("../../../config/settings.js");
       const { initCceSystem, startCceServices } = await import("../../../cce/index.js");
 
-      setCceEnabled(true);
       await initCceSystem(
         (msg) => {
           if (!cancelledRef.current) setInitMsg(msg);
@@ -107,6 +106,10 @@ export function CceModal({ isActive, onClose }: CceModalProps) {
       if (cancelledRef.current) return;
       startCceServices();
       if (cancelledRef.current) return;
+
+      const { setCceEnabled } = await import("../../../config/settings.js");
+      setCceEnabled(true);
+
       setStatus("enabled");
       setInitMsg("");
       setDownloadProgress(null);
