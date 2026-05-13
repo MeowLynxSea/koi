@@ -28,6 +28,7 @@ export interface MonitorEntry {
   lastOutput?: string;
   error?: string;
   hasPendingInput?: boolean; // 如果有等待输入的命令
+  cancelled?: boolean; // 是否已被取消，取消后不再发送通知
 }
 
 type MonitorListener = (entries: MonitorEntry[]) => void;
@@ -175,6 +176,9 @@ class MonitorRegistryImpl extends EventEmitter {
     const monitor = this.monitors.get(id);
     if (!monitor) return;
 
+    // 如果已取消，不再发送任何通知
+    if (monitor.cancelled) return;
+
     if (data.type === "data" && data.data) {
       // 累积输出
       monitor.outputLines.push(data.data);
@@ -206,6 +210,14 @@ class MonitorRegistryImpl extends EventEmitter {
 
     const monitor = this.monitors.get(id);
     if (!monitor) return;
+
+    // 如果已取消，不发送退出通知
+    if (monitor.cancelled) {
+      monitor.status = "killed";
+      monitor.endTime = Date.now();
+      this.emit("change", this.getAll());
+      return;
+    }
 
     monitor.status = exitCode === 0 ? "completed" : "error";
     monitor.exitCode = exitCode;
@@ -261,15 +273,17 @@ class MonitorRegistryImpl extends EventEmitter {
     const session = this.sessions.get(id);
     if (!session) return false;
 
+    const monitor = this.monitors.get(id);
+    if (monitor) {
+      monitor.cancelled = true;
+      monitor.status = "killed";
+      monitor.endTime = Date.now();
+    }
+
     session.kill("SIGTERM");
     this.sessions.delete(id);
 
-    const monitor = this.monitors.get(id);
-    if (monitor) {
-      monitor.status = "killed";
-      monitor.endTime = Date.now();
-      this.emit("change", this.getAll());
-    }
+    this.emit("change", this.getAll());
 
     return true;
   }
