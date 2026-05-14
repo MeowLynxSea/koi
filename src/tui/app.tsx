@@ -888,7 +888,7 @@ export function App({ renderer, onExit }: AppProps) {
       if (isStreaming) {
         void steer(text);
       } else {
-        void prompt(text);
+        void prompt(text, text);
       }
     },
     [isReady, isStreaming, steer, prompt, applyAgentMode, session, currentModel]
@@ -920,7 +920,7 @@ export function App({ renderer, onExit }: AppProps) {
       if (isStreaming) {
         void followUp(text);
       } else {
-        void prompt(text);
+        void prompt(text, text);
       }
     },
     [isReady, isStreaming, followUp, prompt, currentModel]

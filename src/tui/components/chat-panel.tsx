@@ -34,7 +34,7 @@ export type UIMessage =
       isError?: boolean;
       collapsed: boolean;
     }
-  | { id: string; type: "system"; content: string }
+  | { id: string; type: "system"; content: string; collapsed?: boolean }
   | { id: string; type: "compaction"; content: string }
   | {
       id: string;
@@ -440,6 +440,10 @@ function stripKoiContext(content: string): string {
   return content.replace(/<koi_context>[\s\S]*?<\/koi_context>/g, "").trimEnd();
 }
 
+function stripHookContext(content: string): string {
+  return content.replace(/\n\n\[Hook context\]:[\s\S]*/, "").trimEnd();
+}
+
 function UserMessage({
   msg,
   contentWidth,
@@ -454,7 +458,7 @@ function UserMessage({
   const prefixWidth = stringWidth(prefix);
   const available = Math.max(1, contentWidth - 2 - prefixWidth);
   const displayText = msg.displayContent || msg.content;
-  const wrapped = wrapText(stripKoiContext(displayText), available, prefixWidth);
+  const wrapped = wrapText(stripHookContext(stripKoiContext(displayText)), available, prefixWidth);
 
   return (
     <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
@@ -843,17 +847,36 @@ function SystemMessage({
   msg,
   contentWidth,
   marginTop,
+  onToggleCollapse,
 }: {
   msg: UIMessage & { type: "system" };
   contentWidth: number;
   marginTop: number;
+  onToggleCollapse?: (id: string) => void;
 }) {
-  const wrapped = wrapText(msg.content, contentWidth, 0);
+  const isCollapsed = msg.collapsed ?? false;
+  const firstLine = msg.content.split("\n")[0] ?? "";
+  const handleToggle = (e: MouseEvent) => {
+    if (onToggleCollapse) {
+      e.stopPropagation();
+      onToggleCollapse(msg.id);
+    }
+  };
+
   return (
     <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
-      {wrapped.map((line, j) => (
-        <text key={j} fg="#6c6c7c">{line}</text>
-      ))}
+      {isCollapsed ? (
+        <box flexDirection="row" onMouseUp={handleToggle}>
+          <text fg="#4a4a5c">{firstLine}</text>
+          <text fg="#3a3a4c"> (click to expand)</text>
+        </box>
+      ) : (
+        <>
+          {wrapText(msg.content, contentWidth, 0).map((line, j) => (
+            <text key={j} fg="#6c6c7c" onMouseUp={handleToggle}>{line}</text>
+          ))}
+        </>
+      )}
     </box>
   );
 }
@@ -1060,7 +1083,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                   />
                 );
               case "system":
-                return <SystemMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} />;
+                return <SystemMessage key={msg.id} msg={msg} contentWidth={contentWidth} marginTop={marginTop} onToggleCollapse={onToggleCollapse} />;
               case "compaction":
               case "retry":
                 return <SimpleMessage key={msg.id} msg={msg} marginTop={marginTop} spinnerFrame={spinnerFrame} />;

@@ -912,6 +912,7 @@ export function useKoiAgent(): KoiAgentState {
   // On session load: prefer persisted koi-state.json; fall back to rebuilding from AgentSession.messages.
   const restoreSessionState = useCallback((s: AgentSession) => {
     const koiState = loadKoiState(s.sessionId);
+    const isNewSession = !koiState;
     let restoredMessages = koiState?.messages.length ? koiState.messages : buildUIMessagesFromAgentSession(s);
 
     // Strip internal subagent notifications from restored messages — they are
@@ -932,7 +933,14 @@ export function useKoiAgent(): KoiAgentState {
       restoredMessages = filtered;
     }
 
-    setMessages(restoredMessages);
+    // For brand-new sessions (or sessions whose persisted state has empty messages),
+    // don't wipe existing UI messages (e.g. hook execution records emitted before
+    // setupSession runs). Restored sessions with actual persisted messages rebuild from disk.
+    if (isNewSession || !koiState?.messages.length) {
+      setMessages((prev) => (prev.length > 0 ? prev : restoredMessages));
+    } else {
+      setMessages(restoredMessages);
+    }
 
     const title = koiState?.title ?? s.sessionName;
     if (title) {
@@ -1059,19 +1067,28 @@ export function useKoiAgent(): KoiAgentState {
   useEffect(() => {
     const unsubscribeProgress = onHookProgress((event: import("../hooks/events.js").HookProgressEvent) => {
       if (event.type === "started") {
-        emitHookMessages([{ type: "status", content: `▶ Hook [${event.event}]: ${event.message || event.hookType}` }]);
+        emitHookMessages([{ type: "system", content: `▶ Hook [${event.event}]: ${event.message || event.hookType}`, collapsed: true }]);
       } else if (event.type === "progress") {
         const text = [event.stdout, event.stderr].filter(Boolean).join("");
-        if (text) emitHookMessages([{ type: "status", content: text }]);
+        if (text) emitHookMessages([{ type: "system", content: text, collapsed: true }]);
       } else if (event.type === "response") {
-        emitHookMessages([{ type: "status", content: `✓ Hook [${event.event}]: ${event.message || "completed"}` }]);
+        emitHookMessages([{ type: "system", content: `✓ Hook [${event.event}]: ${event.message || "completed"}`, collapsed: true }]);
       } else if (event.type === "error") {
-        emitHookMessages([{ type: "status", content: `✗ Hook [${event.event}]: ${event.message || "error"}` }]);
+        emitHookMessages([{ type: "system", content: `✗ Hook [${event.event}]: ${event.message || "error"}`, collapsed: true }]);
       }
     });
 
     setHookMessageSink((msgs) => {
-      setMessages((prev) => prev.concat(msgs.map((m) => ({ id: generateId("hook"), ...m }))));
+      setMessages((prev) =>
+        prev.concat(
+          msgs.map((m): UIMessage => {
+            if (m.type === "system") {
+              return { id: generateId("hook"), type: "system", content: m.content, collapsed: m.collapsed };
+            }
+            return { id: generateId("hook"), type: "status", content: m.content };
+          })
+        )
+      );
     });
 
     return () => {
@@ -1507,7 +1524,8 @@ export function useKoiAgent(): KoiAgentState {
   }, [session]);
 
   // Per-message collapse toggle: tool_calls collapse their full output;
-  // agent messages collapse their thinking block (if present).
+  // agent messages collapse their thinking block (if present);
+  // system messages collapse their full content.
   const toggleCollapse = useCallback((id: string) => {
     setMessages((prev) =>
       prev.map((m) => {
@@ -1516,6 +1534,7 @@ export function useKoiAgent(): KoiAgentState {
           return { ...m, collapsed: !m.collapsed };
         }
         if (m.id === id && m.type === "agent" && m.thinking) return { ...m, thinkingCollapsed: !m.thinkingCollapsed };
+        if (m.id === id && m.type === "system") return { ...m, collapsed: !m.collapsed };
         return m;
       })
     );
@@ -1532,6 +1551,7 @@ export function useKoiAgent(): KoiAgentState {
           return { ...m, collapsed };
         }
         if (m.type === "agent" && m.thinking) return { ...m, thinkingCollapsed: collapsed };
+        if (m.type === "system") return { ...m, collapsed };
         return m;
       })
     );

@@ -71,14 +71,21 @@ export function cycleAgentMode(): AgentMode {
 /**
  * Inject mode awareness into the session's system prompt.
  * Patches _baseSystemPrompt directly because Pi resets systemPrompt from it on every turn.
+ * Preserves any Session Start Context already injected by hooks.
  */
 export function injectModeIntoSystemPrompt(session: AgentSession, mode: AgentMode): void {
   const modeNotice = getModeInjection(mode);
+  const sessionStartPattern = /\n\n=== Session Start Context ===[\s\S]*$/;
 
-  const basePrompt = (session as unknown as Record<string, string>)["_baseSystemPrompt"] ?? "";
+  // Capture existing session-start context from the live systemPrompt
+  const existingSystemPrompt = session.state.systemPrompt ?? "";
+  const sessionStartMatch = existingSystemPrompt.match(sessionStartPattern);
+  const sessionStartContext = sessionStartMatch ? sessionStartMatch[0] : "";
+
+  const basePrompt = (session as unknown as Record<string, string>)["_baseSystemPrompt"] ?? existingSystemPrompt;
   const modePattern = /\n\n\[AGENT MODE:[^\]]+\]/;
-  const cleanPrompt = basePrompt.replace(modePattern, "");
-  const patchedPrompt = cleanPrompt + modeNotice;
+  const cleanPrompt = basePrompt.replace(modePattern, "").replace(sessionStartPattern, "");
+  const patchedPrompt = cleanPrompt + modeNotice + sessionStartContext;
   (session as unknown as Record<string, string>)["_baseSystemPrompt"] = patchedPrompt;
   session.state.systemPrompt = patchedPrompt;
 }

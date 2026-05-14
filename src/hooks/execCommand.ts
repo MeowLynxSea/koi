@@ -16,12 +16,14 @@ export async function executeCommandHook(
   input: HookInput,
   options: { timeout: number; pluginRoot?: string }
 ): Promise<HookJSONOutput> {
-  const { timeout, pluginRoot } = options;
+  const { timeout: timeoutSec, pluginRoot } = options;
   const shell = hook.shell || "bash";
   const isWindows = os.platform() === "win32";
 
   const command = hook.command;
   const inputJson = JSON.stringify(input);
+  // Claude Code hook.timeout is in seconds; Node spawn timeout is in milliseconds
+  const timeout = timeoutSec ? timeoutSec * 1000 : 60000;
 
   const env = {
     ...process.env,
@@ -49,8 +51,11 @@ export async function executeCommandHook(
     const child = spawn(shellCmd, args, {
       env,
       timeout,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
+
+    child.stdin?.write(inputJson);
+    child.stdin?.end();
 
     let stdout = "";
     let stderr = "";
@@ -91,22 +96,21 @@ export async function executeCommandHook(
     const child = spawn(shellCmd, args, {
       env,
       timeout,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
+
+    child.stdin?.write(inputJson);
+    child.stdin?.end();
 
     let stdout = "";
     let stderr = "";
 
+    // Collect stdout silently — it's the JSON return value, not UI progress.
     child.stdout?.on("data", (data) => {
       stdout += data.toString();
-      emitHookProgress({
-        type: "progress",
-        hookType: "command",
-        event: input.event,
-        stdout: data.toString(),
-      });
     });
 
+    // Stream stderr as progress so users can see hook diagnostics in real time.
     child.stderr?.on("data", (data) => {
       stderr += data.toString();
       emitHookProgress({

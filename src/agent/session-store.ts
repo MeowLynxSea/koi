@@ -745,11 +745,15 @@ export async function createNewSession(
 
   // Fire SessionStart hooks
   const hookResult = await emitSessionStart(result.session.sessionId, process.cwd(), source);
-  // Inject additionalContext from SessionStart hooks as a steering message.
-  // Wrapped in <session-start-context> so isInternalNotification filters it from the UI
-  // while still delivering it to the LLM context.
+  // Inject additionalContext into both systemPrompt and _baseSystemPrompt.
+  // injectModeIntoSystemPrompt (called in restoreSessionState) now preserves
+  // any existing Session Start Context when it rebuilds the prompt.
   if (hookResult.additionalContext) {
-    await result.session.steer(`<session-start-context>\n${hookResult.additionalContext}\n</session-start-context>`);
+    const injection = "\n\n=== Session Start Context ===\n\n" + hookResult.additionalContext;
+    const sessionRecord = result.session as unknown as Record<string, string>;
+    const base = sessionRecord["_baseSystemPrompt"] ?? result.session.agent.state.systemPrompt ?? "";
+    sessionRecord["_baseSystemPrompt"] = base + injection;
+    result.session.agent.state.systemPrompt += injection;
   }
 
   // Start file watcher for project-level .claude/ and .koi/ directories
@@ -776,7 +780,11 @@ export async function loadSession(
   const result = await createAgentSessionWithConfig(sessionManager, config);
   const hookResult = await emitSessionStart(result.session.sessionId, process.cwd(), "resume");
   if (hookResult.additionalContext) {
-    await result.session.steer(`<session-start-context>\n${hookResult.additionalContext}\n</session-start-context>`);
+    const injection = "\n\n=== Session Start Context ===\n\n" + hookResult.additionalContext;
+    const sessionRecord = result.session as unknown as Record<string, string>;
+    const base = sessionRecord["_baseSystemPrompt"] ?? result.session.agent.state.systemPrompt ?? "";
+    sessionRecord["_baseSystemPrompt"] = base + injection;
+    result.session.agent.state.systemPrompt += injection;
   }
   return result;
 }
@@ -790,7 +798,11 @@ export async function continueRecentSession(
   const result = await createAgentSessionWithConfig(sessionManager, config);
   const hookResult = await emitSessionStart(result.session.sessionId, process.cwd(), "resume");
   if (hookResult.additionalContext) {
-    await result.session.steer(`<session-start-context>\n${hookResult.additionalContext}\n</session-start-context>`);
+    const injection = "\n\n=== Session Start Context ===\n\n" + hookResult.additionalContext;
+    const sessionRecord = result.session as unknown as Record<string, string>;
+    const base = sessionRecord["_baseSystemPrompt"] ?? result.session.agent.state.systemPrompt ?? "";
+    sessionRecord["_baseSystemPrompt"] = base + injection;
+    result.session.agent.state.systemPrompt += injection;
   }
   return result;
 }
