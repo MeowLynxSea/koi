@@ -342,7 +342,11 @@ function removeAgentMessageIfEmpty(
  */
 export function isInternalNotification(text: string): boolean {
   const t = text.trimStart();
-  return t.startsWith("<task-notification>") || t.startsWith("<monitor-notification>");
+  return (
+    t.startsWith("<task-notification>") ||
+    t.startsWith("<monitor-notification>") ||
+    t.startsWith("<session-start-context>")
+  );
 }
 
 function rebuildMessagesFromHistory(

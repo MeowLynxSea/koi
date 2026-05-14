@@ -744,7 +744,13 @@ export async function createNewSession(
   refreshAgentDefinitions(process.cwd());
 
   // Fire SessionStart hooks
-  await emitSessionStart(result.session.sessionId, process.cwd(), source);
+  const hookResult = await emitSessionStart(result.session.sessionId, process.cwd(), source);
+  // Inject additionalContext from SessionStart hooks as a steering message.
+  // Wrapped in <session-start-context> so isInternalNotification filters it from the UI
+  // while still delivering it to the LLM context.
+  if (hookResult.additionalContext) {
+    await result.session.steer(`<session-start-context>\n${hookResult.additionalContext}\n</session-start-context>`);
+  }
 
   // Start file watcher for project-level .claude/ and .koi/ directories
   const watchDirs: string[] = [];
@@ -768,7 +774,10 @@ export async function loadSession(
   const config = await buildSessionConfig(taskManager, onMcpProgress);
   const sessionManager = SessionManager.open(filePath, undefined, process.cwd());
   const result = await createAgentSessionWithConfig(sessionManager, config);
-  await emitSessionStart(result.session.sessionId, process.cwd(), "resume");
+  const hookResult = await emitSessionStart(result.session.sessionId, process.cwd(), "resume");
+  if (hookResult.additionalContext) {
+    await result.session.steer(`<session-start-context>\n${hookResult.additionalContext}\n</session-start-context>`);
+  }
   return result;
 }
 
@@ -779,7 +788,10 @@ export async function continueRecentSession(
   const config = await buildSessionConfig(taskManager);
   const sessionManager = SessionManager.continueRecent(process.cwd());
   const result = await createAgentSessionWithConfig(sessionManager, config);
-  await emitSessionStart(result.session.sessionId, process.cwd(), "resume");
+  const hookResult = await emitSessionStart(result.session.sessionId, process.cwd(), "resume");
+  if (hookResult.additionalContext) {
+    await result.session.steer(`<session-start-context>\n${hookResult.additionalContext}\n</session-start-context>`);
+  }
   return result;
 }
 
