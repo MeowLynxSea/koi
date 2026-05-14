@@ -20,8 +20,8 @@ import os from "os";
 
 function resolveDistDir(): string {
   // import.meta.dir points to {package_root}/src/cce/web/
-  // Go up 4 levels to reach package root, then into dist/cce-frontend
-  const pkgRoot = path.resolve(import.meta.dir, "..", "..", "..", "..");
+  // Go up 3 levels to reach package root, then into dist/cce-frontend
+  const pkgRoot = path.resolve(import.meta.dir, "..", "..", "..");
   const candidates = [
     path.resolve(pkgRoot, "dist", "cce-frontend"),           // npm package
     path.resolve(process.cwd(), "dist", "cce-frontend"),     // dev: from project root

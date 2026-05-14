@@ -23,6 +23,7 @@ export function useCceServer(): {
   stateRef.current = state;
 
   const start = useCallback(async () => {
+    console.error("[CCE] start() called");
     if (globalServer) {
       setState({ running: true, url: globalUrl, error: null });
       return;
@@ -30,7 +31,9 @@ export function useCceServer(): {
 
     try {
       // Dynamically import to avoid loading on startup if not needed
+      console.error("[CCE] importing server module...");
       const { createCceWebServer } = await import("../../../cce/web/server.js");
+      console.error("[CCE] module imported successfully");
       const port = await findFreePort(8456);
       const server = createCceWebServer(port);
       globalServer = server;
