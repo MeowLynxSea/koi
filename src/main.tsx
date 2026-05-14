@@ -9,9 +9,18 @@ import { createRoot } from "@opentui/react";
 import { DialogProvider } from "@opentui-ui/dialog/react";
 import { App } from "./tui/app.js";
 import { loadSettings } from "./config/settings.js";
+import { refreshActivePlugins } from "./plugins/refresh.js";
+import { emitSetup } from "./hooks/integrations/lifecycleHooks.js";
 
 export async function main(): Promise<void> {
   loadSettings();
+
+  // Initialize plugin system
+  refreshActivePlugins();
+
+  // Fire Setup hooks
+  await emitSetup();
+
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
 
   // Enable bracketed paste mode so we can detect paste events

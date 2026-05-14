@@ -1,0 +1,23 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo '{\"continue\": true, \"systemMessage\": \"Bash command intercepted by test plugin\"}'"
+        }
+      ]
+    }
+  ],
+  "SessionStart": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo '{\"continue\": true, \"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"Test plugin is active\"}}'"
+        }
+      ]
+    }
+  ]
+}

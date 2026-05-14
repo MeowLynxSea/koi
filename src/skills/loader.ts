@@ -677,6 +677,29 @@ function loadBundledSkillsInternal(): SkillCommand[] {
 }
 
 /**
+ * Register a single skill directly (used by plugin system)
+ */
+export function registerSkill(skill: SkillCommand): void {
+  skillState.unconditional.set(skill.name, skill);
+  notifyListeners();
+}
+
+/**
+ * Unregister a skill by name
+ */
+export function unregisterSkill(skillName: string): boolean {
+  const removed =
+    skillState.unconditional.delete(skillName) ||
+    skillState.conditional.delete(skillName) ||
+    skillState.dynamic.delete(skillName);
+  if (removed) {
+    skillState.activatedConditional.delete(skillName);
+    notifyListeners();
+  }
+  return removed;
+}
+
+/**
  * Reset skill registry (useful for testing)
  */
 export function resetSkillRegistry(): void {

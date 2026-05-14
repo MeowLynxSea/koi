@@ -45,6 +45,8 @@ import {
   restoreSnapshot,
 } from "./session-snapshots.js";
 import { subagentRegistry } from "./subagent-registry.js";
+import { interceptUserPrompt } from "../hooks/integrations/promptHooks.js";
+import { emitPreCompact, emitPostCompact } from "../hooks/integrations/compactionHooks.js";
 
 /** Global ref to the active AgentSession, usable by tools outside React hooks. */
 export const activeSessionRef = { current: null as AgentSession | null };
@@ -649,7 +651,8 @@ function handleToolExecutionEnd(event: Extract<AgentSessionEvent, { type: "tool_
 }
 
 /** Notifies the user that the session is being compacted to reduce context usage. */
-function handleCompactionStart(event: Extract<AgentSessionEvent, { type: "compaction_start" }>, ctx: EventHandlerContext) {
+async function handleCompactionStart(event: Extract<AgentSessionEvent, { type: "compaction_start" }>, ctx: EventHandlerContext) {
+  await emitPreCompact(ctx.sessionRef.current?.sessionId || "");
   ctx.setMessages((prev) =>
     prev.concat({
       id: generateId("compact"),
@@ -659,7 +662,8 @@ function handleCompactionStart(event: Extract<AgentSessionEvent, { type: "compac
   );
 }
 
-function handleCompactionEnd(event: Extract<AgentSessionEvent, { type: "compaction_end" }>, ctx: EventHandlerContext) {
+async function handleCompactionEnd(event: Extract<AgentSessionEvent, { type: "compaction_end" }>, ctx: EventHandlerContext) {
+  await emitPostCompact(ctx.sessionRef.current?.sessionId || "");
   ctx.setMessages((prev) =>
     prev.map((m) =>
       m.type === "compaction" && m.content.includes("Compacting")
@@ -722,7 +726,7 @@ function handleQueueUpdate(event: Extract<AgentSessionEvent, { type: "queue_upda
  * Central dispatcher for all AgentSession events.
  * Uses a switch so TypeScript can narrow the event type for each handler.
  */
-function handleEvent(event: AgentSessionEvent, ctx: EventHandlerContext) {
+async function handleEvent(event: AgentSessionEvent, ctx: EventHandlerContext) {
   switch (event.type) {
     case "agent_start": handleAgentStart(ctx); break;
     case "agent_end": handleAgentEnd(event, ctx); break;
@@ -732,8 +736,8 @@ function handleEvent(event: AgentSessionEvent, ctx: EventHandlerContext) {
     case "tool_execution_start": handleToolExecutionStart(event, ctx); break;
     case "tool_execution_update": handleToolExecutionUpdate(event, ctx); break;
     case "tool_execution_end": handleToolExecutionEnd(event, ctx); break;
-    case "compaction_start": handleCompactionStart(event, ctx); break;
-    case "compaction_end": handleCompactionEnd(event, ctx); break;
+    case "compaction_start": await handleCompactionStart(event, ctx); break;
+    case "compaction_end": await handleCompactionEnd(event, ctx); break;
     case "auto_retry_start": handleAutoRetryStart(event, ctx); break;
     case "auto_retry_end": handleAutoRetryEnd(event, ctx); break;
     case "session_info_changed": handleSessionInfoChanged(event, ctx); break;
@@ -888,7 +892,11 @@ export function useKoiAgent(): KoiAgentState {
       hasToolCallsRef,
       sessionRef,
     };
-    return s.subscribe((event: AgentSessionEvent) => handleEvent(event, ctx));
+    return s.subscribe((event: AgentSessionEvent) => {
+      void handleEvent(event, ctx).catch((err) => {
+        console.error("[hooks] Event handler error:", err);
+      });
+    });
   }, []);
 
   // On session load: prefer persisted koi-state.json; fall back to rebuilding from AgentSession.messages.
@@ -1418,13 +1426,16 @@ export function useKoiAgent(): KoiAgentState {
         // CCE not initialized or error — continue normally
       }
 
+      // Run UserPromptSubmit hooks
+      const interceptedText = await interceptUserPrompt(text, session.sessionId);
+
       setMessages((prev) => {
-        const updated = prev.concat({ id: generateId("user"), type: "user", content: text });
+        const updated = prev.concat({ id: generateId("user"), type: "user", content: interceptedText });
         // Trigger naming asynchronously after state update
         void triggerSessionNaming(updated);
         return updated;
       });
-      await session.prompt(text);
+      await session.prompt(interceptedText);
     },
     [session, triggerSessionNaming]
   );

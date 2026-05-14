@@ -37,6 +37,8 @@ import {
   type SkillCommand,
 } from "../skills/index.js";
 import { createToolOutputGuard } from "./tool-output-guard.js";
+import { wrapToolsWithHooks } from "../hooks/integrations/toolHooks.js";
+import { emitSessionStart } from "../hooks/integrations/sessionHooks.js";
 import { getResolvedBootContent } from "../cce/index.js";
 import { getNamespaceContext } from "../cce/agent-bridge/namespace-context.js";
 
@@ -668,7 +670,7 @@ You are highly capable and often allow users to complete ambitious tasks that wo
     settingsManager: config.settingsManager,
     model: config.currentModel,
     noTools: "builtin",
-    customTools: wrapAllToolsWithAbortSupport(config.customTools),
+    customTools: wrapAllToolsWithAbortSupport(wrapToolsWithHooks(config.customTools)),
     sessionManager,
     resourceLoader,
   });
@@ -734,6 +736,10 @@ export async function createNewSession(
     subagents: [],
   };
   saveKoiState(result.session.sessionId, state);
+
+  // Fire SessionStart hooks
+  await emitSessionStart(result.session.sessionId, process.cwd());
+
   return result;
 }
 

@@ -484,7 +484,7 @@ export function App({ renderer, onExit }: AppProps) {
 
     // In YOLO mode, auto-approve all permissions
     if (isYoloMode()) {
-      resolvePermission(request.id, true);
+      void resolvePermission(request.id, true);
       // Use setTimeout to allow the queue to be processed recursively
       setTimeout(() => { void processPermissionQueue(); }, 0);
       return;
@@ -550,7 +550,7 @@ export function App({ renderer, onExit }: AppProps) {
       },
     });
 
-    resolvePermission(request.id, allowed);
+    void resolvePermission(request.id, allowed);
     processingPermissionRef.current = false;
     setPermissionModalOpen(false);
     permissionResolveRef.current = null;

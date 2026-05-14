@@ -50,19 +50,40 @@ export function getPermissionQueue(): PermissionRequest[] {
   return queue;
 }
 
-export function resolvePermission(id: string, allowed: boolean): void {
+export async function resolvePermission(id: string, allowed: boolean): Promise<void> {
   const request = queue.find((r) => r.id === id);
   if (!request) return;
   queue = queue.filter((r) => r.id !== id);
+
+  if (!allowed) {
+    await runPermissionDeniedHooks(
+      request.toolName,
+      request.args as Record<string, unknown>,
+      request.reason
+    );
+  }
+
   request.resolve(allowed);
   emit();
 }
 
-export function requestPermission(params: {
+import { runPermissionRequestHooks, runPermissionDeniedHooks } from "../hooks/integrations/permissionHooks.js";
+
+export async function requestPermission(params: {
   toolName: string;
   args: unknown;
   reason: string;
 }): Promise<boolean> {
+  // Run PermissionRequest hooks first
+  const hookResult = await runPermissionRequestHooks(params.toolName, params.args as Record<string, unknown>);
+  if (hookResult.decision === "allow") {
+    return true;
+  }
+  if (hookResult.decision === "deny") {
+    await runPermissionDeniedHooks(params.toolName, params.args as Record<string, unknown>, hookResult.reason);
+    return false;
+  }
+
   return new Promise((resolve) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     queue.push({ id, toolName: params.toolName, args: params.args, reason: params.reason, resolve });

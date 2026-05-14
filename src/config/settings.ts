@@ -11,6 +11,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { emitConfigChange } from "../hooks/integrations/configHooks.js";
 import {
   getProviders,
   getModels,
@@ -173,6 +174,11 @@ export function saveSettings(): void {
   }
 }
 
+export function emitConfigChangeIfNeeded(_key: string, _value: unknown): void {
+  // Placeholder for ConfigChange hook emission
+  // Full implementation would track previous values and emit on change
+}
+
 export function loadSettings(): void {
   initPiInfrastructure();
 
@@ -216,6 +222,7 @@ export function getSessionTitle(): string {
 export function setSessionTitle(title: string): void {
   sessionTitle = title;
   saveSettings();
+  void emitConfigChange("sessionTitle", title);
 }
 
 /* ───────── Provider configuration ───────── */
@@ -223,6 +230,7 @@ export function setSessionTitle(title: string): void {
 export function configureProvider(config: ProviderConfig): void {
   providerConfigs.set(config.provider, config);
   saveSettings();
+  void emitConfigChange("provider", config.provider);
   // Sync to Pi AuthStorage so agent sessions can resolve API keys
   if (config.authMethod === "apikey") {
     getPiAuthStorage().set(config.provider, {
@@ -241,6 +249,7 @@ export function removeProvider(provider: string): void {
   providerConfigs.delete(provider);
   saveSettings();
   getPiAuthStorage().remove(provider);
+  void emitConfigChange("provider", provider);
 }
 
 export function isProviderConfigured(provider: string): boolean {
@@ -266,6 +275,7 @@ export function getCurrentModel(): ModelRef | null {
 export function setCurrentModel(ref: ModelRef | null): void {
   currentModel = ref;
   saveSettings();
+  void emitConfigChange("currentModel", ref);
 }
 
 export function getAuxiliaryModel(): ModelRef | null {
@@ -275,6 +285,7 @@ export function getAuxiliaryModel(): ModelRef | null {
 export function setAuxiliaryModel(ref: ModelRef | null): void {
   auxiliaryModel = ref;
   saveSettings();
+  void emitConfigChange("auxiliaryModel", ref);
 }
 
 /* ───────── External editor configuration ───────── */
@@ -286,6 +297,7 @@ export function getExternalEditor(): string | null {
 export function setExternalEditor(path: string | null): void {
   externalEditor = path;
   saveSettings();
+  void emitConfigChange("externalEditor", path);
 }
 
 /* ───────── Model discovery (via pi-ai, for modals) ───────── */

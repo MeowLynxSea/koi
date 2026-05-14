@@ -18,6 +18,7 @@ import type { ToolResultWithError } from "./types.js";
 import { activeSessionRef } from "../agent/hooks.js";
 import { runSubagent, type SubagentConfig } from "../agent/subagent.js";
 import { subagentRegistry } from "../agent/subagent-registry.js";
+import { emitSubagentStart, emitSubagentStop } from "../hooks/integrations/subagentHooks.js";
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -76,9 +77,12 @@ export async function executeAgent(
     runInBackground: params.run_in_background,
   };
 
+  const sessionId = activeSessionRef.current?.sessionId;
+  await emitSubagentStart(params.description, sessionId);
+
   if (params.run_in_background) {
-    const sessionId = activeSessionRef.current.sessionId;
-    const agentId = await subagentRegistry.launch(sessionId, config);
+    const agentId = await subagentRegistry.launch(sessionId || "", config);
+    await emitSubagentStop(params.description, undefined, sessionId);
     return {
       content: [
         {
@@ -92,6 +96,7 @@ export async function executeAgent(
 
   try {
     const result = await runSubagent(config);
+    await emitSubagentStop(params.description, result, sessionId);
     return {
       content: [
         { type: "text", text: result || "[Agent completed with empty output]" },
