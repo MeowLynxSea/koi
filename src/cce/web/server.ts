@@ -27,6 +27,14 @@ function resolveDistDir(): string {
     path.resolve(process.cwd(), "src", "cce", "web", "frontend", "dist"), // dev: from src
     path.resolve(import.meta.dir, "frontend", "dist"),         // fallback: relative to server.ts
   ];
+  const debugLog = [
+    `[CCE] import.meta.dir: ${import.meta.dir}`,
+    `[CCE] pkgRoot: ${pkgRoot}`,
+    `[CCE] process.cwd(): ${process.cwd()}`,
+    `[CCE] candidates:`,
+    ...candidates.map(c => `  ${c} => exists: ${fs.existsSync(c)}`),
+  ].join("\n");
+  fs.writeFileSync(path.join(process.env.HOME || ".", ".cce-debug.log"), debugLog);
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
