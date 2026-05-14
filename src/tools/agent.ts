@@ -20,6 +20,7 @@ import { activeSessionRef } from "../agent/hooks.js";
 import { runSubagent, type SubagentConfig } from "../agent/subagent.js";
 import { subagentRegistry } from "../agent/subagent-registry.js";
 import { emitSubagentStart, emitSubagentStop } from "../hooks/integrations/subagentHooks.js";
+import { emitNotification } from "../hooks/integrations/lifecycleHooks.js";
 import { getAgentDefinition } from "../agent/agent-definitions.js";
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -106,6 +107,7 @@ export async function executeAgent(
   if (params.run_in_background) {
     const agentId = await subagentRegistry.launch(sessionId || "", config);
     await emitSubagentStop(params.description, undefined, sessionId);
+    await emitNotification(`Background agent ${agentId} launched: ${params.description}`, sessionId);
     return {
       content: [
         {
@@ -120,6 +122,7 @@ export async function executeAgent(
   try {
     const result = await runSubagent(config);
     await emitSubagentStop(params.description, result, sessionId);
+    await emitNotification(`Subagent completed: ${params.description}`, sessionId);
     return {
       content: [
         { type: "text", text: result || "[Agent completed with empty output]" },

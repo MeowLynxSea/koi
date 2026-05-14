@@ -8,6 +8,7 @@
 import { executeHooksForEvent } from "../engine.js";
 import type { HookInput } from "../types.js";
 import type { PermissionDecision } from "../../agent/check-permissions.js";
+import { forwardHookResult, emitHookStatusMessage } from "../messageSink.js";
 
 export async function runPermissionRequestHooks(
   toolName: string,
@@ -25,12 +26,17 @@ export async function runPermissionRequestHooks(
   const result = await executeHooksForEvent("PermissionRequest", hookInput, { sessionId });
 
   if (result.permissionBehavior === "allow") {
+    emitHookStatusMessage(`Permission hook auto-allowed ${toolName}`);
+    forwardHookResult(result, "PermissionRequest");
     return { decision: "allow" };
   }
   if (result.permissionBehavior === "deny") {
+    emitHookStatusMessage(`Permission hook auto-denied ${toolName}: ${result.stopReason || "Blocked by permission hook"}`);
+    forwardHookResult(result, "PermissionRequest");
     return { decision: "deny", reason: result.stopReason || "Blocked by permission hook" };
   }
 
+  forwardHookResult(result, "PermissionRequest");
   return {};
 }
 
@@ -48,5 +54,6 @@ export async function runPermissionDeniedHooks(
     session_id: sessionId,
   };
 
-  await executeHooksForEvent("PermissionDenied", hookInput, { sessionId });
+  const result = await executeHooksForEvent("PermissionDenied", hookInput, { sessionId });
+  forwardHookResult(result, "PermissionDenied");
 }

@@ -47,6 +47,9 @@ import {
 import { subagentRegistry } from "./subagent-registry.js";
 import { interceptUserPrompt } from "../hooks/integrations/promptHooks.js";
 import { emitPreCompact, emitPostCompact } from "../hooks/integrations/compactionHooks.js";
+import { setHookMessageSink, emitHookMessages } from "../hooks/messageSink.js";
+import { onHookProgress } from "../hooks/events.js";
+import { emitSessionEnd } from "../hooks/integrations/sessionHooks.js";
 
 /** Global ref to the active AgentSession, usable by tools outside React hooks. */
 export const activeSessionRef = { current: null as AgentSession | null };
@@ -126,7 +129,7 @@ export interface KoiAgentState {
   // MCP connection progress state
   isConnectingMcp: boolean;
   mcpConnectionProgress: McpConnectionProgress | null;
-  prompt: (text: string) => Promise<void>;
+  prompt: (text: string, displayText?: string) => Promise<void>;
   steer: (text: string) => Promise<void>;
   followUp: (text: string) => Promise<void>;
   abort: () => Promise<void>;
@@ -1045,12 +1048,40 @@ export function useKoiAgent(): KoiAgentState {
     return () => { mounted = false; };
   }, [setupSession]);
 
+  // Register hook message sink so integrations can inject UI messages
+  useEffect(() => {
+    const unsubscribeProgress = onHookProgress((event: import("../hooks/events.js").HookProgressEvent) => {
+      if (event.type === "started") {
+        emitHookMessages([{ type: "status", content: `▶ Hook [${event.event}]: ${event.message || event.hookType}` }]);
+      } else if (event.type === "progress") {
+        const text = [event.stdout, event.stderr].filter(Boolean).join("");
+        if (text) emitHookMessages([{ type: "status", content: text }]);
+      } else if (event.type === "response") {
+        emitHookMessages([{ type: "status", content: `✓ Hook [${event.event}]: ${event.message || "completed"}` }]);
+      } else if (event.type === "error") {
+        emitHookMessages([{ type: "status", content: `✗ Hook [${event.event}]: ${event.message || "error"}` }]);
+      }
+    });
+
+    setHookMessageSink((msgs) => {
+      setMessages((prev) => prev.concat(msgs.map((m) => ({ id: generateId("hook"), ...m }))));
+    });
+
+    return () => {
+      unsubscribeProgress();
+      setHookMessageSink(null);
+    };
+  }, []);
+
   // On unmount: persist final state before disposing the AgentSession to prevent data loss.
   useEffect(() => {
     return () => {
       const s = sessionRef.current;
       const sid = currentSessionIdRef.current;
       const msgs = messagesRef.current;
+      if (sid) {
+        void emitSessionEnd(sid);
+      }
       if (s) {
         if (sid) {
           saveKoiState(sid, buildKoiState(sid, msgs, s.sessionName || getSessionTitle()));
@@ -1355,6 +1386,7 @@ export function useKoiAgent(): KoiAgentState {
       if (isCurrent && session) {
         saveCurrentState();
         await session.abort();
+        await emitSessionEnd(sessionId);
         session.dispose();
         await deleteSessionStore(meta);
         try {
@@ -1406,7 +1438,7 @@ export function useKoiAgent(): KoiAgentState {
   );
 
   const prompt = useCallback(
-    async (text: string) => {
+    async (text: string, displayText?: string) => {
       if (!session) return;
 
       // ─── CCE: Auto process utterance + inject context ───
@@ -1430,7 +1462,12 @@ export function useKoiAgent(): KoiAgentState {
       const interceptedText = await interceptUserPrompt(text, session.sessionId);
 
       setMessages((prev) => {
-        const updated = prev.concat({ id: generateId("user"), type: "user", content: interceptedText });
+        const updated = prev.concat({
+          id: generateId("user"),
+          type: "user",
+          content: interceptedText,
+          displayContent: displayText,
+        });
         // Trigger naming asynchronously after state update
         void triggerSessionNaming(updated);
         return updated;

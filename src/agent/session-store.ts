@@ -39,6 +39,7 @@ import {
 import { createToolOutputGuard } from "./tool-output-guard.js";
 import { wrapToolsWithHooks } from "../hooks/integrations/toolHooks.js";
 import { emitSessionStart } from "../hooks/integrations/sessionHooks.js";
+import { startFileWatcher } from "../hooks/integrations/fileWatcher.js";
 import { refreshAgentDefinitions } from "../plugins/loadAgents.js";
 import { getResolvedBootContent } from "../cce/index.js";
 import { getNamespaceContext } from "../cce/agent-bridge/namespace-context.js";
@@ -743,6 +744,16 @@ export async function createNewSession(
 
   // Fire SessionStart hooks
   await emitSessionStart(result.session.sessionId, process.cwd());
+
+  // Start file watcher for project-level .claude/ and .koi/ directories
+  const watchDirs: string[] = [];
+  const claudeDir = path.join(process.cwd(), ".claude");
+  const koiDir = path.join(process.cwd(), ".koi");
+  if (fs.existsSync(claudeDir)) watchDirs.push(claudeDir);
+  if (fs.existsSync(koiDir)) watchDirs.push(koiDir);
+  if (watchDirs.length > 0) {
+    startFileWatcher(watchDirs, result.session.sessionId);
+  }
 
   return result;
 }

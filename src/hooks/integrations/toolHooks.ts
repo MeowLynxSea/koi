@@ -8,6 +8,7 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { executeHooksForEvent } from "../engine.js";
 import type { HookInput } from "../types.js";
+import { forwardHookResult, emitHookStatusMessage } from "../messageSink.js";
 
 /**
  * Wrap a tool definition with hook interception.
@@ -33,13 +34,17 @@ export function wrapToolWithHooks(tool: ToolDefinition): ToolDefinition {
 
       if (preResult.preventContinuation) {
         const reason = preResult.stopReason || "Blocked by PreToolUse hook";
+        forwardHookResult(preResult, "PreToolUse");
         throw new Error(reason);
       }
 
       // Allow hooks to modify input
       if (preResult.updatedInput) {
         execArgs[1] = { ...params, ...preResult.updatedInput };
+        emitHookStatusMessage(`PreToolUse hook modified ${toolName} args: ${JSON.stringify(preResult.updatedInput)}`);
       }
+
+      forwardHookResult(preResult, "PreToolUse");
 
       try {
         const result = await (originalExecute as (...args: unknown[]) => Promise<unknown>)(...execArgs);
@@ -51,9 +56,10 @@ export function wrapToolWithHooks(tool: ToolDefinition): ToolDefinition {
           tool_input: execArgs[1] as Record<string, unknown>,
           tool_output: result,
         };
-        await executeHooksForEvent("PostToolUse", postInput, {
+        const postResult = await executeHooksForEvent("PostToolUse", postInput, {
           matcherFilter: toolName,
         });
+        forwardHookResult(postResult, "PostToolUse");
 
         return result;
       } catch (error) {
@@ -69,10 +75,13 @@ export function wrapToolWithHooks(tool: ToolDefinition): ToolDefinition {
         });
 
         if (failureResult.retry) {
+          emitHookStatusMessage(`PostToolUseFailure hook requested retry for ${toolName}`);
+          forwardHookResult(failureResult, "PostToolUseFailure");
           // Retry once
           return await (originalExecute as (...args: unknown[]) => Promise<unknown>)(...execArgs);
         }
 
+        forwardHookResult(failureResult, "PostToolUseFailure");
         throw error;
       }
     }) as ToolDefinition["execute"],

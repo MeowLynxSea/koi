@@ -6,6 +6,7 @@
 
 import { executeHooksForEvent } from "../engine.js";
 import type { HookInput } from "../types.js";
+import { forwardHookResult } from "../messageSink.js";
 
 export async function emitSubagentStart(
   description: string,
@@ -16,7 +17,8 @@ export async function emitSubagentStart(
     session_id: sessionId,
     task_description: description,
   };
-  await executeHooksForEvent("SubagentStart", hookInput, { sessionId });
+  const result = await executeHooksForEvent("SubagentStart", hookInput, { sessionId });
+  forwardHookResult(result, "SubagentStart");
 }
 
 export async function emitSubagentStop(
@@ -30,5 +32,6 @@ export async function emitSubagentStop(
     task_description: description,
     tool_output: result,
   };
-  await executeHooksForEvent("SubagentStop", hookInput, { sessionId });
+  const hookResult = await executeHooksForEvent("SubagentStop", hookInput, { sessionId });
+  forwardHookResult(hookResult, "SubagentStop");
 }

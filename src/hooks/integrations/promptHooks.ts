@@ -7,6 +7,7 @@
 
 import { executeHooksForEvent } from "../engine.js";
 import type { HookInput } from "../types.js";
+import { forwardHookResult } from "../messageSink.js";
 
 /**
  * Intercept a user prompt and run UserPromptSubmit hooks.
@@ -28,13 +29,16 @@ export async function interceptUserPrompt(
 
   if (result.preventContinuation) {
     const reason = result.stopReason || "Blocked by UserPromptSubmit hook";
+    forwardHookResult(result, "UserPromptSubmit");
     throw new Error(reason);
   }
 
   // Hooks can inject additional context
   if (result.additionalContext) {
+    forwardHookResult(result, "UserPromptSubmit");
     return `${prompt}\n\n[Hook context]: ${result.additionalContext}`;
   }
 
+  forwardHookResult(result, "UserPromptSubmit");
   return prompt;
 }

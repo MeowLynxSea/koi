@@ -6,13 +6,15 @@
 
 import { executeHooksForEvent } from "../engine.js";
 import type { HookInput } from "../types.js";
+import { forwardHookResult } from "../messageSink.js";
 
 export async function emitPreCompact(sessionId: string): Promise<void> {
   const hookInput: HookInput = {
     event: "PreCompact",
     session_id: sessionId,
   };
-  await executeHooksForEvent("PreCompact", hookInput, { sessionId });
+  const result = await executeHooksForEvent("PreCompact", hookInput, { sessionId });
+  forwardHookResult(result, "PreCompact");
 }
 
 export async function emitPostCompact(sessionId: string): Promise<void> {
@@ -20,5 +22,6 @@ export async function emitPostCompact(sessionId: string): Promise<void> {
     event: "PostCompact",
     session_id: sessionId,
   };
-  await executeHooksForEvent("PostCompact", hookInput, { sessionId });
+  const result = await executeHooksForEvent("PostCompact", hookInput, { sessionId });
+  forwardHookResult(result, "PostCompact");
 }

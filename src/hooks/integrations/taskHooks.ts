@@ -6,6 +6,7 @@
 
 import { executeHooksForEvent } from "../engine.js";
 import type { HookInput } from "../types.js";
+import { forwardHookResult } from "../messageSink.js";
 
 export async function emitTaskCreated(
   taskId: string,
@@ -18,7 +19,8 @@ export async function emitTaskCreated(
     task_id: taskId,
     task_description: description,
   };
-  await executeHooksForEvent("TaskCreated", hookInput, { sessionId });
+  const result = await executeHooksForEvent("TaskCreated", hookInput, { sessionId });
+  forwardHookResult(result, "TaskCreated");
 }
 
 export async function emitTaskCompleted(
@@ -32,5 +34,6 @@ export async function emitTaskCompleted(
     task_id: taskId,
     task_description: description,
   };
-  await executeHooksForEvent("TaskCompleted", hookInput, { sessionId });
+  const result = await executeHooksForEvent("TaskCompleted", hookInput, { sessionId });
+  forwardHookResult(result, "TaskCompleted");
 }

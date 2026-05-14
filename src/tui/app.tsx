@@ -342,7 +342,7 @@ export function App({ renderer, onExit }: AppProps) {
       const content = await invokeSkill(skill, args, session);
       const skillPrompt = extractTextFromContent(content);
       if (skillPrompt) {
-        await prompt(skillPrompt);
+        await prompt(skillPrompt, `/${skill.name}${args ? " " + args : ""}`);
       }
       setShowSkillsModal(false);
     },
@@ -879,7 +879,7 @@ export function App({ renderer, onExit }: AppProps) {
           // Convert skill content to a prompt string
           const skillPrompt = extractTextFromContent(content);
           if (skillPrompt) {
-            await prompt(skillPrompt);
+            await prompt(skillPrompt, text.trim());
           }
         })();
         return;
@@ -1020,7 +1020,7 @@ export function App({ renderer, onExit }: AppProps) {
           const content = await invokeSkill(skill, "", session);
           const skillPrompt = extractTextFromContent(content);
           if (skillPrompt) {
-            await prompt(skillPrompt);
+            await prompt(skillPrompt, `/${skill.name}`);
           }
         },
       }));

@@ -10,7 +10,7 @@ import { DialogProvider } from "@opentui-ui/dialog/react";
 import { App } from "./tui/app.js";
 import { loadSettings } from "./config/settings.js";
 import { refreshActivePlugins } from "./plugins/refresh.js";
-import { emitSetup } from "./hooks/integrations/lifecycleHooks.js";
+import { emitSetup, emitStop, emitStopFailure } from "./hooks/integrations/lifecycleHooks.js";
 
 export async function main(): Promise<void> {
   loadSettings();
@@ -30,7 +30,8 @@ export async function main(): Promise<void> {
     <DialogProvider>
       <App
         renderer={renderer}
-        onExit={() => {
+        onExit={async () => {
+          await emitStop();
           renderer.destroy();
           process.exit(0);
         }}
@@ -48,24 +49,31 @@ export async function main(): Promise<void> {
       // ignore cleanup errors during shutdown
     }
   };
+  const cleanupWithStop = async () => {
+    await emitStop();
+    cleanup();
+  };
   process.on("exit", cleanup);
   process.on("SIGINT", () => {
-    cleanup();
-    process.exit(0);
+    void cleanupWithStop().then(() => process.exit(0));
   });
   process.on("SIGTERM", () => {
-    cleanup();
-    process.exit(0);
+    void cleanupWithStop().then(() => process.exit(0));
   });
   process.on("uncaughtException", (err) => {
-    cleanup();
-    console.error(err);
-    process.exit(1);
+    void emitStopFailure(err.message).then(() => {
+      cleanup();
+      console.error(err);
+      process.exit(1);
+    });
   });
   process.on("unhandledRejection", (reason) => {
-    cleanup();
-    console.error("Unhandled rejection:", reason);
-    process.exit(1);
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    void emitStopFailure(msg).then(() => {
+      cleanup();
+      console.error("Unhandled rejection:", reason);
+      process.exit(1);
+    });
   });
 
   // Keep process alive until exit

@@ -52,3 +52,7 @@ patches
 reference
 .cce
 native
+
+.trellis
+.claude
+AGENTS.md

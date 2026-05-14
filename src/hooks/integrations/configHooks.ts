@@ -6,6 +6,7 @@
 
 import { executeHooksForEvent } from "../engine.js";
 import type { HookInput } from "../types.js";
+import { forwardHookResult } from "../messageSink.js";
 
 export async function emitConfigChange(key: string, value: unknown): Promise<void> {
   const hookInput: HookInput = {
@@ -13,5 +14,6 @@ export async function emitConfigChange(key: string, value: unknown): Promise<voi
     config_key: key,
     config_value: value,
   };
-  await executeHooksForEvent("ConfigChange", hookInput);
+  const result = await executeHooksForEvent("ConfigChange", hookInput);
+  forwardHookResult(result, "ConfigChange");
 }

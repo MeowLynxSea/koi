@@ -10,6 +10,7 @@ import path from "path";
 import os from "os";
 import { randomUUID } from "crypto";
 import { emitTaskCreated, emitTaskCompleted } from "../hooks/integrations/taskHooks.js";
+import { emitNotification } from "../hooks/integrations/lifecycleHooks.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
 const KOI_SESSIONS_DIR = path.join(CONFIG_DIR, "sessions");
@@ -212,6 +213,7 @@ export class SessionTaskManager {
     this.saveActive();
     if (!wasCompleted && task.status === "completed") {
       void emitTaskCompleted(taskId, task.content, this.activeSessionId || undefined);
+      void emitNotification(`Task completed: ${task.content}`, this.activeSessionId || undefined);
     }
     return task;
   }

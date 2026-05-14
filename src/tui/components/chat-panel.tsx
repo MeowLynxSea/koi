@@ -12,7 +12,7 @@ import { SyntaxStyle, createTextAttributes, type ScrollBoxRenderable, type Mouse
 import { imageToHalfBlocks, type ImageRow } from "./image-utils.js";
 
 export type UIMessage =
-  | { id: string; type: "user"; content: string }
+  | { id: string; type: "user"; content: string; displayContent?: string }
   | {
       id: string;
       type: "agent";
@@ -453,7 +453,8 @@ function UserMessage({
   const prefix = "> ";
   const prefixWidth = stringWidth(prefix);
   const available = Math.max(1, contentWidth - 2 - prefixWidth);
-  const wrapped = wrapText(stripKoiContext(msg.content), available, prefixWidth);
+  const displayText = msg.displayContent || msg.content;
+  const wrapped = wrapText(stripKoiContext(displayText), available, prefixWidth);
 
   return (
     <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
