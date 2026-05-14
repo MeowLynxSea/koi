@@ -18,14 +18,13 @@ import path from "path";
 import fs from "fs";
 
 function resolveDistDir(): string {
-  // import.meta.dir points to {package_root}/src/cce/web/
-  // Go up 3 levels to reach package root, then into dist/cce-frontend
-  const pkgRoot = path.resolve(import.meta.dir, "..", "..", "..");
+  // import.meta.dir in bundled npm package: {pkg_root}/dist
+  // import.meta.dir in dev: {pkg_root}/src/cce/web
+  // dist/cce-frontend is relative to import.meta.dir
   const candidates = [
-    path.resolve(pkgRoot, "dist", "cce-frontend"),           // npm package
-    path.resolve(process.cwd(), "dist", "cce-frontend"),     // dev: from project root
-    path.resolve(process.cwd(), "src", "cce", "web", "frontend", "dist"), // dev: from src
-    path.resolve(import.meta.dir, "frontend", "dist"),         // fallback: relative to server.ts
+    path.resolve(import.meta.dir, "cce-frontend"),              // npm package (import.meta.dir = dist/)
+    path.resolve(import.meta.dir, "..", "..", "cce-frontend"),   // dev: import.meta.dir = src/cce/web/
+    path.resolve(process.cwd(), "dist", "cce-frontend"),         // dev: from project root
   ];
   const found = candidates.filter(c => fs.existsSync(c));
   for (const candidate of candidates) {
