@@ -49,6 +49,9 @@ interface SettingsFile {
   auxiliaryModel?: ModelRef | null;
   externalEditor?: string;
   cceEnabled?: boolean;
+  ui?: {
+    showHooksMessages?: boolean;
+  };
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".config", "koi");
@@ -61,6 +64,7 @@ let currentModel: ModelRef | null = null;
 let auxiliaryModel: ModelRef | null = null;
 let externalEditor: string | null = null;
 let cceEnabled = false;
+let showHooksMessages = true; // Default to showing hook messages in UI
 
 // Pi infrastructure (lazy-initialized)
 let piAuthStorage: AuthStorage | null = null;
@@ -165,6 +169,9 @@ export function saveSettings(): void {
       auxiliaryModel,
       externalEditor: externalEditor ?? undefined,
       cceEnabled,
+      ui: {
+        showHooksMessages,
+      },
     };
     const json = JSON.stringify(data, null, 2);
     fs.writeFileSync(SETTINGS_PATH, json + "\n", { mode: 0o600 });
@@ -206,6 +213,9 @@ export function loadSettings(): void {
     }
     if (data.cceEnabled) {
       cceEnabled = data.cceEnabled;
+    }
+    if (data.ui?.showHooksMessages !== undefined) {
+      showHooksMessages = data.ui.showHooksMessages;
     }
     syncCredentialsToPi();
   } catch {
@@ -431,5 +441,16 @@ export function isCceEnabled(): boolean {
 
 export function setCceEnabled(enabled: boolean): void {
   cceEnabled = enabled;
+  saveSettings();
+}
+
+/* ───────── UI Settings ───────── */
+
+export function getShowHooksMessages(): boolean {
+  return showHooksMessages;
+}
+
+export function setShowHooksMessages(show: boolean): void {
+  showHooksMessages = show;
   saveSettings();
 }

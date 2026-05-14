@@ -624,9 +624,13 @@ function AgentMessage({
   );
 }
 
-function StatusMessage({ msg, marginTop }: { msg: UIMessage & { type: "status" }; marginTop: number }) {
+function StatusMessage({ msg, marginTop, spinnerFrame }: { msg: UIMessage & { type: "status" }; marginTop: number; spinnerFrame?: number }) {
+  const margin = "  ";
+  const isHookRunning = msg.content.startsWith("Hook [");
+  const prefix = isHookRunning ? SPINNER[spinnerFrame ?? 0] : "*";
+  const fgColor = isHookRunning ? "#00f5ff" : "#6c6c7c";
   return (
-    <text fg="#6c6c7c" marginTop={marginTop}>* {msg.content}</text>
+    <text fg={fgColor} marginTop={marginTop}>{margin}{prefix} {msg.content}</text>
   );
 }
 
@@ -1074,7 +1078,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
                   />
                 );
               case "status":
-                return <StatusMessage key={msg.id} msg={msg} marginTop={marginTop} />;
+                return <StatusMessage key={msg.id} msg={msg} marginTop={marginTop} spinnerFrame={spinnerFrame} />;
               case "tool_call":
                 return (
                   <ToolCallMessage

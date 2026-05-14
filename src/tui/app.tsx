@@ -37,6 +37,7 @@ import { ForkModal } from "./components/fork-modal.js";
 import { ImagePreviewModal } from "./components/image-preview-modal.js";
 import { ExternalEditorModal } from "./components/external-editor-modal.js";
 import { AlertModal } from "./components/alert-modal.js";
+import { PreferenceModal } from "./components/preference-modal.js";
 import { openExternalEditor } from "./components/external-editor.js";
 import { MCPSettings } from "./components/mcp/MCPSettings.js";
 import { SkillsMenu } from "../skills/SkillsMenu.js";
@@ -76,6 +77,8 @@ import {
   resolvePiModel,
   getConfiguredProviders,
   isProviderConfigured,
+  getShowHooksMessages,
+  setShowHooksMessages,
 } from "../config/settings.js";
 import { useKoiAgent, isInternalNotification } from "../agent/hooks.js";
 import type { SessionMeta } from "../agent/session-store.js";
@@ -251,6 +254,8 @@ export function App({ renderer, onExit }: AppProps) {
   const [cceInitDownloadProgress, setCceInitDownloadProgress] = useState<CceDownloadProgress | null>(null);
   const [showModelAlert, setShowModelAlert] = useState(false);
   const [modelAlertMessage, setModelAlertMessage] = useState("");
+  const [showPreferenceModal, setShowPreferenceModal] = useState(false);
+  const [showHooksMessages, setShowHooksMessagesState] = useState(getShowHooksMessages());
 
   // Sync yoloMode to global permission-ui state
   useEffect(() => {
@@ -813,20 +818,34 @@ export function App({ renderer, onExit }: AppProps) {
   // These messages are still present in the session state (so the LLM sees
   // them), but we don't want to clutter the UI with XML task notifications.
   const visibleMessages = useMemo(
-    () =>
-      messages
+    () => {
+      return messages
         .map((m) =>
           m.type === "user"
             ? { ...m, content: m.content.replace(/<koi_context>[\s\S]*?<\/koi_context>/g, "").trimEnd() }
             : m
         )
-        .filter((m) => !(m.type === "user" && isInternalNotification(m.content))),
-    [messages]
+        .filter((m) => {
+          // Filter out internal notifications
+          if (m.type === "user" && isInternalNotification(m.content)) return false;
+          // Filter out hook messages if setting is disabled
+          // Hook messages are formatted as [EventLabel] message or Hook [...] or ✗ Hook [...]
+          if (!showHooksMessages) {
+            const content = "content" in m ? m.content : "";
+            // Match [EventLabel] format used by forwardHookResult
+            if (m.type === "system" && /^\[([\w]+)\]/.test(content)) return false;
+            // Match Hook [...] format from onHookProgress
+            if (content.includes("Hook [")) return false;
+          }
+          return true;
+        });
+    },
+    [messages, showHooksMessages]
   );
 
   const anyModalOpen =
     showExitModal || showCommandPanel || showRenameModal || showConnectModal ||
-    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal || showExternalEditorModal || externalEditorBusy || externalEditorError !== null || showCceModal || showCceInitModal;
+    showModelModal || showSessionModal || showForkModal || permissionModalOpen || showDeleteConfirm || showImageModal || showEditPendingModal || showMCPSettings || showSkillsModal || showExternalEditorModal || externalEditorBusy || externalEditorError !== null || showCceModal || showCceInitModal || showPreferenceModal;
 
   // Thin wrapper handlers: mostly close modals after delegating to useKoiAgent actions.
   const handleSubmit = useCallback(
@@ -868,6 +887,12 @@ export function App({ renderer, onExit }: AppProps) {
       // Handle /cce command - open CCE modal
       if (text.trim() === "/cce") {
         setShowCceModal(true);
+        return;
+      }
+
+      // Handle /preference command - open preference modal
+      if (text.trim() === "/preference") {
+        setShowPreferenceModal(true);
         return;
       }
 
@@ -1045,6 +1070,7 @@ export function App({ renderer, onExit }: AppProps) {
       { id: "/skills", label: "List and manage skills", section: "Extensions", action: () => setShowSkillsModal(true) },
       { id: "/editor", label: "Set external editor for prompts", section: "Settings", action: () => setShowExternalEditorModal(true) },
       { id: "/cce", label: "Open Cat's Context Engine", section: "Extensions", action: () => setShowCceModal(true) },
+      { id: "/preference", label: "Open preferences", section: "Settings", action: () => setShowPreferenceModal(true) },
       ...skillCommands,
     ],
     [isStreaming, session, handleNewSession, refreshSessionList, agentMode, handleModeSwitch, applyAgentMode, skillCommands]
@@ -1373,6 +1399,14 @@ export function App({ renderer, onExit }: AppProps) {
           onClose={() => setShowCceModal(false)}
         />
       )}
+      <PreferenceModal
+        isActive={showPreferenceModal}
+        onClose={() => setShowPreferenceModal(false)}
+        onShowHooksMessagesChange={(show) => {
+          setShowHooksMessagesState(show);
+          setShowHooksMessages(show); // Save to settings
+        }}
+      />
     </box>
   );
 }

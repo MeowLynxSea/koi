@@ -1063,18 +1063,35 @@ export function useKoiAgent(): KoiAgentState {
     return () => { mounted = false; };
   }, [setupSession]);
 
+  // Track pending hook running messages for removal on completion
+  const pendingHookMessages = useRef<Map<string, string>>(new Map());
+
   // Register hook message sink so integrations can inject UI messages
   useEffect(() => {
     const unsubscribeProgress = onHookProgress((event: import("../hooks/events.js").HookProgressEvent) => {
+      const eventKey = `${event.event}:${event.hookType}`;
       if (event.type === "started") {
-        emitHookMessages([{ type: "system", content: `▶ Hook [${event.event}]: ${event.message || event.hookType}`, collapsed: true }]);
+        const msgId = generateId("hook");
+        pendingHookMessages.current.set(eventKey, msgId);
+        setMessages((prev) =>
+          prev.concat({
+            id: msgId,
+            type: "status",
+            content: `Hook [${event.event}]: ${event.message || event.hookType}`,
+          })
+        );
       } else if (event.type === "progress") {
         const text = [event.stdout, event.stderr].filter(Boolean).join("");
         if (text) emitHookMessages([{ type: "system", content: text, collapsed: true }]);
-      } else if (event.type === "response") {
-        emitHookMessages([{ type: "system", content: `✓ Hook [${event.event}]: ${event.message || "completed"}`, collapsed: true }]);
-      } else if (event.type === "error") {
-        emitHookMessages([{ type: "system", content: `✗ Hook [${event.event}]: ${event.message || "error"}`, collapsed: true }]);
+      } else if (event.type === "response" || event.type === "error") {
+        const msgId = pendingHookMessages.current.get(eventKey);
+        if (msgId) {
+          pendingHookMessages.current.delete(eventKey);
+          setMessages((prev) => prev.filter((m) => m.id !== msgId));
+        }
+        if (event.type === "error") {
+          emitHookMessages([{ type: "system", content: `✗ Hook [${event.event}]: ${event.message || "error"}`, collapsed: true }]);
+        }
       }
     });
 
