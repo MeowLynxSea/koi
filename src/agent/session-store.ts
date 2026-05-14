@@ -754,6 +754,9 @@ export async function createNewSession(
     const base = sessionRecord["_baseSystemPrompt"] ?? result.session.agent.state.systemPrompt ?? "";
     sessionRecord["_baseSystemPrompt"] = base + injection;
     result.session.agent.state.systemPrompt += injection;
+    // Persist so injectModeIntoSystemPrompt can restore it after Pi rebuilds
+    // _baseSystemPrompt (e.g. inside setActiveToolsByName).
+    sessionRecord["_koiSessionStartContext"] = injection;
   }
 
   // Start file watcher for project-level .claude/ and .koi/ directories
@@ -785,6 +788,7 @@ export async function loadSession(
     const base = sessionRecord["_baseSystemPrompt"] ?? result.session.agent.state.systemPrompt ?? "";
     sessionRecord["_baseSystemPrompt"] = base + injection;
     result.session.agent.state.systemPrompt += injection;
+    sessionRecord["_koiSessionStartContext"] = injection;
   }
   return result;
 }
@@ -803,6 +807,7 @@ export async function continueRecentSession(
     const base = sessionRecord["_baseSystemPrompt"] ?? result.session.agent.state.systemPrompt ?? "";
     sessionRecord["_baseSystemPrompt"] = base + injection;
     result.session.agent.state.systemPrompt += injection;
+    sessionRecord["_koiSessionStartContext"] = injection;
   }
   return result;
 }

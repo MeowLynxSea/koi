@@ -77,16 +77,24 @@ export function injectModeIntoSystemPrompt(session: AgentSession, mode: AgentMod
   const modeNotice = getModeInjection(mode);
   const sessionStartPattern = /\n\n=== Session Start Context ===[\s\S]*$/;
 
-  // Capture existing session-start context from the live systemPrompt
+  // Capture existing session-start context.
+  // Prefer the persistent slot set by session-store.ts, because Pi's
+  // setActiveToolsByName() rebuilds _baseSystemPrompt from scratch via
+  // _rebuildSystemPrompt(), which loses any ad-hoc injections.
+  const sessionRecord = session as unknown as Record<string, string>;
+  const persistedContext = sessionRecord["_koiSessionStartContext"] ?? "";
+
+  // Fallback: scrape from the live systemPrompt (useful for the initial
+  // injection before any rebuild has happened).
   const existingSystemPrompt = session.state.systemPrompt ?? "";
   const sessionStartMatch = existingSystemPrompt.match(sessionStartPattern);
-  const sessionStartContext = sessionStartMatch ? sessionStartMatch[0] : "";
+  const sessionStartContext = persistedContext || (sessionStartMatch ? sessionStartMatch[0] : "");
 
-  const basePrompt = (session as unknown as Record<string, string>)["_baseSystemPrompt"] ?? existingSystemPrompt;
+  const basePrompt = sessionRecord["_baseSystemPrompt"] ?? existingSystemPrompt;
   const modePattern = /\n\n\[AGENT MODE:[^\]]+\]/;
   const cleanPrompt = basePrompt.replace(modePattern, "").replace(sessionStartPattern, "");
   const patchedPrompt = cleanPrompt + modeNotice + sessionStartContext;
-  (session as unknown as Record<string, string>)["_baseSystemPrompt"] = patchedPrompt;
+  sessionRecord["_baseSystemPrompt"] = patchedPrompt;
   session.state.systemPrompt = patchedPrompt;
 }
 
