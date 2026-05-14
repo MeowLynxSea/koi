@@ -131,12 +131,33 @@ export function unregisterCallbackHooks(idPrefix: string): void {
 // ============================================================================
 
 /**
+ * Match a query string against a matcher pattern.
+ * Supports wildcards (*), exact matches, pipe-separated lists (a|b),
+ * and regular expressions.
+ */
+function matchesPattern(query: string, pattern: string): boolean {
+  if (!pattern || pattern === "*") return true;
+  // Simple alphanumeric and pipe-only patterns → exact match or list inclusion
+  if (/^[a-zA-Z0-9_|]+$/.test(pattern)) {
+    const parts = pattern.split("|");
+    return parts.some((p) => p === query);
+  }
+  // Otherwise treat as RegExp
+  try {
+    return new RegExp(pattern).test(query);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Collect all matching hooks for an event from all sources.
  */
 export function collectHooksForEvent(
   event: HookEvent,
   matcherFilter?: string,
-  cwd?: string
+  cwd?: string,
+  sessionId?: string
 ): {
   settingsMatchers: HookMatcher[];
   pluginMatchers: PluginHookMatcher[];
@@ -146,7 +167,7 @@ export function collectHooksForEvent(
   // Settings hooks (includes project-level .claude/settings.json)
   const settings = getSettingsHooks(cwd);
   const settingsMatchers = ((settings[event] || []) as unknown as HookMatcher[]).filter(
-    (m) => !matcherFilter || !m.matcher || m.matcher === matcherFilter
+    (m) => !matcherFilter || !m.matcher || matchesPattern(matcherFilter, m.matcher)
   );
 
   // Plugin hooks
@@ -154,17 +175,20 @@ export function collectHooksForEvent(
   for (const eventMap of pluginHooks.values()) {
     const matchers = eventMap.get(event) || [];
     for (const matcher of matchers) {
-      if (!matcherFilter || !matcher.matcher || matcher.matcher === matcherFilter) {
+      if (!matcherFilter || !matcher.matcher || matchesPattern(matcherFilter, matcher.matcher)) {
         pluginMatchers.push(matcher);
       }
     }
   }
 
-  // Session hooks
+  // Session hooks (scoped to the specific sessionId)
   const sessionMatchers: HookMatcher[] = [];
-  for (const sessionMap of sessionHooks.values()) {
-    const matchers = sessionMap.get(event) || [];
-    sessionMatchers.push(...matchers);
+  if (sessionId) {
+    const sessionMap = sessionHooks.get(sessionId);
+    if (sessionMap) {
+      const matchers = sessionMap.get(event) || [];
+      sessionMatchers.push(...matchers);
+    }
   }
 
   // Callback hooks

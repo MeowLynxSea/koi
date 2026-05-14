@@ -43,7 +43,7 @@ export async function executeHooksForEvent(
 ): Promise<AggregatedHookResult> {
   const { sessionId, matcherFilter, cwd } = options || {};
 
-  const collected = collectHooksForEvent(event, matcherFilter, cwd);
+  const collected = collectHooksForEvent(event, matcherFilter, cwd, sessionId);
   const results: HookResult[] = [];
 
   // Execute settings hooks
@@ -74,10 +74,7 @@ export async function executeHooksForEvent(
   }
 
   // Execute session hooks
-  const sessionMatchers = sessionId
-    ? collected.sessionMatchers
-    : collected.sessionMatchers;
-  for (const matcher of sessionMatchers) {
+  for (const matcher of collected.sessionMatchers) {
     for (const hook of matcher.hooks) {
       if (shouldSkipHook(hook, input)) continue;
       const result = await executeSingleHook(hook, input, event);

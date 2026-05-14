@@ -8,11 +8,12 @@ import { executeHooksForEvent } from "../engine.js";
 import type { HookInput } from "../types.js";
 import { forwardHookResult } from "../messageSink.js";
 
-export async function emitSetup(): Promise<void> {
+export async function emitSetup(trigger: "init" | "maintenance" = "init"): Promise<void> {
   const hookInput: HookInput = {
     event: "Setup",
+    trigger,
   };
-  const result = await executeHooksForEvent("Setup", hookInput);
+  const result = await executeHooksForEvent("Setup", hookInput, { matcherFilter: trigger });
   forwardHookResult(result, "Setup");
 }
 

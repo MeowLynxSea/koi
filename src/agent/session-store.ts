@@ -705,7 +705,8 @@ export async function listSessions(): Promise<SessionMeta[]> {
 
 export async function createNewSession(
   taskManager: SessionTaskManager,
-  onMcpProgress?: McpProgressCallback
+  onMcpProgress?: McpProgressCallback,
+  source: "startup" | "resume" | "clear" | "compact" = "startup",
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
   const config = await buildSessionConfig(taskManager, onMcpProgress);
@@ -743,7 +744,7 @@ export async function createNewSession(
   refreshAgentDefinitions(process.cwd());
 
   // Fire SessionStart hooks
-  await emitSessionStart(result.session.sessionId, process.cwd());
+  await emitSessionStart(result.session.sessionId, process.cwd(), source);
 
   // Start file watcher for project-level .claude/ and .koi/ directories
   const watchDirs: string[] = [];
@@ -766,7 +767,9 @@ export async function loadSession(
   ensureDir(KOI_SESSIONS_DIR);
   const config = await buildSessionConfig(taskManager, onMcpProgress);
   const sessionManager = SessionManager.open(filePath, undefined, process.cwd());
-  return createAgentSessionWithConfig(sessionManager, config);
+  const result = await createAgentSessionWithConfig(sessionManager, config);
+  await emitSessionStart(result.session.sessionId, process.cwd(), "resume");
+  return result;
 }
 
 export async function continueRecentSession(
@@ -775,7 +778,9 @@ export async function continueRecentSession(
   ensureDir(KOI_SESSIONS_DIR);
   const config = await buildSessionConfig(taskManager);
   const sessionManager = SessionManager.continueRecent(process.cwd());
-  return createAgentSessionWithConfig(sessionManager, config);
+  const result = await createAgentSessionWithConfig(sessionManager, config);
+  await emitSessionStart(result.session.sessionId, process.cwd(), "resume");
+  return result;
 }
 
 export function saveKoiState(sessionId: string, state: KoiSessionState): void {

@@ -19,7 +19,7 @@ export async function main(): Promise<void> {
   refreshActivePlugins();
 
   // Fire Setup hooks
-  await emitSetup();
+  await emitSetup("init");
 
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
 

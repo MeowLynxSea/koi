@@ -655,7 +655,8 @@ function handleToolExecutionEnd(event: Extract<AgentSessionEvent, { type: "tool_
 
 /** Notifies the user that the session is being compacted to reduce context usage. */
 async function handleCompactionStart(event: Extract<AgentSessionEvent, { type: "compaction_start" }>, ctx: EventHandlerContext) {
-  await emitPreCompact(ctx.sessionRef.current?.sessionId || "");
+  const trigger = event.reason === "manual" ? "manual" : "auto";
+  await emitPreCompact(ctx.sessionRef.current?.sessionId || "", trigger);
   ctx.setMessages((prev) =>
     prev.concat({
       id: generateId("compact"),
@@ -666,7 +667,9 @@ async function handleCompactionStart(event: Extract<AgentSessionEvent, { type: "
 }
 
 async function handleCompactionEnd(event: Extract<AgentSessionEvent, { type: "compaction_end" }>, ctx: EventHandlerContext) {
-  await emitPostCompact(ctx.sessionRef.current?.sessionId || "");
+  const trigger = event.reason === "manual" ? "manual" : "auto";
+  const compactSummary = event.result?.summary;
+  await emitPostCompact(ctx.sessionRef.current?.sessionId || "", trigger, compactSummary);
   ctx.setMessages((prev) =>
     prev.map((m) =>
       m.type === "compaction" && m.content.includes("Compacting")
@@ -1080,7 +1083,7 @@ export function useKoiAgent(): KoiAgentState {
       const sid = currentSessionIdRef.current;
       const msgs = messagesRef.current;
       if (sid) {
-        void emitSessionEnd(sid);
+        void emitSessionEnd(sid, "other");
       }
       if (s) {
         if (sid) {
@@ -1386,11 +1389,11 @@ export function useKoiAgent(): KoiAgentState {
       if (isCurrent && session) {
         saveCurrentState();
         await session.abort();
-        await emitSessionEnd(sessionId);
+        await emitSessionEnd(sessionId, "clear");
         session.dispose();
         await deleteSessionStore(meta);
         try {
-          const result = await createNewSession(globalTaskManager);
+          const result = await createNewSession(globalTaskManager, undefined, "clear");
           resetSessionUI();
           setMessages([]);
           setSessionTitleState("New Session");

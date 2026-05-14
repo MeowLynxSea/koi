@@ -80,6 +80,11 @@ export interface HookInput {
   task_description?: string;
   config_key?: string;
   config_value?: unknown;
+  source?: "startup" | "resume" | "clear" | "compact";
+  trigger?: "init" | "maintenance" | "manual" | "auto";
+  reason?: "clear" | "logout" | "prompt_input_exit" | "other";
+  custom_instructions?: string | null;
+  compact_summary?: string;
   permission_request?: {
     tool_name: string;
     tool_input: Record<string, unknown>;
