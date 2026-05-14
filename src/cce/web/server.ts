@@ -16,6 +16,7 @@ import { WorkingMemoryManager, getWorkingMemoryManager } from "../brain/working-
 import { ROOT_NODE_UUID } from "../core/types.js";
 import path from "path";
 import fs from "fs";
+import os from "os";
 
 function resolveDistDir(): string {
   // import.meta.dir points to {package_root}/src/cce/web/
@@ -34,7 +35,12 @@ function resolveDistDir(): string {
     `[CCE] candidates:`,
     ...candidates.map(c => `  ${c} => exists: ${fs.existsSync(c)}`),
   ].join("\n");
-  fs.writeFileSync(path.join(process.env.HOME || ".", ".cce-debug.log"), debugLog);
+  const logPath = path.join(os.tmpdir(), ".cce-debug.log");
+  try {
+    fs.writeFileSync(logPath, debugLog);
+  } catch (e) {
+    console.error("[CCE] Debug log error:", e);
+  }
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
