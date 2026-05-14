@@ -62,11 +62,9 @@ export function forwardHookResult(result: AggregatedHookResult, eventLabel: stri
   for (const err of result.errors) {
     messages.push({ type: "system", content: `[${eventLabel}] Error: ${err}`, collapsed: true });
   }
-  // Always emit a record so users can see that hooks ran even when they produce no output.
-  if (messages.length === 0) {
-    const outcomeSummary = result.outcomes.length > 0
-      ? result.outcomes.join(", ")
-      : "no matching hooks";
+  // Only emit a record when there are actual outcomes; skip "no matching hooks" entirely
+  if (messages.length === 0 && result.outcomes.length > 0) {
+    const outcomeSummary = result.outcomes.join(", ");
     messages.push({ type: "system", content: `[${eventLabel}] ${outcomeSummary}`, collapsed: true });
   }
   emitHookMessages(messages);

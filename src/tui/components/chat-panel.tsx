@@ -854,6 +854,9 @@ function SystemMessage({
   marginTop: number;
   onToggleCollapse?: (id: string) => void;
 }) {
+  const margin = "  ";
+  const dot = "·";
+  const dotColor = "#6c6c7c";
   const isCollapsed = msg.collapsed ?? false;
   const firstLine = msg.content.split("\n")[0] ?? "";
   const handleToggle = (e: MouseEvent) => {
@@ -867,13 +870,14 @@ function SystemMessage({
     <box flexDirection="column" width={contentWidth} marginTop={marginTop}>
       {isCollapsed ? (
         <box flexDirection="row" onMouseUp={handleToggle}>
+          <text fg={dotColor}>{margin}{dot} </text>
           <text fg="#4a4a5c">{firstLine}</text>
           <text fg="#3a3a4c"> (click to expand)</text>
         </box>
       ) : (
         <>
-          {wrapText(msg.content, contentWidth, 0).map((line, j) => (
-            <text key={j} fg="#6c6c7c" onMouseUp={handleToggle}>{line}</text>
+          {wrapText(msg.content, contentWidth, 2).map((line, j) => (
+            <text key={j} fg="#6c6c7c" onMouseUp={handleToggle}>{margin}{dot} {line}</text>
           ))}
         </>
       )}
