@@ -3,6 +3,7 @@
  *
  * Implements Claude Code's AgentTool semantics on top of Pi's agent framework:
  *   • Built-in types: "explore" (read-only), "plan" (read-only + tasks)
+ *   • Custom agents: loaded from .claude/agents/*.md definitions
  *   • Synchronous mode: wait for completion, return result text
  *   • Asynchronous mode: fire-and-forget, return agentId immediately
  *
@@ -19,6 +20,7 @@ import { activeSessionRef } from "../agent/hooks.js";
 import { runSubagent, type SubagentConfig } from "../agent/subagent.js";
 import { subagentRegistry } from "../agent/subagent-registry.js";
 import { emitSubagentStart, emitSubagentStop } from "../hooks/integrations/subagentHooks.js";
+import { getAgentDefinition } from "../agent/agent-definitions.js";
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,11 @@ export const agentSchema = Type.Object({
       { description: "Built-in agent type: 'explore' = read-only, 'plan' = planning mode. Defaults to 'explore' if omitted." }
     )
   ),
+  agent_type: Type.Optional(
+    Type.String({
+      description: "Custom agent name (e.g., 'trellis-implement'). Overrides subagent_type when set. Loaded from .claude/agents/*.md",
+    })
+  ),
   model: Type.Optional(
     Type.String({
       description: "Model override (optional, not yet implemented)",
@@ -52,6 +59,7 @@ export type AgentToolInput = {
   description: string;
   prompt: string;
   subagent_type?: "explore" | "plan";
+  agent_type?: string;
   model?: string;
   run_in_background?: boolean;
 };
@@ -70,11 +78,26 @@ export async function executeAgent(
     } as ToolResultWithError<{ result?: string; agentId?: string; status: string }>;
   }
 
+  // Resolve custom agent definition if agent_type is provided
+  const customAgent = params.agent_type ? getAgentDefinition(params.agent_type) : undefined;
+
   const config: SubagentConfig = {
     description: params.description,
     prompt: params.prompt,
     subagentType: params.subagent_type ?? "explore",
     runInBackground: params.run_in_background,
+    customAgent: customAgent
+      ? {
+          name: customAgent.name,
+          description: customAgent.description,
+          systemPrompt: customAgent.systemPrompt,
+          tools: customAgent.tools,
+          disallowedTools: customAgent.disallowedTools,
+          model: customAgent.model,
+          maxTurns: customAgent.maxTurns,
+          initialPrompt: customAgent.initialPrompt,
+        }
+      : undefined,
   };
 
   const sessionId = activeSessionRef.current?.sessionId;
@@ -129,7 +152,8 @@ export function createAgentToolDefinition(): ToolDefinition<
       "Built-in types:\n" +
       "  • explore — read-only tools only; safe for research and discovery (default)\n" +
       "  • plan    — read-only + task tools; for formulating implementation plans\n\n" +
-      "If subagent_type is omitted, it defaults to 'explore' for safety.\n" +
+      "Custom agents: Set agent_type to the name of a custom agent loaded from .claude/agents/*.md\n\n" +
+      "If subagent_type is omitted, it defaults to 'explore' for safety." +
       "Set run_in_background to true for fire-and-forget execution. " +
       "You will receive a <task-notification> when the background agent completes.",
     promptSnippet: "Agent: spawn a focused subagent to perform a task",
@@ -137,6 +161,7 @@ export function createAgentToolDefinition(): ToolDefinition<
       "Use Agent to delegate independent, parallelizable tasks.",
       "Provide a concise description (3-5 words) and a detailed prompt.",
       "Choose 'explore' for read-only research, 'plan' for drafting plans.",
+      "Set agent_type to use a custom agent definition from .claude/agents/.",
       "Set run_in_background when you don't need the result immediately.",
       "Subagents cannot spawn other subagents or ask the user questions.",
     ],

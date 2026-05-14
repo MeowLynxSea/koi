@@ -11,7 +11,7 @@ import { loadAllBuiltinPlugins } from "./builtin.js";
 import { isPluginEnabled } from "./settings.js";
 import { registerPluginHooks, unregisterPluginHooks } from "./loadHooks.js";
 import { registerPluginCommands } from "./loadCommands.js";
-import { registerPluginAgents, unregisterPluginAgents } from "./loadAgents.js";
+import { registerPluginAgents, unregisterPluginAgents, refreshAgentDefinitions } from "./loadAgents.js";
 import { registerPluginMcpServers } from "./loadMcp.js";
 
 interface ActivePluginState {
@@ -86,6 +86,9 @@ export function refreshActivePlugins(): {
 
     enabledPlugins.push(plugin);
   }
+
+  // Refresh project-level agent definitions
+  refreshAgentDefinitions(process.cwd());
 
   activeState = { plugins: enabledPlugins, errors };
   return activeState;

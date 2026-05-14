@@ -39,6 +39,7 @@ import {
 import { createToolOutputGuard } from "./tool-output-guard.js";
 import { wrapToolsWithHooks } from "../hooks/integrations/toolHooks.js";
 import { emitSessionStart } from "../hooks/integrations/sessionHooks.js";
+import { refreshAgentDefinitions } from "../plugins/loadAgents.js";
 import { getResolvedBootContent } from "../cce/index.js";
 import { getNamespaceContext } from "../cce/agent-bridge/namespace-context.js";
 
@@ -736,6 +737,9 @@ export async function createNewSession(
     subagents: [],
   };
   saveKoiState(result.session.sessionId, state);
+
+  // Load project-level agent definitions
+  refreshAgentDefinitions(process.cwd());
 
   // Fire SessionStart hooks
   await emitSessionStart(result.session.sessionId, process.cwd());

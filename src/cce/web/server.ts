@@ -33,7 +33,6 @@ function resolveDistDir(): string {
   throw new Error(
     "CCE frontend dist not found.\n" +
     `import.meta.dir: ${import.meta.dir}\n` +
-    `pkgRoot: ${pkgRoot}\n` +
     `process.cwd(): ${process.cwd()}\n` +
     `found: ${JSON.stringify(found)}\n` +
     `Please build it first:\n  cd src/cce/web/frontend && bun install && bun run build`

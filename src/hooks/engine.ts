@@ -38,11 +38,12 @@ export async function executeHooksForEvent(
     sessionId?: string;
     matcherFilter?: string;
     skipAsync?: boolean;
+    cwd?: string;
   }
 ): Promise<AggregatedHookResult> {
-  const { sessionId, matcherFilter } = options || {};
+  const { sessionId, matcherFilter, cwd } = options || {};
 
-  const collected = collectHooksForEvent(event, matcherFilter);
+  const collected = collectHooksForEvent(event, matcherFilter, cwd);
   const results: HookResult[] = [];
 
   // Execute settings hooks

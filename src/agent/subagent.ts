@@ -13,12 +13,24 @@ import { activeSessionRef } from "./hooks.js";
 
 export type SubagentType = "explore" | "plan";
 
+export interface CustomAgentConfig {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  tools?: string[];
+  disallowedTools?: string[];
+  model?: string;
+  maxTurns?: number;
+  initialPrompt?: string;
+}
+
 export interface SubagentConfig {
   description: string;
   prompt: string;
   subagentType?: SubagentType;
   runInBackground?: boolean;
   maxTurns?: number;
+  customAgent?: CustomAgentConfig;
 }
 
 const DEFAULT_MAX_TURNS = 50;
@@ -58,18 +70,29 @@ const PLAN_TOOL_NAMES = new Set([
 function filterTools(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parentTools: AgentTool<any>[],
-  subagentType?: SubagentType
+  config: SubagentConfig
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): AgentTool<any>[] {
-  let allowedNames: Set<string> | null = null;
-  if (subagentType === "explore") {
-    allowedNames = READONLY_TOOL_NAMES;
-  } else if (subagentType === "plan") {
-    allowedNames = PLAN_TOOL_NAMES;
-  }
+  const customAgent = config.customAgent;
 
   return parentTools.filter((tool) => {
     if (DISALLOWED_TOOLS.has(tool.name)) return false;
+
+    // Custom agent tool filtering
+    if (customAgent) {
+      if (customAgent.disallowedTools?.includes(tool.name)) return false;
+      if (customAgent.tools && !customAgent.tools.includes(tool.name)) return false;
+      return true;
+    }
+
+    // Built-in type filtering
+    let allowedNames: Set<string> | null = null;
+    if (config.subagentType === "explore") {
+      allowedNames = READONLY_TOOL_NAMES;
+    } else if (config.subagentType === "plan") {
+      allowedNames = PLAN_TOOL_NAMES;
+    }
+
     if (allowedNames && !allowedNames.has(tool.name)) return false;
     return true;
   });
@@ -77,9 +100,20 @@ function filterTools(
 
 function buildSystemPrompt(
   parentSystemPrompt: string,
-  subagentType?: SubagentType
+  config: SubagentConfig
 ): string {
-  if (subagentType === "explore") {
+  const customAgent = config.customAgent;
+  if (customAgent) {
+    return (
+      parentSystemPrompt +
+      "\n\n[CUSTOM AGENT: " +
+      customAgent.name +
+      "]\n" +
+      customAgent.systemPrompt
+    );
+  }
+
+  if (config.subagentType === "explore") {
     return (
       parentSystemPrompt +
       "\n\n[SUBAGENT MODE: Explore]\n" +
@@ -88,7 +122,7 @@ function buildSystemPrompt(
       "Your sole purpose is to gather information and report findings concisely."
     );
   }
-  if (subagentType === "plan") {
+  if (config.subagentType === "plan") {
     return (
       parentSystemPrompt +
       "\n\n[SUBAGENT MODE: Plan]\n" +
@@ -142,11 +176,8 @@ export async function runSubagent(
   const parentAgent = parentSession.agent;
   const parentState = parentSession.state;
 
-  const tools = filterTools(parentState.tools, config.subagentType);
-  const systemPrompt = buildSystemPrompt(
-    parentState.systemPrompt,
-    config.subagentType
-  );
+  const tools = filterTools(parentState.tools, config);
+  const systemPrompt = buildSystemPrompt(parentState.systemPrompt, config);
 
   const userMessage: UserMessage = {
     role: "user",
@@ -174,7 +205,7 @@ export async function runSubagent(
   onAgentCreated?.(agent);
 
   let turnCount = 0;
-  const maxTurns = config.maxTurns ?? DEFAULT_MAX_TURNS;
+  const maxTurns = config.maxTurns ?? config.customAgent?.maxTurns ?? DEFAULT_MAX_TURNS;
   const unsubscribe = agent.subscribe((event, _signal) => {
     if (event.type === "turn_start") {
       turnCount++;

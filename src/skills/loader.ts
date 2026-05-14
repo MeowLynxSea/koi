@@ -516,6 +516,44 @@ export async function loadAllSkills(cwd?: string): Promise<SkillCommand[]> {
         }
       }
     }
+
+    // Load from project commands directory (.claude/commands/)
+    // Claude Code treats commands/ the same as skills/ — both are markdown prompts
+    const projectCommandsDir = path.join(cwd, ".claude", "commands");
+    if (fsSync.existsSync(projectCommandsDir)) {
+      const commandEntries = fsSync.readdirSync(projectCommandsDir, { withFileTypes: true });
+      for (const entry of commandEntries) {
+        const entryPath = path.join(projectCommandsDir, entry.name);
+        if (entry.isDirectory()) {
+          // commands/<name>/  — look for *.md files inside
+          const mdFiles = fsSync.readdirSync(entryPath)
+            .filter((f) => f.endsWith(".md"))
+            .map((f) => path.join(entryPath, f));
+          for (const mdFile of mdFiles) {
+            const skillWithPath = await loadSkillFromFile(mdFile, "projectSettings", "commands");
+            if (skillWithPath) {
+              const resolvedPath = await realPath(mdFile);
+              if (!seenPaths.has(resolvedPath)) {
+                seenPaths.add(resolvedPath);
+                allSkills.push(skillWithPath.skill);
+                skillState.unconditional.set(skillWithPath.skill.name, skillWithPath.skill);
+              }
+            }
+          }
+        } else if (entry.isFile() && entry.name.endsWith(".md")) {
+          // commands/<name>.md  — flat file
+          const skillWithPath = await loadSkillFromFile(entryPath, "projectSettings", "commands");
+          if (skillWithPath) {
+            const resolvedPath = await realPath(entryPath);
+            if (!seenPaths.has(resolvedPath)) {
+              seenPaths.add(resolvedPath);
+              allSkills.push(skillWithPath.skill);
+              skillState.unconditional.set(skillWithPath.skill.name, skillWithPath.skill);
+            }
+          }
+        }
+      }
+    }
   }
 
   // Load bundled skills

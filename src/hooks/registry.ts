@@ -135,15 +135,16 @@ export function unregisterCallbackHooks(idPrefix: string): void {
  */
 export function collectHooksForEvent(
   event: HookEvent,
-  matcherFilter?: string
+  matcherFilter?: string,
+  cwd?: string
 ): {
   settingsMatchers: HookMatcher[];
   pluginMatchers: PluginHookMatcher[];
   sessionMatchers: HookMatcher[];
   callbacks: RegisteredCallbackHook[];
 } {
-  // Settings hooks
-  const settings = getSettingsHooks();
+  // Settings hooks (includes project-level .claude/settings.json)
+  const settings = getSettingsHooks(cwd);
   const settingsMatchers = ((settings[event] || []) as unknown as HookMatcher[]).filter(
     (m) => !matcherFilter || !m.matcher || m.matcher === matcherFilter
   );
