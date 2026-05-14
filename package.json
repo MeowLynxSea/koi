@@ -16,6 +16,7 @@
     "native",
     "src/main.tsx",
     "src/cce",
+    "src/tui",
     "!src/cce/web/frontend/node_modules",
     "!src/cce/web/frontend/dist",
     "!src/cce/web/frontend/public",

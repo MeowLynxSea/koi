@@ -16,7 +16,6 @@ import { WorkingMemoryManager, getWorkingMemoryManager } from "../brain/working-
 import { ROOT_NODE_UUID } from "../core/types.js";
 import path from "path";
 import fs from "fs";
-import os from "os";
 
 function resolveDistDir(): string {
   // import.meta.dir points to {package_root}/src/cce/web/
@@ -28,24 +27,17 @@ function resolveDistDir(): string {
     path.resolve(process.cwd(), "src", "cce", "web", "frontend", "dist"), // dev: from src
     path.resolve(import.meta.dir, "frontend", "dist"),         // fallback: relative to server.ts
   ];
-  const debugLog = [
-    `[CCE] import.meta.dir: ${import.meta.dir}`,
-    `[CCE] pkgRoot: ${pkgRoot}`,
-    `[CCE] process.cwd(): ${process.cwd()}`,
-    `[CCE] candidates:`,
-    ...candidates.map(c => `  ${c} => exists: ${fs.existsSync(c)}`),
-  ].join("\n");
-  const logPath = path.join(os.tmpdir(), ".cce-debug.log");
-  try {
-    fs.writeFileSync(logPath, debugLog);
-  } catch (e) {
-    console.error("[CCE] Debug log error:", e);
-  }
+  const found = candidates.filter(c => fs.existsSync(c));
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
   throw new Error(
-    "CCE frontend dist not found. Please build it first:\n  cd src/cce/web/frontend && bun install && bun run build"
+    "CCE frontend dist not found.\n" +
+    `import.meta.dir: ${import.meta.dir}\n` +
+    `pkgRoot: ${pkgRoot}\n` +
+    `process.cwd(): ${process.cwd()}\n` +
+    `found: ${JSON.stringify(found)}\n` +
+    `Please build it first:\n  cd src/cce/web/frontend && bun install && bun run build`
   );
 }
 
