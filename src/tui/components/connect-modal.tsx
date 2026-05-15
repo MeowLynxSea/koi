@@ -263,6 +263,12 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
         handleClearConfig();
         return;
       }
+      if (key.name === "r" || key.name === "R") {
+        if (selectedProvider && isCustomProvider(selectedProvider)) {
+          handleClearConfig();
+          return;
+        }
+      }
       if (key.name === "return" || key.name === "l" || key.name === "L") {
         setStep("provider");
         setSelectedProvider(null);
