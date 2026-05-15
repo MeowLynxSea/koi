@@ -35,16 +35,28 @@ export interface ModelRef {
 
 export type AuthMethod = "apikey" | "oauth";
 
+export type ApiFormat = "openai-responses" | "anthropic-messages";
+
 export interface ProviderConfig {
   provider: string;
   authMethod: AuthMethod;
   credential: string; // api key or oauth token
 }
 
+export interface CustomProviderConfig {
+  provider: string;        // Custom name
+  authMethod: "apikey";
+  credential: string;      // API Key
+  baseUrl: string;         // e.g., https://api.openai.com/v1
+  apiFormat: ApiFormat;
+  modelIds: string[];     // Model IDs (comma-separated)
+}
+
 interface SettingsFile {
   version: number;
   sessionTitle: string;
   providers: Record<string, ProviderConfig>;
+  customProviders: Record<string, CustomProviderConfig>;
   currentModel: ModelRef | null;
   auxiliaryModel?: ModelRef | null;
   externalEditor?: string;
@@ -60,6 +72,7 @@ const PI_AGENT_DIR = path.join(CONFIG_DIR, "pi");
 
 let sessionTitle = "New Session";
 let providerConfigs = new Map<string, ProviderConfig>();
+let customProviderConfigs = new Map<string, CustomProviderConfig>();
 let currentModel: ModelRef | null = null;
 let auxiliaryModel: ModelRef | null = null;
 let externalEditor: string | null = null;
@@ -93,6 +106,7 @@ function initPiInfrastructure(): void {
 
 function syncCredentialsToPi(): void {
   if (!piAuthStorage) return;
+  // Sync built-in providers
   for (const [provider, config] of providerConfigs) {
     if (config.authMethod === "apikey") {
       piAuthStorage.set(provider, { type: "api_key", key: config.credential });
@@ -101,6 +115,10 @@ function syncCredentialsToPi(): void {
       // so ModelRegistry can resolve them without OAuth refresh flow.
       piAuthStorage.set(provider, { type: "api_key", key: config.credential });
     }
+  }
+  // Sync custom providers
+  for (const [provider, config] of customProviderConfigs) {
+    piAuthStorage.set(provider, { type: "api_key", key: config.credential });
   }
 }
 
@@ -165,6 +183,7 @@ export function saveSettings(): void {
       version: 1,
       sessionTitle,
       providers: Object.fromEntries(providerConfigs),
+      customProviders: Object.fromEntries(customProviderConfigs),
       currentModel,
       auxiliaryModel,
       externalEditor: externalEditor ?? undefined,
@@ -201,6 +220,9 @@ export function loadSettings(): void {
     }
     if (data.providers) {
       providerConfigs = new Map(Object.entries(data.providers));
+    }
+    if (data.customProviders) {
+      customProviderConfigs = new Map(Object.entries(data.customProviders));
     }
     if (data.currentModel) {
       currentModel = data.currentModel;
@@ -276,6 +298,40 @@ export function getConfiguredProviders(): string[] {
   return Array.from(providerConfigs.keys());
 }
 
+/* ───────── Custom provider configuration ───────── */
+
+export function configureCustomProvider(config: CustomProviderConfig): void {
+  customProviderConfigs.set(config.provider, config);
+  saveSettings();
+  // Sync to Pi AuthStorage so agent sessions can resolve API keys
+  getPiAuthStorage().set(config.provider, {
+    type: "api_key",
+    key: config.credential,
+  });
+  void emitConfigChange("customProvider", config.provider);
+}
+
+export function removeCustomProvider(provider: string): void {
+  customProviderConfigs.delete(provider);
+  saveSettings();
+  getPiAuthStorage().remove(provider);
+  void emitConfigChange("customProvider", provider);
+}
+
+export function isCustomProvider(provider: string): boolean {
+  return customProviderConfigs.has(provider);
+}
+
+export function getCustomProviderConfig(
+  provider: string
+): CustomProviderConfig | undefined {
+  return customProviderConfigs.get(provider);
+}
+
+export function getConfiguredCustomProviders(): string[] {
+  return Array.from(customProviderConfigs.keys());
+}
+
 /* ───────── Current model (koi reference) ───────── */
 
 export function getCurrentModel(): ModelRef | null {
@@ -317,6 +373,18 @@ export function getAllProviders(): string[] {
 }
 
 export function getProviderModels(provider: string): Model<Api>[] {
+  // Check if it's a custom provider
+  const customConfig = customProviderConfigs.get(provider);
+  if (customConfig) {
+    return customConfig.modelIds.map((modelId) => ({
+      id: modelId,
+      name: modelId,
+      provider: customConfig.provider,
+      apiFormat: customConfig.apiFormat,
+      apiVersion: customConfig.apiFormat === "openai-responses" ? "2024-11-20" : "2023-06-01",
+      description: `Custom ${customConfig.apiFormat} endpoint`,
+    })) as unknown as Model<Api>[];
+  }
   return getModels(provider as KnownProvider);
 }
 

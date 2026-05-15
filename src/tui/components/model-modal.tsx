@@ -14,6 +14,7 @@ import { createTextAttributes } from "@opentui/core";
 import type { MouseEvent, TextareaRenderable } from "@opentui/core";
 import {
   getConfiguredProviders,
+  getConfiguredCustomProviders,
   getCurrentModel,
   getAuxiliaryModel,
   setCurrentModel,
@@ -44,7 +45,7 @@ export function ModelModal({
   onSelectAuxiliary,
 }: ModelModalProps) {
   const { height } = useTerminalDimensions();
-  const configuredProviders = getConfiguredProviders();
+  const [refreshKey, setRefreshKey] = useState(0);
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<"primary" | "auxiliary">("primary");
   const [filterText, setFilterText] = useState("");
@@ -55,6 +56,19 @@ export function ModelModal({
   const layout = useMemo(() => ({
     listHeight: Math.min(12, Math.max(3, Math.floor(height * 0.4))),
   }), [height]);
+
+  // Refresh when modal becomes active
+  useEffect(() => {
+    if (isActive) {
+      setRefreshKey((k) => k + 1);
+    }
+  }, [isActive]);
+
+  // Get configured providers with refresh
+  const configuredProviders = useMemo(
+    () => [...getConfiguredProviders(), ...getConfiguredCustomProviders()],
+    [refreshKey]
+  );
 
   const primaryModel = getCurrentModel();
   const auxiliaryModel = getAuxiliaryModel();

@@ -77,6 +77,7 @@ import {
   resolvePiModel,
   getConfiguredProviders,
   isProviderConfigured,
+  isCustomProvider,
   getShowHooksMessages,
   setShowHooksMessages,
 } from "../config/settings.js";
@@ -865,7 +866,7 @@ export function App({ renderer, onExit }: AppProps) {
       }
 
       // Check if the provider has API key configured
-      if (!isProviderConfigured(currentModel.provider)) {
+      if (!isProviderConfigured(currentModel.provider) && !isCustomProvider(currentModel.provider)) {
         setModelAlertMessage(`No API key configured for ${currentModel.provider}. Use /connect to add credentials.`);
         setShowModelAlert(true);
         return;
@@ -936,7 +937,7 @@ export function App({ renderer, onExit }: AppProps) {
       }
 
       // Check if the provider has API key configured
-      if (!isProviderConfigured(currentModel.provider)) {
+      if (!isProviderConfigured(currentModel.provider) && !isCustomProvider(currentModel.provider)) {
         setModelAlertMessage(`No API key configured for ${currentModel.provider}. Use /connect to add credentials.`);
         setShowModelAlert(true);
         return;

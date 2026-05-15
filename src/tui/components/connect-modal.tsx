@@ -16,9 +16,14 @@ import {
   isProviderConfigured,
   getProviderConfig,
   validateProviderCredential,
+  getConfiguredCustomProviders,
+  isCustomProvider,
+  removeCustomProvider,
+  getCustomProviderConfig,
   type ProviderConfig,
 } from "../../config/settings.js";
 import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
+import { CustomProviderModal } from "./custom-provider-modal.js";
 
 interface ConnectModalProps {
   isActive: boolean;
@@ -38,6 +43,7 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
   const { height } = useTerminalDimensions();
   const [step, setStep] = useState<Step>("provider");
   const [providers] = useState(() => getAllProviders());
+  const [customProviders, setCustomProviders] = useState(() => getConfiguredCustomProviders());
   const [selectedProviderIndex, setSelectedProviderIndex] = useState(0);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [authInput, setAuthInput] = useState("");
@@ -45,6 +51,7 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [filterText, setFilterText] = useState("");
+  const [showCustomModal, setShowCustomModal] = useState(false);
   const inputRef = useRef<TextareaRenderable>(null);
   const searchRef = useRef<TextareaRenderable>(null);
 
@@ -56,10 +63,12 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
   // Filter providers based on search text
   const query = filterText;
   const filteredProviders = useMemo(() => {
-    if (!query) return providers;
+    // Combine built-in and custom providers
+    const allProviders = [...providers, ...customProviders];
+    if (!query) return allProviders;
     const q = query.toLowerCase();
-    return providers.filter((p) => p.toLowerCase().includes(q));
-  }, [providers, query]);
+    return allProviders.filter((p) => p.toLowerCase().includes(q));
+  }, [providers, customProviders, query]);
 
   const handleSearchChange = () => {
     const text = searchRef.current?.editBuffer.getText() ?? "";
@@ -86,6 +95,13 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
       }
     }
   }, [isActive]);
+
+  // Refresh when modal becomes active or custom modal closes
+  useEffect(() => {
+    if (isActive) {
+      setCustomProviders(getConfiguredCustomProviders());
+    }
+  }, [isActive, showCustomModal]);
 
   // Focus input on auth step
   useEffect(() => {
@@ -175,7 +191,8 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
 
   const handleSelectProvider = (provider: string) => {
     setSelectedProvider(provider);
-    if (isProviderConfigured(provider)) {
+    // Custom providers are always considered "configured" - show existing
+    if (isProviderConfigured(provider) || isCustomProvider(provider)) {
       setStep("existing");
     } else {
       setStep("auth");
@@ -184,7 +201,12 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
 
   const handleClearConfig = () => {
     if (selectedProvider) {
-      removeProvider(selectedProvider);
+      if (isCustomProvider(selectedProvider)) {
+        removeCustomProvider(selectedProvider);
+        setCustomProviders(getConfiguredCustomProviders());
+      } else {
+        removeProvider(selectedProvider);
+      }
     }
     setStep("provider");
     setSelectedProvider(null);
@@ -224,6 +246,11 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
         if (provider) {
           handleSelectProvider(provider);
         }
+        return;
+      }
+      // Ctrl+N to add custom provider
+      if ((key.ctrl || key.meta) && key.name === "n") {
+        setShowCustomModal(true);
         return;
       }
     }
@@ -330,6 +357,11 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
               {visibleProviders.map((p, i) => {
                 const actualIndex = scrollOffset + i;
                 const configured = isProviderConfigured(p);
+                const isCustom = isCustomProvider(p);
+                const indicator = isCustom ? "◆" : configured ? "●" : "  ";
+                const color = actualIndex === selectedProviderIndex
+                  ? (isCustom ? "#bd93f9" : "#ff79c6")
+                  : "#f8f8f2";
                 return (
                   <box
                     key={p}
@@ -342,22 +374,45 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
                       handleSelectProvider(p);
                     }}
                   >
-                    <text fg={actualIndex === selectedProviderIndex ? "#ff79c6" : "#f8f8f2"}>
-                      {configured ? "● " : "  "}
-                      {p}
+                    <text fg={color}>
+                      {indicator}{" "}{p}
                     </text>
-                    {configured && (
+                    {configured && !isCustom && (
                       <text fg="#00ff99" marginLeft={1}>
                         configured
+                      </text>
+                    )}
+                    {isCustom && (
+                      <text fg="#bd93f9" marginLeft={1}>
+                        custom
                       </text>
                     )}
                   </box>
                 );
               })}
             </box>
+
+            {/* Add Custom button */}
+            <box
+              height={1}
+              marginTop={1}
+              backgroundColor="#16213e"
+              paddingX={1}
+              flexDirection="row"
+              justifyContent="center"
+              onMouseUp={(e: MouseEvent) => {
+                e.stopPropagation();
+                setShowCustomModal(true);
+              }}
+            >
+              <text fg="#bd93f9" attributes={createTextAttributes({ bold: true })}>
+                + Add Custom Provider
+              </text>
+            </box>
+
             <box marginTop={1}>
               <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
-                ↑↓ Navigate  Enter Select  Esc Cancel  Type to search
+                ↑↓ Navigate  Enter Select  Esc Cancel  Type to search  Ctrl+N Add Custom
               </text>
             </box>
           </>
@@ -427,6 +482,70 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
           </>
         )}
 
+        {step === "existing" && selectedProvider && isCustomProvider(selectedProvider) && (() => {
+            const config = getCustomProviderConfig(selectedProvider);
+            if (!config) return null;
+            return (
+            <>
+            <text attributes={createTextAttributes({ bold: true })} fg="#bd93f9">
+              {selectedProvider} ◆ Custom Provider
+            </text>
+            <box marginTop={1}>
+              <text fg="#6c6c7c">
+                Format: {(config.apiFormat ?? "unknown").replace("-", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg="#6c6c7c">
+                BaseURL: {config.baseUrl}
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg="#6c6c7c">
+                Models: {config.modelIds.join(", ")}
+              </text>
+            </box>
+            <box marginTop={1}>
+              <text fg="#f8f8f2">
+                API Key: {maskCredential(config.credential ?? "")}
+              </text>
+            </box>
+            <box marginTop={1} flexDirection="row" gap={2}>
+              <box
+                paddingX={2}
+                backgroundColor="#f43f5e"
+                onMouseUp={(e: MouseEvent) => {
+                  e.stopPropagation();
+                  handleClearConfig();
+                }}
+              >
+                <text attributes={createTextAttributes({ bold: true })} fg="white">
+                  Remove (R)
+                </text>
+              </box>
+              <box
+                paddingX={2}
+                backgroundColor="#6272a4"
+                onMouseUp={(e: MouseEvent) => {
+                  e.stopPropagation();
+                  setStep("provider");
+                  setSelectedProvider(null);
+                }}
+              >
+                <text attributes={createTextAttributes({ bold: true })} fg="white">
+                  Back (L)
+                </text>
+              </box>
+            </box>
+            <box marginTop={1}>
+              <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+                R Remove  L Leave  Esc Back
+              </text>
+            </box>
+          </>
+          );
+        })()}
+
         {step === "auth" && (
           <>
             <text attributes={createTextAttributes({ bold: true })} fg="#ff79c6">
@@ -493,6 +612,16 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
           </>
         )}
       </box>
+
+      {/* Custom Provider Modal */}
+      <CustomProviderModal
+        isActive={showCustomModal}
+        onClose={() => setShowCustomModal(false)}
+        onSuccess={() => {
+          setShowCustomModal(false);
+          setCustomProviders(getConfiguredCustomProviders());
+        }}
+      />
     </box>
   );
 }
