@@ -10,6 +10,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 import type { UserMessage, AssistantMessage } from "@mariozechner/pi-ai";
 import { activeSessionRef } from "./hooks.js";
+import { getAuxiliaryModel, resolvePiModel, getPiModelRegistry } from "../config/settings.js";
 
 export type SubagentType = "explore" | "plan";
 
@@ -185,6 +186,16 @@ export async function runSubagent(
     timestamp: Date.now(),
   };
 
+  // Determine the model to use: prefer auxiliary model if configured
+  let model = parentState.model;
+  const auxiliaryRef = getAuxiliaryModel();
+  if (auxiliaryRef) {
+    const auxiliaryPiModel = resolvePiModel(auxiliaryRef);
+    if (auxiliaryPiModel) {
+      model = auxiliaryPiModel;
+    }
+  }
+
   const agent = new Agent({
     streamFn: parentAgent.streamFn,
     getApiKey: parentAgent.getApiKey,
@@ -196,7 +207,7 @@ export async function runSubagent(
     maxRetryDelayMs: parentAgent.maxRetryDelayMs,
     initialState: {
       systemPrompt,
-      model: parentState.model,
+      model,
       thinkingLevel: parentState.thinkingLevel,
       tools,
     },
