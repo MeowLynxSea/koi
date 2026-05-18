@@ -335,6 +335,16 @@ if (clipboardIIFEDotMatches) {
   console.log(`[postbuild] Fixed ${clipboardIIFEDotMatches.length} clipboard IIFE require(s) (dot pattern)`);
 }
 
+// Handle npm package name format (Bun bundles this as @mariozechner/clipboard-xxx)
+// Pattern: nativeBinding = (()=>{throw new Error("Cannot require module "+"@mariozechner/clipboard-xxx");})();
+// Note: Package name uses hyphen, but file uses dots: clipboard-xxx -> clipboard.xxx.node
+const clipboardIIFEPkgPattern = /nativeBinding = \(\(\)=>\{throw new Error\("Cannot require module "\+"\@mariozechner\/clipboard-([^"]+)"\);\}\)\(\);/g;
+const clipboardIIFEPkgMatches = content.match(clipboardIIFEPkgPattern);
+if (clipboardIIFEPkgMatches) {
+  content = content.replace(clipboardIIFEPkgPattern, "nativeBinding = __require(__KOI_CLIPBOARD_PATH__ + \"/clipboard.$1.node\");");
+  console.log(`[postbuild] Fixed ${clipboardIIFEPkgMatches.length} clipboard IIFE require(s) (pkg pattern: @mariozechner/clipboard-xxx -> clipboard.xxx.node)`);
+}
+
 // Clean up dist/node_modules
 const distNodeModules = join(distDir, "node_modules");
 if (existsSync(distNodeModules)) {
