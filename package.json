@@ -55,6 +55,7 @@
     "typescript-eslint": "^8.59.2"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.21.1",
     "@huggingface/transformers": "^3.5.0",
     "@mariozechner/clipboard": "^0.3.5",
     "@mariozechner/pi-agent-core": "0.73.0",
@@ -72,11 +73,11 @@
     "@opentui/react": "latest",
     "@types/diff": "^8.0.0",
     "@types/node": "^25.6.2",
+    "@vscode/ripgrep": "^1.18.0",
     "axios": "^1.16.0",
     "clipboard-image": "^0.1.0",
     "commander": "^14.0.3",
     "diff": "^9.0.0",
-    "@vscode/ripgrep": "^1.18.0",
     "fast-glob": "^3.3.3",
     "jimp": "^1.6.1",
     "react": "^19.2.6",

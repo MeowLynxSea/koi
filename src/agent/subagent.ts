@@ -10,7 +10,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 import type { UserMessage, AssistantMessage } from "@mariozechner/pi-ai";
 import { activeSessionRef } from "./hooks.js";
-import { getAuxiliaryModel, resolvePiModel, getPiModelRegistry } from "../config/settings.js";
+import { getAuxiliaryModel, resolvePiModel } from "../config/settings.js";
 
 export type SubagentType = "explore" | "plan";
 

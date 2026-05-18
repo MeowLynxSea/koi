@@ -14,6 +14,23 @@ const mcpConfigs: Map<string, ScopedMcpConfig> = new Map();
 const disabledServers: Set<string> = new Set();
 let configsLoaded = false;
 
+// Track MCP servers added at runtime (e.g., from ACP clients) so they can be cleaned up
+const temporaryMcpServers: Set<string> = new Set();
+
+export function addTemporaryMcpServer(name: string, config: McpServerConfig): void {
+  loadMcpConfigs();
+  mcpConfigs.set(name, { ...config, scope: "local" });
+  temporaryMcpServers.add(name);
+}
+
+export function clearTemporaryMcpServers(): void {
+  for (const name of temporaryMcpServers) {
+    mcpConfigs.delete(name);
+    disabledServers.delete(name);
+  }
+  temporaryMcpServers.clear();
+}
+
 function ensureConfigDir(): void {
   if (!fs.existsSync(KOI_CONFIG_DIR)) {
     fs.mkdirSync(KOI_CONFIG_DIR, { recursive: true, mode: 0o700 });

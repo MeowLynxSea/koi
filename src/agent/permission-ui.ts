@@ -84,6 +84,12 @@ export async function requestPermission(params: {
     return false;
   }
 
+  // ACP mode: delegate to the connected client
+  const { isAcpMode, acpRequestPermission } = await import("../acp/permission-bridge.js");
+  if (isAcpMode()) {
+    return acpRequestPermission(params);
+  }
+
   return new Promise((resolve) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     queue.push({ id, toolName: params.toolName, args: params.args, reason: params.reason, resolve });

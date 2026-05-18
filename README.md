@@ -45,6 +45,17 @@ git clone https://github.com/meowlynxsea/koi.git && cd koi && bun install
 
 Then run `koi` in any project directory.
 
+### ACP Agent Mode
+
+Koi supports the [Agent Client Protocol (ACP)](https://agentclientprotocol.com), allowing any ACP-compatible editor (VS Code, Zed, Cursor, etc.) to connect to Koi as a backend agent:
+
+```bash
+# Start Koi in ACP mode
+koi --acp
+```
+
+In ACP mode, Koi communicates via JSON-RPC over stdio and exposes its full agent capabilities — tools, MCP integration, skills, and context engine — to the connected client.
+
 ---
 
 ## 🎨 What is KOI?

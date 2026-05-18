@@ -28,8 +28,11 @@ import {
   disconnectAllMcpServers,
   getAllMcpTools,
   getMcpConnection,
+  addTemporaryMcpServer,
+  clearTemporaryMcpServers,
   type McpProgressCallback,
 } from "../services/mcp/index.js";
+import type { McpServerConfig } from "../services/mcp/types.js";
 import { getActiveToolNamesForMode } from "./mode.js";
 import {
   loadAllSkills,
@@ -402,9 +405,21 @@ function convertKoiSkillsToPiSkills(skillCommands: SkillCommand[]): Skill[] {
     });
 }
 
-async function buildSessionConfig(taskManager: SessionTaskManager, onMcpProgress?: McpProgressCallback): Promise<SessionConfig> {
+async function buildSessionConfig(
+  taskManager: SessionTaskManager,
+  onMcpProgress?: McpProgressCallback,
+  extraMcpServers?: Array<{ name: string; config: McpServerConfig }>,
+): Promise<SessionConfig> {
   // Initialize MCP connections to get tool definitions (with progress callback)
   await disconnectAllMcpServers();
+  clearTemporaryMcpServers();
+
+  if (extraMcpServers && extraMcpServers.length > 0) {
+    for (const { name, config } of extraMcpServers) {
+      addTemporaryMcpServer(name, config);
+    }
+  }
+
   await initializeMcpConnections({ onProgressUpdate: onMcpProgress });
   
   // Create MCP tool definitions
@@ -707,9 +722,10 @@ export async function createNewSession(
   taskManager: SessionTaskManager,
   onMcpProgress?: McpProgressCallback,
   source: "startup" | "resume" | "clear" | "compact" = "startup",
+  extraMcpServers?: Array<{ name: string; config: McpServerConfig }>,
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-  const config = await buildSessionConfig(taskManager, onMcpProgress);
+  const config = await buildSessionConfig(taskManager, onMcpProgress, extraMcpServers);
   const sessionManager = SessionManager.create(process.cwd());
   const result = await createAgentSessionWithConfig(sessionManager, config);
 
@@ -775,10 +791,11 @@ export async function createNewSession(
 export async function loadSession(
   filePath: string,
   taskManager: SessionTaskManager,
-  onMcpProgress?: McpProgressCallback
+  onMcpProgress?: McpProgressCallback,
+  extraMcpServers?: Array<{ name: string; config: McpServerConfig }>,
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-  const config = await buildSessionConfig(taskManager, onMcpProgress);
+  const config = await buildSessionConfig(taskManager, onMcpProgress, extraMcpServers);
   const sessionManager = SessionManager.open(filePath, undefined, process.cwd());
   const result = await createAgentSessionWithConfig(sessionManager, config);
   const hookResult = await emitSessionStart(result.session.sessionId, process.cwd(), "resume");
@@ -794,10 +811,11 @@ export async function loadSession(
 }
 
 export async function continueRecentSession(
-  taskManager: SessionTaskManager
+  taskManager: SessionTaskManager,
+  extraMcpServers?: Array<{ name: string; config: McpServerConfig }>,
 ): Promise<CreateAgentSessionResult> {
   ensureDir(KOI_SESSIONS_DIR);
-  const config = await buildSessionConfig(taskManager);
+  const config = await buildSessionConfig(taskManager, undefined, extraMcpServers);
   const sessionManager = SessionManager.continueRecent(process.cwd());
   const result = await createAgentSessionWithConfig(sessionManager, config);
   const hookResult = await emitSessionStart(result.session.sessionId, process.cwd(), "resume");

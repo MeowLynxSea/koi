@@ -30,6 +30,12 @@ while (!existsSync(join(packageRoot, "dist/main.js"))) {
   packageRoot = parent;
 }
 
+// Detect ACP mode before importing main so we can skip TUI bootstrap
+const acpMode = process.argv.includes("--acp");
+if (acpMode) {
+  process.env.KOI_ACP_MODE = "1";
+}
+
 // Set environment variable for native modules
 process.env.KOI_PACKAGE_ROOT = packageRoot;
 

@@ -1,16 +1,16 @@
 /**
  * Koi - Main Entry Point
  *
- * Bootstraps the OpenTUI React application.
+ * Bootstraps either:
+ *   - ACP Agent mode (--acp) : JSON-RPC over stdio, no TUI
+ *   - TUI mode (default)     : OpenTUI React application
  */
 
-import { createCliRenderer } from "@opentui/core";
-import { createRoot } from "@opentui/react";
-import { DialogProvider } from "@opentui-ui/dialog/react";
-import { App } from "./tui/app.js";
 import { loadSettings } from "./config/settings.js";
 import { refreshActivePlugins } from "./plugins/refresh.js";
 import { emitSetup, emitStop, emitStopFailure } from "./hooks/integrations/lifecycleHooks.js";
+
+const ACP_MODE = process.env["KOI_ACP_MODE"] === "1" || process.argv.includes("--acp");
 
 export async function main(): Promise<void> {
   loadSettings();
@@ -20,6 +20,47 @@ export async function main(): Promise<void> {
 
   // Fire Setup hooks
   await emitSetup("init");
+
+  if (ACP_MODE) {
+    await runAcpMode();
+  } else {
+    await runTuiMode();
+  }
+}
+
+async function runAcpMode(): Promise<void> {
+  const { runAcpServer } = await import("./acp/server.js");
+
+  const cleanup = async () => {
+    await emitStop();
+  };
+
+  process.on("SIGINT", () => {
+    void cleanup().then(() => process.exit(0));
+  });
+  process.on("SIGTERM", () => {
+    void cleanup().then(() => process.exit(0));
+  });
+  process.on("uncaughtException", (err) => {
+    console.error("Uncaught exception:", err);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error("Unhandled rejection:", reason);
+    process.exit(1);
+  });
+
+  await runAcpServer();
+
+  // Keep process alive until ACP connection closes
+  await new Promise(() => {});
+}
+
+async function runTuiMode(): Promise<void> {
+  const { createCliRenderer } = await import("@opentui/core");
+  const { createRoot } = await import("@opentui/react");
+  const { DialogProvider } = await import("@opentui-ui/dialog/react");
+  const { App } = await import("./tui/app.js");
 
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
 

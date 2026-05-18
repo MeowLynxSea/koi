@@ -24,6 +24,8 @@ export {
   validateMcpConfig,
   exportMcpConfigs,
   importMcpConfigs,
+  addTemporaryMcpServer,
+  clearTemporaryMcpServers,
 } from "./config.js";
 
 export type {
