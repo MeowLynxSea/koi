@@ -248,14 +248,28 @@ if (!content.includes("__KOI_NATIVE_BASE__")) {
 }
 
 // Replace OpenTUI dynamic import - use runtime extension detection
-const opentuiImportPattern = /var module = await import\(`@opentui\/core-[^`]+`\)/g;
-const opentuiReplacement = `var module = { default: __KOI_OPENTUI_PATH__ + "/libopentui" + __KOI_OPENTUI_EXT__ };`;
+// Pattern: module3 = await import(`@opentui/core-${platform}-${arch}/index.ts`)
+// Note: The index.ts extension is used when the package has "types": "index.ts" in package.json
+const opentuiImportPattern = /(\w+)\s*=\s*await import\(`@opentui\/core-[^`]+\/index\.ts`\)/g;
+const opentuiReplacement = `$1 = { default: __KOI_OPENTUI_PATH__ + "/libopentui" + __KOI_OPENTUI_EXT__ };`;
 
 if (opentuiImportPattern.test(content)) {
   const matches = content.match(opentuiImportPattern);
   if (matches) {
     content = content.replace(opentuiImportPattern, opentuiReplacement);
-    console.log(`[postbuild] Replaced ${matches.length} OpenTUI dynamic import(s)`);
+    console.log(`[postbuild] Replaced ${matches.length} OpenTUI dynamic import(s) (index.ts pattern)`);
+  }
+}
+
+// Also handle the .js extension pattern (older opentui versions)
+const opentuiImportJsPattern = /(\w+)\s*=\s*await import\(`@opentui\/core-[^`]+\/index\.js`\)/g;
+const opentuiJsReplacement = `$1 = { default: __KOI_OPENTUI_PATH__ + "/libopentui" + __KOI_OPENTUI_EXT__ };`;
+
+if (opentuiImportJsPattern.test(content)) {
+  const matches = content.match(opentuiImportJsPattern);
+  if (matches) {
+    content = content.replace(opentuiImportJsPattern, opentuiJsReplacement);
+    console.log(`[postbuild] Replaced ${matches.length} OpenTUI dynamic import(s) (index.js pattern)`);
   }
 }
 
