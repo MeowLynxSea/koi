@@ -97,8 +97,8 @@ for (const { platform, arch } of platforms) {
 
   // Download from GitHub releases
   const osName = getOsName(platform);
-  const zipName = `opentui-native-v0.2.8-${osName}-${arch}.zip`;
-  const downloadUrl = `https://github.com/anomalyco/opentui/releases/download/v0.2.8/${zipName}`;
+  const zipName = `opentui-native-v0.3.0-${osName}-${arch}.zip`;
+  const downloadUrl = `https://github.com/anomalyco/opentui/releases/download/v0.3.0/${zipName}`;
   console.log(`[postbuild]   opentui/${platform}-${arch}: downloading...`);
 
   const os = require("os");
@@ -248,8 +248,9 @@ if (!content.includes("__KOI_NATIVE_BASE__")) {
 }
 
 // Replace OpenTUI dynamic import - use runtime extension detection
-const opentuiImportPattern = /var module = await import\(`@opentui\/core-[^`]+`\)/g;
-const opentuiReplacement = `var module = { default: __KOI_OPENTUI_PATH__ + "/libopentui" + __KOI_OPENTUI_EXT__ };`;
+// OpenTUI 0.3.0: var nativePackage = await import(`@opentui/core-${process.platform}-${process.arch}`);
+const opentuiImportPattern = /var nativePackage = await import\(`@opentui\/core-[^`]+`\);\n?/g;
+const opentuiReplacement = `var nativePackage = { default: __KOI_OPENTUI_PATH__ + "/libopentui" + __KOI_OPENTUI_EXT__ };\n`;
 
 if (opentuiImportPattern.test(content)) {
   const matches = content.match(opentuiImportPattern);
