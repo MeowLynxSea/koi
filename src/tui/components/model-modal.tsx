@@ -20,8 +20,11 @@ import {
   setCurrentModel,
   setAuxiliaryModel,
   getProviderModels,
+  isCustomProvider,
+  getCustomModelConfig,
   type ModelRef,
 } from "../../config/settings.js";
+import { ModelParamsModal } from "./model-params-modal.js";
 
 interface ModelModalProps {
   isActive: boolean;
@@ -49,6 +52,9 @@ export function ModelModal({
   const [selectedModelIndex, setSelectedModelIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<"primary" | "auxiliary">("primary");
   const [filterText, setFilterText] = useState("");
+  const [showParamsModal, setShowParamsModal] = useState(false);
+  const [paramsModalProvider, setParamsModalProvider] = useState("");
+  const [paramsModalModelId, setParamsModalModelId] = useState("");
   const scrollOffsetRef = useRef(0);
   const inputRef = useRef<TextareaRenderable>(null);
 
@@ -166,8 +172,16 @@ export function ModelModal({
   // Effective scroll offset
   const effectiveScrollOffset = scrollOffsetRef.current;
 
+  const selectedItem = flatItems.find(
+    (i) => i.type === "model" && i.modelIndex === selectedModelIndex
+  );
+  const selectedIsCustom =
+    selectedItem?.provider && isCustomProvider(selectedItem.provider);
+
   useKeyboard((key) => {
     if (!isActive) return;
+
+    if (showParamsModal) return; // Let the params modal handle its own keyboard
 
     if (key.name === "tab" || key.name === "TAB") {
       setActiveTab((prev) => (prev === "primary" ? "auxiliary" : "primary"));
@@ -176,6 +190,18 @@ export function ModelModal({
 
     if (key.name === "escape") {
       onClose();
+      return;
+    }
+
+    if ((key.ctrl || key.meta) && key.name === "e") {
+      const item = flatItems.find(
+        (i) => i.type === "model" && i.modelIndex === selectedModelIndex
+      );
+      if (item?.provider && item.modelId && isCustomProvider(item.provider)) {
+        setParamsModalProvider(item.provider);
+        setParamsModalModelId(item.modelId);
+        setShowParamsModal(true);
+      }
       return;
     }
 
@@ -203,13 +229,13 @@ export function ModelModal({
       return;
     }
     if (key.name === "return") {
-      const selectedItem = flatItems.find(
+      const item = flatItems.find(
         (i) => i.type === "model" && i.modelIndex === selectedModelIndex
       );
-      if (selectedItem?.provider && selectedItem.modelId) {
+      if (item?.provider && item.modelId) {
         const ref = {
-          provider: selectedItem.provider,
-          modelId: selectedItem.modelId,
+          provider: item.provider,
+          modelId: item.modelId,
         };
         if (activeTab === "primary") {
           setCurrentModel(ref);
@@ -231,6 +257,17 @@ export function ModelModal({
   const isCurrent = (provider?: string, modelId?: string) => {
     const target = activeTab === "primary" ? primaryModel : auxiliaryModel;
     return target?.provider === provider && target?.modelId === modelId;
+  };
+
+  const hasCustomParams = (provider?: string, modelId?: string) => {
+    if (!provider || !modelId) return false;
+    const cfg = getCustomModelConfig(provider, modelId);
+    return !!cfg && (
+      cfg.contextWindow !== undefined ||
+      cfg.maxTokens !== undefined ||
+      cfg.costInput !== undefined ||
+      cfg.costOutput !== undefined
+    );
   };
 
   const handleMouseSelect = (
@@ -321,7 +358,7 @@ export function ModelModal({
           <textarea
             ref={inputRef}
             initialValue=""
-            focused={isActive}
+            focused={isActive && !showParamsModal}
             showCursor
             height={1}
             wrapMode="none"
@@ -378,6 +415,7 @@ export function ModelModal({
             }
             const isSelected = item.modelIndex === selectedModelIndex;
             const current = isCurrent(item.provider, item.modelId);
+            const customParams = hasCustomParams(item.provider, item.modelId);
             return (
               <box
                 key={`m-${item.modelId}-${flatIndex}`}
@@ -393,6 +431,11 @@ export function ModelModal({
                   {current ? "● " : "  "}
                   {item.modelName}
                 </text>
+                {customParams && (
+                  <text fg="#bd93f9" marginLeft={1}>
+                    ⚙
+                  </text>
+                )}
               </box>
             );
           })}
@@ -403,10 +446,24 @@ export function ModelModal({
             ↑↓ Navigate  Enter Select  Esc Cancel
           </text>
           <text fg="#6c6c7c" attributes={createTextAttributes({ dim: true })}>
+            {selectedIsCustom ? "Ctrl+E Edit params  " : ""}
             Type to search  Tab Switch
           </text>
         </box>
       </box>
+
+      {/* Model Parameters Modal */}
+      <ModelParamsModal
+        isActive={showParamsModal}
+        provider={paramsModalProvider}
+        modelId={paramsModalModelId}
+        onClose={() => {
+          setShowParamsModal(false);
+          setRefreshKey((k) => k + 1);
+          // Restore focus to the filter input
+          setTimeout(() => inputRef.current?.focus(), 10);
+        }}
+      />
     </box>
   );
 }

@@ -43,6 +43,14 @@ export interface ProviderConfig {
   credential: string; // api key or oauth token
 }
 
+export interface CustomModelConfig {
+  id: string;
+  contextWindow?: number;
+  maxTokens?: number;
+  costInput?: number;   // per 1M tokens
+  costOutput?: number;  // per 1M tokens
+}
+
 export interface CustomProviderConfig {
   provider: string;        // Custom name
   authMethod: "apikey";
@@ -50,6 +58,7 @@ export interface CustomProviderConfig {
   baseUrl: string;         // e.g., https://api.openai.com/v1
   apiFormat: ApiFormat;
   modelIds: string[];     // Model IDs (comma-separated)
+  models?: CustomModelConfig[]; // Per-model parameters
 }
 
 interface SettingsFile {
@@ -223,6 +232,13 @@ export function loadSettings(): void {
     }
     if (data.customProviders) {
       customProviderConfigs = new Map(Object.entries(data.customProviders));
+      // Migrate old format: auto-populate `models` from `modelIds` if missing
+      for (const [name, config] of customProviderConfigs) {
+        if (!config.models && config.modelIds) {
+          config.models = config.modelIds.map((id) => ({ id }));
+          customProviderConfigs.set(name, config);
+        }
+      }
     }
     if (data.currentModel) {
       currentModel = data.currentModel;
@@ -332,6 +348,38 @@ export function getConfiguredCustomProviders(): string[] {
   return Array.from(customProviderConfigs.keys());
 }
 
+export function getCustomModelConfig(
+  provider: string,
+  modelId: string
+): CustomModelConfig | undefined {
+  const config = customProviderConfigs.get(provider);
+  return config?.models?.find((m) => m.id === modelId);
+}
+
+export function updateCustomModelParams(
+  provider: string,
+  modelId: string,
+  params: Partial<Omit<CustomModelConfig, "id">>
+): void {
+  const config = customProviderConfigs.get(provider);
+  if (!config) return;
+
+  if (!config.models) {
+    config.models = config.modelIds.map((id) => ({ id }));
+  }
+
+  const existing = config.models.find((m) => m.id === modelId);
+  if (existing) {
+    Object.assign(existing, params);
+  } else {
+    config.models.push({ id: modelId, ...params });
+  }
+
+  customProviderConfigs.set(provider, config);
+  saveSettings();
+  void emitConfigChange("customProvider", provider);
+}
+
 /* ───────── Current model (koi reference) ───────── */
 
 export function getCurrentModel(): ModelRef | null {
@@ -376,14 +424,26 @@ export function getProviderModels(provider: string): Model<Api>[] {
   // Check if it's a custom provider
   const customConfig = customProviderConfigs.get(provider);
   if (customConfig) {
-    return customConfig.modelIds.map((modelId) => ({
-      id: modelId,
-      name: modelId,
-      provider: customConfig.provider,
-      apiFormat: customConfig.apiFormat,
-      apiVersion: customConfig.apiFormat === "openai-responses" ? "2024-11-20" : "2023-06-01",
-      description: `Custom ${customConfig.apiFormat} endpoint`,
-    })) as unknown as Model<Api>[];
+    return customConfig.modelIds.map((modelId) => {
+      const modelParams = customConfig.models?.find((m) => m.id === modelId);
+      return {
+        id: modelId,
+        name: modelId,
+        api: customConfig.apiFormat,
+        provider: customConfig.provider,
+        baseUrl: customConfig.baseUrl,
+        reasoning: false,
+        input: ["text"],
+        cost: {
+          input: modelParams?.costInput ?? 0,
+          output: modelParams?.costOutput ?? 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+        contextWindow: modelParams?.contextWindow ?? 128000,
+        maxTokens: modelParams?.maxTokens ?? 4096,
+      } as unknown as Model<Api>;
+    });
   }
   return getModels(provider as KnownProvider);
 }

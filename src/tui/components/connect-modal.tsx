@@ -506,10 +506,40 @@ export function ConnectModal({ isActive, onClose }: ConnectModalProps) {
                 BaseURL: {config.baseUrl}
               </text>
             </box>
-            <box marginTop={1}>
-              <text fg="#6c6c7c">
-                Models: {config.modelIds.join(", ")}
-              </text>
+            <box marginTop={1} flexDirection="column">
+              <text fg="#6c6c7c">Models:</text>
+              {config.modelIds.map((modelId) => {
+                const modelCfg = config.models?.find((m) => m.id === modelId);
+                const hasParams = modelCfg && (
+                  modelCfg.contextWindow !== undefined ||
+                  modelCfg.maxTokens !== undefined ||
+                  modelCfg.costInput !== undefined ||
+                  modelCfg.costOutput !== undefined
+                );
+                return (
+                  <box key={modelId} marginTop={1} marginLeft={2} flexDirection="column">
+                    <text fg="#f8f8f2">
+                      • {modelId}
+                      {hasParams ? " ⚙" : ""}
+                    </text>
+                    {hasParams && (
+                      <box marginLeft={2} flexDirection="column">
+                        {modelCfg.contextWindow !== undefined && (
+                          <text fg="#6c6c7c">ctx={modelCfg.contextWindow}</text>
+                        )}
+                        {modelCfg.maxTokens !== undefined && (
+                          <text fg="#6c6c7c">max={modelCfg.maxTokens}</text>
+                        )}
+                        {(modelCfg.costInput !== undefined || modelCfg.costOutput !== undefined) && (
+                          <text fg="#6c6c7c">
+                            cost=${modelCfg.costInput ?? 0}/${modelCfg.costOutput ?? 0} per 1M
+                          </text>
+                        )}
+                      </box>
+                    )}
+                  </box>
+                );
+              })}
             </box>
             <box marginTop={1}>
               <text fg="#f8f8f2">
