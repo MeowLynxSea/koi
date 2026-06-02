@@ -436,6 +436,21 @@ export function App({ renderer, onExit }: AppProps) {
       // (contextWindow, cost, etc.) are reflected immediately without restarting the session.
       const liveModel = getCurrentPiModel() ?? session.model;
 
+      // Sync live model params back to the active session so Pi's internal
+      // compaction logic (which reads session.model.contextWindow) uses the latest values.
+      if (
+        liveModel &&
+        session.model &&
+        liveModel.provider === session.model.provider &&
+        liveModel.id === session.model.id
+      ) {
+        Object.assign(session.model, {
+          contextWindow: liveModel.contextWindow,
+          maxTokens: liveModel.maxTokens,
+          cost: liveModel.cost,
+        });
+      }
+
       let totalCost = 0;
       if (liveModel && stats) {
         const costInput = (stats.tokens.input * liveModel.cost.input) / 1_000_000;
