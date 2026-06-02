@@ -272,25 +272,30 @@ if (onnxPattern.test(content)) {
   }
 }
 
-// Replace clipboard NAPI require - redirect to __KOI_CLIPBOARD_PATH__
-// Pattern: existsSync4(join35(__dirname, "clipboard.platform-arch.node"))
-const clipboardExistsPattern = /existsSync4\(join35\(__dirname, "clipboard\.([^"]+)"\)\)/g;
+// Replace clipboard NAPI existsSync - redirect to __KOI_CLIPBOARD_PATH__.
+// Bun minifies `path.join` to `join<digits>` where the suffix is bundle-order dependent,
+// so the digit must be a wildcard, not a hardcoded number.
+// Pattern: existsSync4(join33(__dirname, "clipboard.platform-arch.node"))
+const clipboardExistsPattern = /existsSync4\(join\d+\(__dirname, "clipboard\.([^"]+)"\)\)/g;
 if (clipboardExistsPattern.test(content)) {
   const matches = content.match(clipboardExistsPattern);
   if (matches) {
     content = content.replace(clipboardExistsPattern, `existsSync4(__KOI_CLIPBOARD_PATH__ + "/clipboard.$1")`);
-    console.log(`[postbuild] Replaced clipboard existsSync paths`);
+    console.log(`[postbuild] Replaced ${matches.length} clipboard existsSync path(s)`);
+  } else {
+    console.log(`[postbuild] WARNING: clipboard existsSync pattern matched .test() but not .match()`);
   }
 }
 
-// Replace clipboard require path
-// Pattern: require("./clipboard.platform-arch.node")
-const clipboardRequirePattern = /require\("\.\/clipboard\.([^"]+)"\)/g;
+// Replace clipboard require path.
+// Match both `require(...)` and Bun's internal `__require(...)`.
+// Pattern: __require("./clipboard.platform-arch.node")
+const clipboardRequirePattern = /(?:__)?require\("\.\/clipboard\.([^"]+)"\)/g;
 if (clipboardRequirePattern.test(content)) {
   const matches = content.match(clipboardRequirePattern);
   if (matches) {
-    content = content.replace(clipboardRequirePattern, `require(__KOI_CLIPBOARD_PATH__ + "/clipboard.$1")`);
-    console.log(`[postbuild] Replaced clipboard require paths`);
+    content = content.replace(clipboardRequirePattern, `__require(__KOI_CLIPBOARD_PATH__ + "/clipboard.$1")`);
+    console.log(`[postbuild] Replaced ${matches.length} clipboard require path(s)`);
   }
 }
 
@@ -320,6 +325,18 @@ const clipboardIIFEDotMatches = content.match(clipboardIIFEDotPattern);
 if (clipboardIIFEDotMatches) {
   content = content.replace(clipboardIIFEDotPattern, "nativeBinding = __require(__KOI_CLIPBOARD_PATH__ + \"/clipboard.$1\");");
   console.log(`[postbuild] Fixed ${clipboardIIFEDotMatches.length} clipboard IIFE require(s) (dot pattern)`);
+}
+
+// Handle the IIFE that Bun emits when an *uninstalled* @mariozechner/clipboard-* platform
+// package is referenced (the build machine lacks the platform's native binary).
+// This is the dominant failure mode on CI (linux runner, no darwin/win32 native) and on
+// dev machines for platforms the developer isn't running on.
+// Pattern: nativeBinding = (()=>{throw new Error("Cannot require module "+"@mariozechner/clipboard-darwin-arm64");})();
+const clipboardIIFEPkgPattern = /nativeBinding = \(\(\)=>\{throw new Error\("Cannot require module "\+"@mariozechner\/clipboard-([^"]+)"\);\}\)\(\);/g;
+const clipboardIIFEPkgMatches = content.match(clipboardIIFEPkgPattern);
+if (clipboardIIFEPkgMatches) {
+  content = content.replace(clipboardIIFEPkgPattern, "nativeBinding = __require(__KOI_CLIPBOARD_PATH__ + \"/clipboard.$1.node\");");
+  console.log(`[postbuild] Fixed ${clipboardIIFEPkgMatches.length} clipboard IIFE require(s) (pkg pattern)`);
 }
 
 // Clean up dist/node_modules
