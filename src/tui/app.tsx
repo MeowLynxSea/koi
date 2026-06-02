@@ -75,6 +75,7 @@ import {
   getExternalEditor,
   setExternalEditor,
   resolvePiModel,
+  getCurrentPiModel,
   getConfiguredProviders,
   isProviderConfigured,
   isCustomProvider,
@@ -431,21 +432,25 @@ export function App({ renderer, onExit }: AppProps) {
 
       const usage = session.getContextUsage();
       const stats = session.getSessionStats();
-      const model = session.model;
+      // Use the live ModelRegistry definition so that edits to custom model params
+      // (contextWindow, cost, etc.) are reflected immediately without restarting the session.
+      const liveModel = getCurrentPiModel() ?? session.model;
 
       let totalCost = 0;
-      if (model && stats) {
-        const costInput = (stats.tokens.input * model.cost.input) / 1_000_000;
-        const costOutput = (stats.tokens.output * model.cost.output) / 1_000_000;
-        const costCacheRead = (stats.tokens.cacheRead * model.cost.cacheRead) / 1_000_000;
-        const costCacheWrite = (stats.tokens.cacheWrite * model.cost.cacheWrite) / 1_000_000;
+      if (liveModel && stats) {
+        const costInput = (stats.tokens.input * liveModel.cost.input) / 1_000_000;
+        const costOutput = (stats.tokens.output * liveModel.cost.output) / 1_000_000;
+        const costCacheRead = (stats.tokens.cacheRead * liveModel.cost.cacheRead) / 1_000_000;
+        const costCacheWrite = (stats.tokens.cacheWrite * liveModel.cost.cacheWrite) / 1_000_000;
         totalCost = costInput + costOutput + costCacheRead + costCacheWrite;
       }
 
       const tokens = usage?.tokens ?? 0;
       const tokenStr =
         tokens >= 1000 ? `(${(tokens / 1000).toFixed(1)}K)` : tokens > 0 ? `(${tokens})` : "(0)";
-      const percentStr = usage?.percent != null ? `${Math.round(usage.percent)}%` : "0%";
+      const contextWindow = liveModel?.contextWindow ?? usage?.contextWindow ?? 0;
+      const percent = contextWindow > 0 && tokens != null ? (tokens / contextWindow) * 100 : 0;
+      const percentStr = `${Math.round(percent)}%`;
       const costStr = totalCost > 0 ? `$${totalCost.toFixed(2)}` : "$0.00";
 
       setSidebarContextUsage(percentStr);

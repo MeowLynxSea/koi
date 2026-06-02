@@ -6,6 +6,8 @@
  * - Max Tokens
  * - Input Cost ($/1M tokens)
  * - Output Cost ($/1M tokens)
+ *
+ * Press Esc to save and close. Validation errors prevent closing.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -55,7 +57,6 @@ export function ModelParamsModal({
   const { width, height } = useTerminalDimensions();
   const [selectedFieldIndex, setSelectedFieldIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
   const fieldRefs = [
     useRef<TextareaRenderable>(null),
@@ -72,7 +73,6 @@ export function ModelParamsModal({
 
     setSelectedFieldIndex(0);
     setError(null);
-    setSaved(false);
 
     // Load existing values
     const existing = getCustomModelConfig(provider, modelId);
@@ -91,15 +91,24 @@ export function ModelParamsModal({
       });
       fieldRefs[0]?.current?.focus();
     }, 10);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, provider, modelId]);
 
   // Focus current field when index changes
   useEffect(() => {
     if (!isActive) return;
     fieldRefs[selectedFieldIndex]?.current?.focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFieldIndex, isActive]);
+
+  const handleFieldChange = (index: number) => {
+    setError(null);
+    const ref = fieldRefs[index];
+    if (!ref) return;
+    const text = ref.current?.editBuffer.getText() ?? "";
+    const sanitized = text.replace(/[\n\r]/g, "");
+    if (sanitized !== text) {
+      ref.current?.editBuffer.replaceText(sanitized);
+    }
+  };
 
   const validateAndSave = (): boolean => {
     const rawValues: Record<FieldKey, string> = {
@@ -137,7 +146,6 @@ export function ModelParamsModal({
     });
 
     setError(null);
-    setSaved(true);
     return true;
   };
 
@@ -145,12 +153,8 @@ export function ModelParamsModal({
     if (!isActive) return;
 
     if (key.name === "escape") {
-      onClose();
-      return;
-    }
-
-    if (saved) {
-      if (key.name === "return") {
+      const ok = validateAndSave();
+      if (ok) {
         onClose();
       }
       return;
@@ -170,11 +174,6 @@ export function ModelParamsModal({
         return (prev + 1) % FIELDS.length;
       });
       setError(null);
-      return;
-    }
-
-    if (key.name === "return") {
-      validateAndSave();
       return;
     }
   });
@@ -221,89 +220,65 @@ export function ModelParamsModal({
           <text fg="#4a4a5a">{"─".repeat(modalWidth - 4)}</text>
         </box>
 
-        {saved ? (
-          <>
-            <text
-              alignSelf="center"
-              attributes={createTextAttributes({ bold: true })}
-              fg="#00ff99"
-              marginTop={1}
+        <box flexDirection="column" gap={1} marginTop={1}>
+          {FIELDS.map((field, idx) => (
+            <box
+              key={field.key}
+              flexDirection="row"
+              alignItems="center"
+              gap={2}
             >
-              Saved!
-            </text>
-            <box marginTop={2}>
               <text
-                fg="#6c6c7c"
-                alignSelf="center"
-                attributes={createTextAttributes({ dim: true })}
+                fg={idx === selectedFieldIndex ? "#ff79c6" : "#f8f8f2"}
+                width={22}
+                attributes={createTextAttributes({
+                  bold: idx === selectedFieldIndex,
+                })}
               >
-                Enter/Esc Close
+                {idx === selectedFieldIndex ? "▶ " : "  "}
+                {field.label}:
               </text>
-            </box>
-          </>
-        ) : (
-          <>
-            <box flexDirection="column" gap={1} marginTop={1}>
-              {FIELDS.map((field, idx) => (
-                <box
-                  key={field.key}
-                  flexDirection="row"
-                  alignItems="center"
-                  gap={2}
-                >
-                  <text
-                    fg={idx === selectedFieldIndex ? "#ff79c6" : "#f8f8f2"}
-                    width={20}
-                    attributes={createTextAttributes({
-                      bold: idx === selectedFieldIndex,
-                    })}
-                  >
-                    {idx === selectedFieldIndex ? "▶ " : "  "}
-                    {field.label}:
-                  </text>
-                  <box
-                    width={25}
-                    height={1}
-                    backgroundColor={
-                      idx === selectedFieldIndex ? "#16213e" : "#0d1117"
-                    }
-                    paddingX={1}
-                  >
-                    <textarea
-                      ref={fieldRefs[idx]}
-                      initialValue={DEFAULT_VALUES[field.key]}
-                      focused={isActive && idx === selectedFieldIndex}
-                      showCursor={idx === selectedFieldIndex}
-                      height={1}
-                      wrapMode="none"
-                      textColor="#f8f8f2"
-                      backgroundColor={
-                        idx === selectedFieldIndex ? "#16213e" : "#0d1117"
-                      }
-                      onContentChange={() => setError(null)}
-                    />
-                  </box>
-                </box>
-              ))}
-            </box>
-
-            {/* Hint */}
-            <box marginTop={1}>
-              <text
-                fg="#6c6c7c"
-                attributes={createTextAttributes({ dim: true })}
+              <box
+                width={25}
+                height={1}
+                backgroundColor={
+                  idx === selectedFieldIndex ? "#16213e" : "#0d1117"
+                }
+                paddingX={1}
               >
-                Tab/↑↓ Navigate  Enter Save  Esc Cancel
-              </text>
-            </box>
-
-            {/* Error message */}
-            {error && (
-              <box marginTop={1}>
-                <text fg="#f43f5e">{error}</text>
+                <textarea
+                  ref={fieldRefs[idx]}
+                  initialValue={DEFAULT_VALUES[field.key]}
+                  focused={isActive && idx === selectedFieldIndex}
+                  showCursor={idx === selectedFieldIndex}
+                  height={1}
+                  wrapMode="none"
+                  textColor="#f8f8f2"
+                  backgroundColor={
+                    idx === selectedFieldIndex ? "#16213e" : "#0d1117"
+                  }
+                  onContentChange={() => handleFieldChange(idx)}
+                />
               </box>
-            )}
-          </>
+            </box>
+          ))}
+        </box>
+
+        {/* Hint */}
+        <box marginTop={1}>
+          <text
+            fg="#6c6c7c"
+            attributes={createTextAttributes({ dim: true })}
+          >
+            Tab/↑↓ Navigate  Esc Save &amp; Close
+          </text>
+        </box>
+
+        {/* Error message */}
+        {error && (
+          <box marginTop={1}>
+            <text fg="#f43f5e">{error}</text>
+          </box>
         )}
       </box>
     </box>

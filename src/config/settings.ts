@@ -131,6 +131,42 @@ function syncCredentialsToPi(): void {
   }
 }
 
+function syncCustomProvidersToPiModelRegistry(): void {
+  initPiInfrastructure();
+  if (!piModelRegistry) return;
+  for (const [providerName, config] of customProviderConfigs) {
+    try {
+      piModelRegistry.registerProvider(providerName, {
+        name: config.provider,
+        baseUrl: config.baseUrl,
+        api: config.apiFormat as Api,
+        apiKey: config.credential,
+        authHeader: true,
+        models: config.modelIds.map((modelId) => {
+          const modelParams = config.models?.find((m) => m.id === modelId);
+          return {
+            id: modelId,
+            name: modelId,
+            api: config.apiFormat as Api,
+            reasoning: false,
+            input: ["text"] as ("text" | "image")[],
+            cost: {
+              input: modelParams?.costInput ?? 0,
+              output: modelParams?.costOutput ?? 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            contextWindow: modelParams?.contextWindow ?? 128000,
+            maxTokens: modelParams?.maxTokens ?? 4096,
+          };
+        }),
+      });
+    } catch (err) {
+      console.error(`[Koi] Failed to register custom provider "${providerName}" with Pi ModelRegistry:`, err);
+    }
+  }
+}
+
 /* ───────── Pi infrastructure accessors ───────── */
 
 export function getPiAuthStorage(): AuthStorage {
@@ -256,6 +292,7 @@ export function loadSettings(): void {
       showHooksMessages = data.ui.showHooksMessages;
     }
     syncCredentialsToPi();
+    syncCustomProvidersToPiModelRegistry();
   } catch {
     // If the file is missing, corrupt, or unreadable, start fresh.
   }
@@ -324,6 +361,8 @@ export function configureCustomProvider(config: CustomProviderConfig): void {
     type: "api_key",
     key: config.credential,
   });
+  // Register models with Pi's ModelRegistry so contextWindow / maxTokens are honored
+  syncCustomProvidersToPiModelRegistry();
   void emitConfigChange("customProvider", config.provider);
 }
 
@@ -331,6 +370,9 @@ export function removeCustomProvider(provider: string): void {
   customProviderConfigs.delete(provider);
   saveSettings();
   getPiAuthStorage().remove(provider);
+  if (piModelRegistry) {
+    piModelRegistry.unregisterProvider(provider);
+  }
   void emitConfigChange("customProvider", provider);
 }
 
@@ -377,6 +419,8 @@ export function updateCustomModelParams(
 
   customProviderConfigs.set(provider, config);
   saveSettings();
+  // Re-register with Pi's ModelRegistry so updated contextWindow / maxTokens take effect
+  syncCustomProvidersToPiModelRegistry();
   void emitConfigChange("customProvider", provider);
 }
 
