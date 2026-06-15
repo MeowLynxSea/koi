@@ -27,12 +27,13 @@ async function createTransport(config: ScopedMcpConfig) {
       headers["Authorization"] = `Bearer ${config.authToken}`;
     }
     const url = new URL(config.url);
+    const requestInit: RequestInit = { headers };
 
     switch (type) {
       case "sse":
-        return new SSEClientTransport(url);
+        return new SSEClientTransport(url, { requestInit });
       default:
-        return new StreamableHTTPClientTransport(url);
+        return new StreamableHTTPClientTransport(url, { requestInit });
     }
   }
 
